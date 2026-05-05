@@ -1,0 +1,352 @@
+# Literature Review Agent Playbook
+
+**Purpose.** Build or extend a bibliography spreadsheet for an academic
+review topic. Per topic, produce ~50-70 high-impact and recent papers,
+classified, summarised, and with PDFs downloaded where freely available.
+
+**When to use.** The user names a topic ("now do X for memory", "extend the
+bibliography for attention", or "do a fresh lit review on Y"). Existing
+spreadsheet sits at `<project>/<spreadsheet>.xlsx`. If this is a fresh start,
+ask for: (1) topic name + 1-paragraph definition, (2) source document if any,
+(3) target spreadsheet path, (4) tier criteria (default below),
+(5) contact email for NCBI/CrossRef User-Agent (export `LITREVIEW_EMAIL`
+or pass `--email` to each tool — required by `verify.py` and `xref.py`).
+
+**Default tier criteria.** Pre-2021: only highly cited / foundational. 2022+:
+promiscuous (no citation-count gate, since they haven't had time). The
+boundary year is "today minus ~5 years"; adjust as the calendar advances.
+
+---
+
+## Output artifacts (per topic batch)
+
+1. New rows appended to `<spreadsheet>.xlsx` with columns:
+   `Topic | Ref# | APA reference | Link | Summary | Tag | PDF (local) | Xref`
+2. PDFs downloaded to `papers/<topic_slug>/<paper_slug>.pdf`
+3. Failed-download list at `papers/<topic_slug>/_needs_manual.txt`
+4. Cross-reference index at `xref_<topic_slug>.json` (after Phase 6)
+
+---
+
+## The workflow — 7 phases
+
+### Phase 1 — Scope the topic
+
+**1a. Read source if provided.** If the user has a source doc (`.docx`/`.pdf`),
+extract text. For docx: `unzip -p X.docx word/document.xml | python3 strip_xml.py`.
+Identify which references are actually cited in the **main text** (not just in
+the bibliography). The bibliography may have hundreds of refs the doc never
+discusses; only main-text-cited ones are baseline.
+
+**1b. Define the topic precisely.** Write 3-5 sentences of what counts as
+relevant. Include the contested theoretical positions, the methods / sub-areas /
+populations involved, and the boundary with adjacent topics. The
+search agent will use this verbatim.
+
+**1c. List "already-known" papers.** Pull from the existing spreadsheet
+(filter by `Topic`). The search agent must not re-find these.
+
+### Phase 2 — Spawn the literature search agent
+
+Use the `general-purpose` Agent (or any web-enabled subagent). Give it a
+self-contained prompt — it has no context from this conversation. Use the
+template in `tools/search_prompt_template.md` and fill in:
+- `{TOPIC_NAME}` and `{TOPIC_DEFINITION}`
+- `{ALREADY_HAVE}` — bullet list of existing papers (don't rediscover)
+- `{TODAY}` — current date (gives the agent a recency anchor)
+- `{TIER_BOUNDARY_YEAR}`
+- `{TARGET_COUNT}` — usually 25-40 papers
+
+The agent should return a numbered list with: APA citation, link, PMCID if
+available, 3-5 sentence summary, tag (`classic`/`recent-review`/
+`recent-empirical`/`recent-method`/`recent-LLM`/`recent-theory`/
+`recent-clinical`), and year.
+
+**Do not act on the agent's output yet.** It will contain errors. Proceed
+to Phase 3.
+
+### Phase 3 — Verify EVERY citation (CRITICAL)
+
+In a previous run, the search agent fabricated 5 author lists, reversed
+one paper's conclusion, and invented a bioRxiv DOI that didn't exist.
+About 1 in 4 citations had errors. **Always verify before adding.**
+
+For each paper the agent returned:
+
+**3a. If a PMCID was given:** call NCBI esummary
+(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pmc&id=<num>&retmode=json`).
+Confirm first author, year, and title match. See `tools/verify.py`.
+
+**3b. If no PMCID but a title is given:** call PubMed esearch
+(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=<title>&retmode=json`)
+then esummary. Confirm match.
+
+**3c. If only an arxiv ID:** WebFetch `https://arxiv.org/abs/<id>` and read
+title/authors from the page.
+
+**3d. If a publisher landing page (Nature, Springer, OUP):** WebFetch the
+page and confirm author/year. Don't rely on the agent's claim.
+
+**3e. Drop / fix:**
+- Citation completely fabricated (URL doesn't resolve, no PubMed match) → drop.
+- Wrong first author / wrong year → fix using the verified metadata.
+- Title matches but agent's summary contradicts the abstract → fix summary.
+- Suspicious DOI (e.g. unusual prefix, no resolution) → drop unless you can
+  confirm via web search.
+
+Common fabrication patterns to flag:
+- Author name that doesn't appear in any of the paper's actual authors.
+- Conclusion that is the OPPOSITE of the paper's actual finding.
+- bioRxiv DOIs not matching the `10.1101/...` pattern.
+- arxiv preprint IDs that don't resolve.
+
+### Phase 4 — Download PDFs
+
+Try sources in this order (`tools/download.py` does this automatically):
+
+1. **arxiv direct** — `https://arxiv.org/pdf/<id>.pdf`. Always works for
+   arxiv preprints. Only one risk: rate-limit (429) if you hit too fast;
+   use 2s sleeps between calls.
+
+2. **Unpaywall API** — `https://api.unpaywall.org/v2/<doi>?email=<user_email>`.
+   Returns `oa_locations` with PDF URLs. **Prefer non-PMC URLs first**, since
+   PMC has aggressive bot blocking. Often gives author institutional repos
+   (`.edu` / `.ac.uk` pages) that work with simple curl.
+
+3. **Direct journal URL via Unpaywall's `best_oa_location.url_for_pdf`** —
+   `https://www.nature.com/articles/<id>.pdf` typically works for OA Nature,
+   Nat Commun, Nat Neuro, Nat Hum Behav, Sci Rep.
+
+4. **Europe PMC** — `https://europepmc.org/articles/<PMCID>?pdf=render`
+   works for many NIH-funded papers.
+
+5. **Manual fallback via browser-helper page (preferred over `_needs_manual.txt`).**
+   For papers that fail the auto-download, generate
+   `papers/<topic>/_download_helper.html`: one row per failed paper with
+   author/year/slug/title and an Open link to the journal landing page (use
+   plain `https://doi.org/<doi>` for paywalled — the user has institutional
+   access; do **not** wrap in libproxy URLs, those land on a generic library
+   page). Use direct PMC `/articles/<PMCID>/` URLs for OA-on-PMC papers and
+   `https://www.biorxiv.org/content/<doi>v1` for bioRxiv preprints.
+   Open the helper with `open <path>` so it loads in the user's browser. The
+   user clicks through, downloads each via the publisher's own PDF button,
+   PDFs land in `~/Downloads` with publisher-chosen filenames. Then run
+   `tools/reconcile_downloads.py --manifest <topic>/_manifest.json
+   --out-dir papers/<topic>/` to read each PDF's first-page title via
+   pdftotext, fuzzy-match to the manifest, and move into place with the
+   right slug name.
+
+**Verify each download is actually a PDF** (first 4 bytes == `%PDF`).
+A 200 response can still return an HTML challenge page.
+
+**Do NOT attempt** these sources — they all reliably fail to bots:
+- PMC direct PDF URLs (`https://pmc.ncbi.nlm.nih.gov/articles/<PMCID>/pdf/`):
+  Cloudflare Proof-of-Work challenge.
+- bioRxiv / medRxiv direct: Cloudflare bot mitigation (403).
+- PNAS direct PDF (`pnas.org/doi/pdf/...`): 403 via curl.
+- OUP `academic.oup.com/.../article-pdf/...`: 403.
+- MIT Press `direct.mit.edu/imag/article-pdf/...`: 403.
+- Elsevier ScienceDirect `.../pdfft`: 403.
+- Wiley `onlinelibrary.wiley.com/doi/pdfdirect/...`: 403.
+
+These all work fine in a real browser, so route them to the helper page
+described in step 5 — don't keep retrying programmatically.
+
+### Phase 5 — Update the spreadsheet
+
+Use `xlsxwriter` (no install if already present; if not, write CSV instead
+and tell the user). Schema:
+
+| Topic | Ref # | APA reference | Link | Summary | Tag | PDF (local) | Xref |
+|-------|-------|---------------|------|---------|-----|-------------|------|
+
+- `Topic`: one of the project's topic categories (e.g. "Multimodal networks").
+- `Ref #`: numeric for source-document refs; use `<topic-letter><n>` for
+  added refs (e.g. `M1`-`M40` for first multimodal batch, `M41`-`M70` for xref
+  batch). Keep numbering monotonically increasing across batches.
+- `APA reference`: full APA, list authors up to 6 then `et al.`.
+- `Link`: PMC / PubMed / DOI URL — verified to resolve.
+- `Summary`: 3-5 sentences. State what the paper did and why it matters for
+  the topic. Don't just paraphrase the abstract.
+- `Tag`: see Phase 2 list.
+- `PDF (local)`: relative path if downloaded, else empty.
+- `Xref`: citation count from cross-reference analysis (Phase 6), else empty.
+
+**Color-code rows** so origin is visible:
+- White: refs from the source paper.
+- Cream `#FFF7E0`: refs added in initial search (Phase 2).
+- Green `#E2F0D9`: refs added via cross-citation analysis (Phase 6).
+
+Freeze the header row. Set column widths (~22, 8, 60, 50, 90, 14, 50, 8) and
+row heights (~110pt) for readability with wrapped text.
+
+`tools/spreadsheet.py` does the rebuild from a JSON of rows.
+
+**Note on per-version data scripts.** If you keep your batch data inside
+numbered Python files (`build_bibliography.py`, `build_bibliography_v2.py`,
+...) that import each other to inherit prior rows, then **the
+xlsx-writing block in each one must live under `if __name__ == "__main__":`**.
+Without the guard, a casual `from build_bibliography import ROWS` rewrites
+the spreadsheet as a side effect of import. Module-level data and helpers
+stay at top level so they're importable; only the xlsxwriter block is
+guarded. The simpler alternative is to keep all rows in a single JSON and
+rebuild via `tools/spreadsheet.py`.
+
+### Phase 6 — Cross-citation analysis (second pass)
+
+Run after Phase 5 is committed. The point: find high-impact papers the
+initial search missed by looking at what the papers we DO have cite repeatedly.
+
+**6a. Fetch reference lists.** For each paper with a DOI, call CrossRef:
+`https://api.crossref.org/works/<doi>`. The `message.reference[]` field has
+the cited refs. Most have a `DOI` field; some have only unstructured strings.
+For papers without DOIs (arxiv-only), fall back to extracting DOIs from the
+PDF text via `pdftotext -layout <pdf> - | grep -oE '10\.\d+/...'`. This is
+crude but recovers some.
+
+**6b. Build the frequency table.** For each cited DOI, count how many of
+your N papers cite it. `tools/xref.py` does this.
+
+**6c. Resolve unknowns.** Many cited refs have only a DOI in the CrossRef
+response, no title/author. Look these up via CrossRef metadata
+(`api.crossref.org/works/<doi>` again, but for the cited DOI).
+
+**6d. Filter and select.** Take refs cited by `≥4` of your papers
+(definite-include) plus selected `≥3`-cited foundational classics. Filter
+out:
+- Refs already in the spreadsheet (check by DOI normalized to lowercase).
+- Methods/software citations (SciPy, NumPy, FreeSurfer, fMRIPrep, etc.)
+  unless the topic is methods.
+- Off-topic refs that just happened to be popular (e.g. a stats paper).
+
+Aim for ~25-35 additions. More than that and the spreadsheet becomes
+unwieldy; less and you've under-mined.
+
+**6e. Repeat Phases 3-5** for the new batch. Verify every citation, attempt
+PDF download, append to spreadsheet (with the green color and Xref column
+populated).
+
+### Phase 7 — Hand off
+
+Tell the user:
+- Total rows in spreadsheet, broken down (source / search / xref).
+- Total PDFs downloaded vs. failed.
+- Any verification corrections you made.
+- Path to `_needs_manual.txt` for paywalled papers.
+
+---
+
+## Lessons learned (don't repeat these mistakes)
+
+### On the search agent
+- **Always verify.** ~25% of agent-returned citations have errors. Wrong
+  first authors are the most common; the agent confuses similar-titled
+  papers and mixes up author lists.
+- **The conclusion can be reversed.** Read the abstract before trusting
+  any summary — agents have been observed to invert a paper's headline
+  finding (e.g., describing "X > Y" when the paper says the opposite).
+- **Cap the request.** Asking for 40 papers gives 40-44; asking for "as many
+  as possible" gives sprawl with more fabrications.
+- **Give exhaustive "do not include" lists.** Without these, the agent
+  re-finds papers already in the spreadsheet (3 of 44 in the first run).
+
+### On PDF downloads
+- **PMC direct PDFs are hopeless via curl.** Cloudflare PoW challenge.
+  Always go through Europe PMC or Unpaywall.
+- **Cell, Elsevier, Wiley, OUP, MIT Press, PNAS, biorxiv all block bots.**
+  Don't waste retries; route to manual list.
+- **Author institutional repos work.** When Unpaywall returns a
+  university-domain URL (`.edu`, `.ac.uk`, etc.), it almost always
+  downloads cleanly.
+- **Always validate the bytes.** A 200 response with `%PDF` magic = real PDF.
+  A 200 response with HTML = challenge page or paywall preview.
+
+### On the spreadsheet
+- Use a "source" column or color code so a future you (or the user) knows
+  where each ref came from and how confident to be.
+- Keep summaries to 3-5 sentences. Long ones become unreadable in a row.
+- Don't try to read existing xlsx with xlsxwriter — it's write-only. If
+  appending, regenerate the whole file from a JSON of accumulated rows.
+- **If you keep batch data inside per-version Python scripts that
+  import each other, guard the xlsx-writing block under
+  `if __name__ == "__main__":`.** Otherwise importing such a script
+  for its data structures (e.g. `from build_bibliography import ROWS`)
+  rewrites the spreadsheet as a side effect of import. The simpler
+  alternative is to keep all rows in a single JSON and rebuild via
+  `tools/spreadsheet.py`.
+
+### On cross-citation analysis
+- CrossRef coverage varies by publisher. Nature, Cell, OUP, JNeurosci have
+  excellent coverage. Some smaller journals deposit no refs.
+- ≥4 citations across 40 papers is a strong signal. ≥3 is borderline; only
+  pick if the paper is clearly foundational.
+- The xref pass typically finds 25-35 papers per topic that the initial
+  search missed — almost half as many again.
+
+---
+
+## API endpoint reference
+
+| Service | URL pattern | Returns |
+|---------|-------------|---------|
+| PubMed esearch | `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=<q>&retmode=json` | List of PMIDs |
+| PubMed esummary | `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=<id>&retmode=json` | Title/authors/year |
+| PMC esummary | `...?db=pmc&id=<numeric_pmc>` | Same, for PMC |
+| Unpaywall | `https://api.unpaywall.org/v2/<doi>?email=<email>` | OA PDF URLs |
+| CrossRef metadata | `https://api.crossref.org/works/<doi>` | Title, authors, references |
+| EuropePMC search | `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=<q>&format=json` | Full search |
+| EuropePMC PDF | `https://europepmc.org/articles/<PMCID>?pdf=render` | PDF (often) |
+| arxiv API | `http://export.arxiv.org/api/query?search_query=all:<q>` | Atom XML |
+| arxiv PDF | `https://arxiv.org/pdf/<id>.pdf` | PDF |
+| Nature direct | `https://www.nature.com/articles/<id>.pdf` | PDF (if OA) |
+
+Rate limits worth knowing:
+- arxiv API: ~1 req/3s; bursts trigger 429.
+- NCBI eutils: 3 req/s without API key, 10 req/s with key. Use 0.4s sleep.
+- CrossRef: polite pool with `mailto:` in User-Agent gives unlimited; without, ~50/s.
+- Unpaywall: 100k req/day per email.
+
+Always include a `User-Agent` header with your email for these APIs.
+
+---
+
+## Reusable helper scripts
+
+All in `<project>/tools/`. Each is standalone, takes input via JSON/CLI,
+outputs JSON/files. Run `python3 tools/<script>.py --help` for flags.
+
+| Script | Purpose |
+|--------|---------|
+| `tools/verify.py` | Verify a list of citations via PMC/PubMed/CrossRef. Reports mismatches. |
+| `tools/download.py` | Multi-source PDF downloader with the priority order from Phase 4. |
+| `tools/xref.py` | Build cross-citation index from a list of (slug, doi) tuples via CrossRef. |
+| `tools/spreadsheet.py` | Build/rebuild xlsx from a JSON of accumulated rows. |
+| `tools/search_prompt_template.md` | Prompt template for the literature-search subagent. |
+| `tools/reconcile_downloads.py` | After the user manually downloads PDFs via the browser-helper page, this reads each PDF's first-page title via `pdftotext`, fuzzy-matches it against a manifest of slug+title pairs, and moves the PDF into the per-topic dir with the correct slug filename. Replaces the older `_needs_manual.txt` workflow. |
+
+Each helper is small (<200 lines) and meant to be read + adapted. They are
+not a framework — they're scaffolding to keep the LLM judgment work fast.
+
+---
+
+## Quick start for a fresh Claude
+
+```
+1. Read this playbook.
+2. Read the existing spreadsheet (xlsxwriter is write-only; convert to CSV
+   first via `python3 -c "import openpyxl; ..."` or load via pandas if
+   available, or just have the user paste the topic list).
+3. Confirm topic + criteria with the user.
+4. Phase 1: collect baseline (source-doc citations).
+5. Phase 2: spawn search agent using tools/search_prompt_template.md.
+6. Phase 3: verify EVERY citation (tools/verify.py).
+7. Phase 4: download PDFs (tools/download.py).
+8. Phase 5: update spreadsheet (tools/spreadsheet.py).
+9. Phase 6: cross-citation pass (tools/xref.py).
+10. Phase 7: report to user.
+```
+
+For a topic with ~40 search-added + ~30 xref-added papers, the whole
+workflow takes Claude roughly 3-5M tokens and 20-30 minutes wall-clock,
+mostly in PDF downloads and CrossRef API calls. Phase 6 (xref) is the
+slowest step (~3-5 minutes for CrossRef calls).

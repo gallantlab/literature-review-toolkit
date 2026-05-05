@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Project outputs (these are produced by users, not part of the toolkit)
+papers/
+*.xlsx
+xref_*.json
+*_verify*.json
+*_manifest.json
+_download_helper.html
+all_existing_dois.json
