@@ -57,8 +57,12 @@ its abstract page before including it.
 ## What to return for EACH paper
 
 1. **APA citation** (full, with all authors if ≤6, else et al.)
-2. **PubMed/PMC link OR DOI link** — verify it resolves
-3. **PMCID if available** (for open-access PDF lookup)
+2. **DOI link** in the form `https://doi.org/<doi>` — verify it resolves.
+   Every paper MUST have a DOI link. Do NOT return PubMed or PMC URLs as the
+   primary link; if you only have a PMID/PMCID, look up the DOI via PubMed
+   or EuropePMC and return that. If a paper has truly no DOI (rare for
+   published work), exclude it.
+3. **PMCID if available** (for cross-checking only; not the primary link)
 4. **3–5 sentence summary**: what the study did and why it's relevant to
    {TOPIC_NAME}. Read the actual abstract — do NOT make up findings.
 5. **Tag**: one of: `classic` | `recent-review` | `recent-empirical` |

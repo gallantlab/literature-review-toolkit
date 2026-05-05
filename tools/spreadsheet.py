@@ -4,6 +4,12 @@
 Schema:
   Topic | Ref# | APA reference | Link | Summary | Tag | PDF (local) | Xref
 
+`Link` should always be a DOI URL (`https://doi.org/<doi>`). PubMed/PMC URLs
+are not used as the primary link — see PLAYBOOK.md.
+
+`PDF (local)` is empty by default since Phase 4 is opt-in. Populate only if
+PDFs were actually downloaded.
+
 Color codes by `source`:
   source-doc -> white
   search     -> cream  (#FFF7E0)
@@ -14,10 +20,10 @@ Input format (JSON list):
   {"topic": "Multimodal networks",
    "ref":   "M41",
    "apa":   "Author, A. (2024). Title. Journal, 1(1), 1-2.",
-   "link":  "https://...",
+   "link":  "https://doi.org/10.1234/abcd",
    "summary": "...",
    "tag":   "classic",
-   "pdf":   "papers/topic_X/slug.pdf",   # or ""
+   "pdf":   "",                           # empty unless Phase 4 was opted-in
    "xref":  10,                           # citation count, or null
    "source":"xref"                       # one of: source-doc | search | xref
   },

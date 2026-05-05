@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Multi-source PDF downloader with the priority order from the playbook.
+"""Multi-source PDF downloader (Phase 4 — OPT-IN, not run by default).
+
+The default review workflow does not download PDFs (see PLAYBOOK.md). Run
+this tool only when the user has explicitly asked for PDF acquisition. A
+dedicated replacement is planned; treat this as legacy that still works.
 
 Tries: arxiv direct -> Unpaywall (non-PMC URLs first) -> EuropePMC.
 Validates that downloaded bytes start with %PDF.

@@ -20,7 +20,10 @@ python3 tools/verify.py --citations cits.json --out report.json --email you@inst
 expect_first_author?, expect_year?}`. Looks up via PMC, then PubMed, then
 CrossRef, then title-search. Verdict per item: `OK`, `MISMATCH`, `NOT-FOUND`.
 
-## `download.py` — multi-source PDF downloader
+## `download.py` — multi-source PDF downloader **(opt-in, Phase 4)**
+
+PDF acquisition is **not** part of the default workflow. Run only when the
+user explicitly asks. A dedicated replacement is planned.
 
 Tries arxiv → Unpaywall (non-PMC URLs first) → EuropePMC. Validates `%PDF`
 magic bytes. Skips known-blocked hosts (PMC direct, biorxiv, PNAS, OUP,
@@ -62,9 +65,12 @@ python3 tools/spreadsheet.py --rows rows.json --out bibliography.xlsx
 ```
 
 `rows.json` per item: `{topic, ref, apa, link, summary, tag, pdf, xref,
-source}`.
+source}`. `link` is always a DOI URL (`https://doi.org/<doi>`); `pdf` is
+empty unless Phase 4 was opted into.
 
-## `reconcile_downloads.py` — match manually-downloaded PDFs
+## `reconcile_downloads.py` — match manually-downloaded PDFs **(opt-in, Phase 4)**
+
+Companion to `download.py`. PDF acquisition is not run by default.
 
 After the user clicks through the browser-helper page to grab paywalled
 or bot-blocked papers, this script reads each PDF in `~/Downloads` (or
@@ -91,25 +97,15 @@ See the playbook for what to put in each `{PLACEHOLDER}`.
 ## Idiomatic usage
 
 ```bash
-# Phase 2: spawn agent (write a prompt by filling search_prompt_template.md)
-# ... agent returns a list of papers ...
+# Phase 2: spawn agent (fill in search_prompt_template.md). Agent returns
+#          a list of papers with DOI links (https://doi.org/<doi>).
 
 export LITREVIEW_EMAIL=you@inst.edu     # set once for verify.py + xref.py
 
 # Phase 3: verify what the agent gave you
 python3 tools/verify.py --citations agent_output_to_verify.json --out verify_report.json
 
-# Phase 4: download PDFs for verified papers
-python3 tools/download.py --papers verified_papers.json \
-                          --out-dir papers/$TOPIC/ \
-                          --email $LITREVIEW_EMAIL
-
-# Phase 4b (manual fallback): for failures, generate a browser-helper page,
-# have the user click through, then reconcile:
-python3 tools/reconcile_downloads.py --manifest papers/$TOPIC/_manifest.json \
-                                     --out-dir papers/$TOPIC/
-
-# Phase 5: rebuild the spreadsheet
+# Phase 5: build the spreadsheet
 python3 tools/spreadsheet.py --rows accumulated_rows.json --out bibliography.xlsx
 
 # Phase 6: cross-citation analysis
@@ -118,5 +114,12 @@ python3 tools/xref.py --papers all_papers_with_dois.json \
                       --out xref_$TOPIC.json \
                       --min-cites 4 --resolve-unknown
 
-# ... pick from xref_$TOPIC.json, write summaries, repeat 3-5 ...
+# ... pick from xref_$TOPIC.json, write summaries, repeat 3+5 ...
+
+# --- OPTIONAL: Phase 4 (PDF download), only if user has asked for PDFs ---
+# python3 tools/download.py --papers verified_papers.json \
+#                           --out-dir papers/$TOPIC/ \
+#                           --email $LITREVIEW_EMAIL
+# python3 tools/reconcile_downloads.py --manifest papers/$TOPIC/_manifest.json \
+#                                      --out-dir papers/$TOPIC/
 ```

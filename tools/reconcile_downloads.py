@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Reconcile manually-downloaded PDFs against a slug+title+doi manifest.
 
+Companion to `download.py`. Phase 4 — OPT-IN, not part of the default
+workflow. Only run when the user has explicitly asked for PDF acquisition.
+
 Strategy (most reliable first):
   1. **Filename ↔ DOI substring match.** Many publishers encode the DOI suffix
      in the filename: `nrn755.pdf` → `10.1038/nrn755`, `science.1138071.pdf` →

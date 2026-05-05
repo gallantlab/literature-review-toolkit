@@ -2,7 +2,9 @@
 
 **Purpose.** Build or extend a bibliography spreadsheet for an academic
 review topic. Per topic, produce ~50-70 high-impact and recent papers,
-classified, summarised, and with PDFs downloaded where freely available.
+classified and summarised. Each row's link is the paper's DOI URL
+(`https://doi.org/<doi>`). PDFs are NOT downloaded by default — Phase 4 is
+opt-in only.
 
 **When to use.** The user names a topic ("now do X for memory", "extend the
 bibliography for attention", or "do a fresh lit review on Y"). Existing
@@ -11,6 +13,8 @@ ask for: (1) topic name + 1-paragraph definition, (2) source document if any,
 (3) target spreadsheet path, (4) tier criteria (default below),
 (5) contact email for NCBI/CrossRef User-Agent (export `LITREVIEW_EMAIL`
 or pass `--email` to each tool — required by `verify.py` and `xref.py`).
+Do NOT ask whether to download PDFs — the default is no. Only run Phase 4
+if the user explicitly requests it.
 
 **Default tier criteria.** Pre-2021: only highly cited / foundational. 2022+:
 promiscuous (no citation-count gate, since they haven't had time). The
@@ -21,10 +25,13 @@ boundary year is "today minus ~5 years"; adjust as the calendar advances.
 ## Output artifacts (per topic batch)
 
 1. New rows appended to `<spreadsheet>.xlsx` with columns:
-   `Topic | Ref# | APA reference | Link | Summary | Tag | PDF (local) | Xref`
-2. PDFs downloaded to `papers/<topic_slug>/<paper_slug>.pdf`
-3. Failed-download list at `papers/<topic_slug>/_needs_manual.txt`
-4. Cross-reference index at `xref_<topic_slug>.json` (after Phase 6)
+   `Topic | Ref# | APA reference | Link | Summary | Tag | PDF (local) | Xref`.
+   `Link` is always the DOI URL (`https://doi.org/<doi>`).
+2. Cross-reference index at `xref_<topic_slug>.json` (after Phase 6)
+3. **Only if Phase 4 was opted into:**
+   - PDFs at `papers/<topic_slug>/<paper_slug>.pdf`
+   - Browser-helper page `papers/<topic_slug>/_download_helper.html` for
+     paywalled / bot-blocked papers
 
 ---
 
@@ -57,10 +64,10 @@ template in `tools/search_prompt_template.md` and fill in:
 - `{TIER_BOUNDARY_YEAR}`
 - `{TARGET_COUNT}` — usually 25-40 papers
 
-The agent should return a numbered list with: APA citation, link, PMCID if
-available, 3-5 sentence summary, tag (`classic`/`recent-review`/
-`recent-empirical`/`recent-method`/`recent-LLM`/`recent-theory`/
-`recent-clinical`), and year.
+The agent should return a numbered list with: APA citation, **DOI link in
+`https://doi.org/<doi>` form** (not PubMed/PMC URLs), PMCID if available,
+3-5 sentence summary, tag (`classic`/`recent-review`/`recent-empirical`/
+`recent-method`/`recent-LLM`/`recent-theory`/`recent-clinical`), and year.
 
 **Do not act on the agent's output yet.** It will contain errors. Proceed
 to Phase 3.
@@ -100,9 +107,15 @@ Common fabrication patterns to flag:
 - bioRxiv DOIs not matching the `10.1101/...` pattern.
 - arxiv preprint IDs that don't resolve.
 
-### Phase 4 — Download PDFs
+### Phase 4 (OPTIONAL) — Download PDFs
 
-Try sources in this order (`tools/download.py` does this automatically):
+**Skip this phase by default.** Run only if the user explicitly asks for
+PDFs. The default workflow is Phase 1 → 2 → 3 → 5 → 6 → 7. PDF acquisition
+will eventually be replaced by a separate dedicated tool; treat the
+machinery below as legacy that still works on demand.
+
+If opted in, try sources in this order (`tools/download.py` does this
+automatically):
 
 1. **arxiv direct** — `https://arxiv.org/pdf/<id>.pdf`. Always works for
    arxiv preprints. Only one risk: rate-limit (429) if you hit too fast;
@@ -165,7 +178,9 @@ and tell the user). Schema:
   added refs (e.g. `M1`-`M40` for first multimodal batch, `M41`-`M70` for xref
   batch). Keep numbering monotonically increasing across batches.
 - `APA reference`: full APA, list authors up to 6 then `et al.`.
-- `Link`: PMC / PubMed / DOI URL — verified to resolve.
+- `Link`: DOI URL in `https://doi.org/<doi>` form — verified to resolve.
+  PubMed/PMC URLs are NOT used as the primary link. If a paper has only a
+  PMID/PMCID, look up its DOI before adding the row.
 - `Summary`: 3-5 sentences. State what the paper did and why it matters for
   the topic. Don't just paraphrase the abstract.
 - `Tag`: see Phase 2 list.
@@ -230,9 +245,10 @@ populated).
 
 Tell the user:
 - Total rows in spreadsheet, broken down (source / search / xref).
-- Total PDFs downloaded vs. failed.
-- Any verification corrections you made.
-- Path to `_needs_manual.txt` for paywalled papers.
+- Any verification corrections you made (e.g. fabricated PMCIDs, wrong
+  first authors).
+- **Only if Phase 4 was run:** PDFs downloaded vs. failed, and the path to
+  the browser-helper page or `_needs_manual.txt` for paywalled papers.
 
 ---
 
@@ -318,11 +334,11 @@ outputs JSON/files. Run `python3 tools/<script>.py --help` for flags.
 | Script | Purpose |
 |--------|---------|
 | `tools/verify.py` | Verify a list of citations via PMC/PubMed/CrossRef. Reports mismatches. |
-| `tools/download.py` | Multi-source PDF downloader with the priority order from Phase 4. |
 | `tools/xref.py` | Build cross-citation index from a list of (slug, doi) tuples via CrossRef. |
-| `tools/spreadsheet.py` | Build/rebuild xlsx from a JSON of accumulated rows. |
+| `tools/spreadsheet.py` | Build/rebuild xlsx from a JSON of accumulated rows (DOI URLs as Link). |
 | `tools/search_prompt_template.md` | Prompt template for the literature-search subagent. |
-| `tools/reconcile_downloads.py` | After the user manually downloads PDFs via the browser-helper page, this reads each PDF's first-page title via `pdftotext`, fuzzy-matches it against a manifest of slug+title pairs, and moves the PDF into the per-topic dir with the correct slug filename. Replaces the older `_needs_manual.txt` workflow. |
+| `tools/download.py` | **Opt-in (Phase 4).** Multi-source PDF downloader. Not run by default. |
+| `tools/reconcile_downloads.py` | **Opt-in (Phase 4).** After the user manually downloads PDFs via the browser-helper page, this reads each PDF's first-page title via `pdftotext`, fuzzy-matches it against a manifest of slug+title pairs, and moves the PDF into the per-topic dir with the correct slug filename. |
 
 Each helper is small (<200 lines) and meant to be read + adapted. They are
 not a framework — they're scaffolding to keep the LLM judgment work fast.
@@ -336,17 +352,20 @@ not a framework — they're scaffolding to keep the LLM judgment work fast.
 2. Read the existing spreadsheet (xlsxwriter is write-only; convert to CSV
    first via `python3 -c "import openpyxl; ..."` or load via pandas if
    available, or just have the user paste the topic list).
-3. Confirm topic + criteria with the user.
+3. Confirm topic + criteria with the user. Do NOT ask whether to download
+   PDFs — the default is no (Phase 4 is opt-in only).
 4. Phase 1: collect baseline (source-doc citations).
 5. Phase 2: spawn search agent using tools/search_prompt_template.md.
 6. Phase 3: verify EVERY citation (tools/verify.py).
-7. Phase 4: download PDFs (tools/download.py).
-8. Phase 5: update spreadsheet (tools/spreadsheet.py).
-9. Phase 6: cross-citation pass (tools/xref.py).
-10. Phase 7: report to user.
+7. Phase 5: update spreadsheet (tools/spreadsheet.py) with DOI URLs as Link.
+8. Phase 6: cross-citation pass (tools/xref.py); verify and append xref
+   batch via Phases 3 + 5 again.
+9. Phase 7: report to user.
+10. Phase 4 (PDF download) is OPTIONAL. Only run if the user explicitly
+    asks for PDFs.
 ```
 
-For a topic with ~40 search-added + ~30 xref-added papers, the whole
-workflow takes Claude roughly 3-5M tokens and 20-30 minutes wall-clock,
-mostly in PDF downloads and CrossRef API calls. Phase 6 (xref) is the
-slowest step (~3-5 minutes for CrossRef calls).
+For a topic with ~40 search-added + ~30 xref-added papers, the default
+no-PDF workflow takes Claude roughly 1-2M tokens and 5-10 minutes
+wall-clock — Phase 6 (xref) is the slowest step (~3-5 minutes for CrossRef
+calls). With Phase 4 turned on, add 10-20 more minutes for downloads.

@@ -16,13 +16,14 @@ For each topic batch:
 - Rows appended to a single `<your-bibliography>.xlsx` with columns
   `Topic | Ref# | APA reference | Link | Summary | Tag | PDF (local) | Xref`,
   color-coded by origin (white = source-doc, cream = initial search,
-  green = cross-citation pass).
-- PDFs in `papers/<topic_slug>/<paper_slug>.pdf` for everything the
-  auto-downloader could fetch.
-- A browser-helper page `papers/<topic_slug>/_download_helper.html` listing
-  what's left for the user to grab manually (paywalled / bot-blocked); a
-  reconcile script then moves those PDFs into place from `~/Downloads`.
+  green = cross-citation pass). The `Link` column is always the DOI URL
+  (`https://doi.org/<doi>`).
 - A cross-citation index `xref_<topic_slug>.json` after Phase 6.
+
+**PDF acquisition is opt-in.** By default the toolkit does not download
+PDFs — the `PDF (local)` column stays empty. Phase 4 (`tools/download.py`
++ `tools/reconcile_downloads.py`) only runs if the user explicitly asks.
+A dedicated PDF-fetch tool will replace this path eventually.
 
 ## Setup
 
@@ -47,20 +48,10 @@ export LITREVIEW_EMAIL=you@inst.edu
 # Phase 2: spawn a literature-search subagent with the prompt at
 #          tools/search_prompt_template.md filled in for your topic.
 #          The agent returns a list of papers; save as agent_out.json.
+#          Links MUST be DOI URLs (https://doi.org/<doi>).
 
 # Phase 3: verify everything before trusting any of it.
 python3 tools/verify.py --citations agent_out.json --out verify_report.json
-
-# Phase 4: try to auto-download PDFs.
-python3 tools/download.py --papers verified.json \
-                          --out-dir papers/<topic>/ \
-                          --email "$LITREVIEW_EMAIL"
-
-# Phase 4b: for what failed, generate a browser-helper page (see PLAYBOOK
-#           for the URL conventions) and reconcile after the user clicks
-#           through.
-python3 tools/reconcile_downloads.py --manifest papers/<topic>/_manifest.json \
-                                     --out-dir papers/<topic>/
 
 # Phase 5: build the xlsx from your accumulated rows JSON.
 python3 tools/spreadsheet.py --rows rows.json --out bibliography.xlsx
@@ -71,8 +62,16 @@ python3 tools/xref.py --papers verified.json \
                       --out xref_<topic>.json \
                       --min-cites 4 --resolve-unknown
 
-# Pick green-tier additions from the xref output, repeat Phases 3-5
+# Pick green-tier additions from the xref output, repeat Phases 3+5
 # for that batch.
+
+# --- OPTIONAL: Phase 4 (PDF download) ---
+# Only run if you've decided to grab PDFs. Default workflow skips this.
+# python3 tools/download.py --papers verified.json \
+#                           --out-dir papers/<topic>/ \
+#                           --email "$LITREVIEW_EMAIL"
+# python3 tools/reconcile_downloads.py --manifest papers/<topic>/_manifest.json \
+#                                      --out-dir papers/<topic>/
 ```
 
 ## Quick start (driving it via Claude Code)
@@ -92,11 +91,11 @@ The agent will work through the 7 phases described in the playbook.
 | Script | Purpose |
 |---|---|
 | [`tools/verify.py`](./tools/verify.py) | Verify citations via PMC/PubMed/CrossRef; catches ~25% search-agent fabrications. |
-| [`tools/download.py`](./tools/download.py) | Multi-source PDF downloader (arxiv → Unpaywall → EuropePMC). |
 | [`tools/xref.py`](./tools/xref.py) | Cross-citation frequency table from CrossRef reference lists. |
-| [`tools/spreadsheet.py`](./tools/spreadsheet.py) | Build/rebuild the `.xlsx` from accumulated JSON rows. |
-| [`tools/reconcile_downloads.py`](./tools/reconcile_downloads.py) | Move user-downloaded PDFs from `~/Downloads` into the per-topic dir with the right slug. |
+| [`tools/spreadsheet.py`](./tools/spreadsheet.py) | Build/rebuild the `.xlsx` from accumulated JSON rows (links are DOI URLs). |
 | [`tools/search_prompt_template.md`](./tools/search_prompt_template.md) | Prompt template for the literature-search subagent. |
+| [`tools/download.py`](./tools/download.py) | **Opt-in (Phase 4).** Multi-source PDF downloader (arxiv → Unpaywall → EuropePMC). |
+| [`tools/reconcile_downloads.py`](./tools/reconcile_downloads.py) | **Opt-in (Phase 4).** Move user-downloaded PDFs from `~/Downloads` into the per-topic dir with the right slug. |
 
 Each is small, standalone, and meant to be read and adapted. They're
 scaffolding, not a framework.
