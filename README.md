@@ -59,7 +59,7 @@ A dedicated PDF-fetch tool will replace this path eventually.
 ## Setup
 
 ```bash
-git clone https://github.com/jackgallant/literature-review-toolkit.git
+git clone https://github.com/gallantlab/literature-review-toolkit.git
 cd literature-review-toolkit
 
 # Python deps
@@ -156,12 +156,18 @@ the full audit trail: `agent_out.json` is the raw agent return,
 is the full cross-citation frequency table, `xref_picks.json` is the
 30 picked from it, and `rows.json` is what the spreadsheet renders from.
 
-## Worked example: language-learning review
+## Worked example: social/observational learning fMRI review
 
-Earlier project, same workflow, different topic. Output dir is
-`language.learning/`, deliverable is `bibliography.xlsx`. The audit
-trail (`agent_out.json`, `rows.json`, `xref_language_learning.json`,
-etc.) is preserved in case the review is extended later.
+Earlier project, same workflow:
+
+| | |
+|---|---|
+| **Prompt** | "build a bibliography on social and observational learning, restricted to fMRI studies in humans" |
+| **Output dir** | `language.learning/` (legacy name from when the topic was being scoped — kept as-is) |
+| **Final spreadsheet** | `language.learning/bibliography.xlsx` (68 rows) |
+| **Agent search batch** | 39 papers spanning 1999-2025 (cream rows) |
+| **Cross-citation batch** | 29 papers (green rows) |
+| **Verifier corrections** | 4 first-author fabrications caught (e.g. agent returned "Atlas" as first author of a paper actually first-authored by Tang; "Wittmann" for a Li paper). All fixed before the rows were written to the xlsx. |
 
 ## Tools index
 
