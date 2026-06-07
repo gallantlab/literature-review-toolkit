@@ -342,6 +342,51 @@ Tell the user:
 
 ---
 
+## Lab mode — review a lab's corpus in the context of the field
+
+The workflow above is **topic mode**: it starts from a query and searches
+outward. **Lab mode** inverts the front end — it starts from a known body of
+work (a lab's publications), derives the lab's research themes and how they
+shifted over time, then searches outward to place that work in the field.
+Everything downstream (verify, count, families, figure) is the same machinery.
+
+**Phase L1 — ingest the corpus.** `tools/lab_corpus.py` pulls the lab's full
+publication list from OpenAlex by author id (use `--search` to find it; pass
+several `--author` ids for PI + key lab members). Output `lab_papers.json`.
+
+**Phase L1b — enrich abstracts (REQUIRED).** **OpenAlex metadata is not enough:**
+its abstracts are missing for a sizable minority of papers and its `topics` tags
+are coarse, so classifying from them alone mislabels papers. Fill missing
+abstracts from Semantic Scholar (`/paper/batch`, by DOI) and/or PubMed first.
+
+**Phase L2 — define the lab & verify the corpus (HUMAN CHECKPOINT #1).** The
+load-bearing gate: author-id disambiguation is the #1 correctness risk (OpenAlex
+ids split / merge / collide; trainees move between labs). Have an agent classify
+every paper **from its actual content — not database topic tags** — into the
+buckets the user wants (e.g. for "human work only": `human` / `primate` /
+`other`), and **web-verify (PubMed / publisher) every paper without an abstract
+and every ambiguous call**. Prune false-positives; keep what the user asked for.
+
+**Phase L3 — derive themes (HUMAN CHECKPOINT #2).** Run the families step
+(`family_prompt_template.md` → user approves the ~N themes → assign every kept
+paper). The "families" are now the lab's research programs; `tools/families.py`
+validates/stamps and emits `families.json` + `families.md`.
+
+**Phase L4 — render + contextualize.**
+- **Trajectory figure:** `tools/families_figure.py` — themes × year, the lab's
+  papers as the spine (milestones labelled, the rest dots). This *is* "the lab's
+  topics and how they changed over time."
+- **Bibliography:** `tools/spreadsheet.py` (lab papers get the `lab` row color).
+- **Optional outward layer:** run topic mode once per theme, seeding the search
+  with the lab's papers in that theme as the "already have" list, to pull the
+  surrounding literature (precursors, contemporaries, who-cites-whom) — this is
+  what places the lab in the broader field.
+
+The three human checkpoints mirror topic mode: **(1) the corpus** (not a topic),
+**(2) the themes**, **(3) the figure**.
+
+---
+
 ## Lessons learned (don't repeat these mistakes)
 
 ### On the search agent
@@ -442,6 +487,7 @@ outputs JSON/files. Run `python3 tools/<script>.py --help` for flags.
 | `tools/citations.py` | Phase 5b. Fetch per-paper citation counts from OpenAlex (primary) + Semantic Scholar (secondary) by DOI. Google Scholar is not usable (no API / CAPTCHA). |
 | `tools/families.py` | Phase 6b. Validate an (agent-proposed, human-approved) family taxonomy, stamp `family` onto rows, emit `families.json` + `families.md`. `--digest` prints a corpus digest for the proposal step. |
 | `tools/families_figure.py` | Phase 6b. Interactive HTML lineage figure from `rows.json` + `families.json` (+ standalone svg/png/pdf). Optional `--spec` for editorial labels/arrows/notes. Replaces the old static figure. |
+| `tools/lab_corpus.py` | **Lab mode** Phase L1. Ingest a lab's full publication corpus from OpenAlex by author id (`--search` to resolve). Enrich abstracts before classifying — OpenAlex alone is insufficient. |
 | `tools/xref.py` | Build cross-citation index from a list of (slug, doi) tuples via CrossRef. |
 | `tools/spreadsheet.py` | Build/rebuild xlsx from a JSON of accumulated rows (DOI URLs as Link). |
 | `tools/search_prompt_template.md` | Prompt template for the literature-search subagent. |

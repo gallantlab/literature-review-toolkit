@@ -109,6 +109,23 @@ The editorial layer (which papers to label, cross-family convergence arrows,
 notes) is judgment — pass an optional `--spec figure_spec.json`
 (`{labels, arrows, notes, order, subtitle}`) and curate it with the user.
 
+## `lab_corpus.py` — ingest a lab's corpus (Lab mode, L1)
+
+Entry point for **lab mode** (start from a lab's papers instead of a query).
+Pulls a lab's full publication list from OpenAlex by author id.
+
+```
+python3 tools/lab_corpus.py --search "Jack Gallant"        # find the author id
+python3 tools/lab_corpus.py --author A5056348548 --out lab_papers.json
+```
+
+Output `lab_papers.json` (title / year / doi / venue / citations / coauthors /
+abstract). **Then enrich abstracts (Semantic Scholar / PubMed) before
+classifying — OpenAlex abstracts are spotty and its topic tags are coarse, so
+classifying from them alone mislabels papers.** Disambiguation is the #1
+correctness risk: review and prune the list before theming. See PLAYBOOK
+"Lab mode" for L1b–L4 (enrich → verify/classify → themes → trajectory figure).
+
 ## `spreadsheet.py` — build the xlsx
 
 Reads a JSON of accumulated rows and writes the xlsx with the standard

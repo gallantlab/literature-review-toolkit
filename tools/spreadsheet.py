@@ -38,7 +38,7 @@ Run:  python3 spreadsheet.py --rows rows.json --out bibliography.xlsx
 import argparse, json
 import xlsxwriter
 
-COLORS = {"source-doc": None, "search": "#FFF7E0", "xref": "#E2F0D9"}
+COLORS = {"source-doc": None, "search": "#FFF7E0", "xref": "#E2F0D9", "lab": "#DDEBF7"}
 
 
 def cite_val(row, key):

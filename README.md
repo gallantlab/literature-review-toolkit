@@ -8,6 +8,13 @@ cross-reference, and assemble a single annotated `.xlsx` bibliography, then
 The agent does the judgment work; these scripts handle the API calls,
 verification, and bookkeeping that keep the agent honest.
 
+**Two modes.** *Topic mode* starts from a query and searches outward (the default
+described below). *Lab mode* inverts it: start from a lab's full publication
+corpus, derive its research themes and how they changed over time, then search
+outward to place that work in the field — see "Lab mode" in
+[`PLAYBOOK.md`](./PLAYBOOK.md). Both share the same verify / count / families /
+figure machinery.
+
 See [`PLAYBOOK.md`](./PLAYBOOK.md) for the full procedure. Scripts live in
 [`tools/`](./tools).
 
@@ -216,6 +223,7 @@ Earlier project, same workflow:
 | [`tools/verify.py`](./tools/verify.py) | Verify citations via PMC/PubMed/CrossRef; catches ~25% search-agent fabrications. |
 | [`tools/citations.py`](./tools/citations.py) | **Phase 5b.** Per-paper citation counts from OpenAlex (primary) + Semantic Scholar by DOI. Google Scholar isn't queryable (no API / CAPTCHA). |
 | [`tools/xref.py`](./tools/xref.py) | Cross-citation frequency table from CrossRef reference lists. |
+| [`tools/lab_corpus.py`](./tools/lab_corpus.py) | **Lab mode (L1).** Ingest a lab's full publication corpus from OpenAlex by author id. Enrich abstracts before classifying — OpenAlex metadata alone is insufficient. |
 | [`tools/families.py`](./tools/families.py) | **Phase 6b.** Validate/stamp/render a theoretical-family grouping (agent proposes, you approve the definitions). |
 | [`tools/families_figure.py`](./tools/families_figure.py) | **Phase 6b.** Interactive HTML lineage figure (+ svg/png/pdf) from rows + families. Replaces the old static figure. |
 | [`tools/family_prompt_template.md`](./tools/family_prompt_template.md) | Two-step propose → assign prompt for the families pass. |
