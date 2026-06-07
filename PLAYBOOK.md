@@ -307,9 +307,27 @@ rest is mechanical, owned by `tools/families.py`:
    `citation_counts.json`) + `families.md`, and `spreadsheet.py` auto-adds the
    `Family` column on the next rebuild. Re-run only when the taxonomy changes.
 
-**The lineage/taxonomy FIGURE is a separate, bespoke step** — node selection and
-the cross-family convergence arrows are editorial, so hand-curate it with the
-user (the third human checkpoint). Don't expect a good figure auto-generated.
+**The figure is an interactive HTML** (not a static png), produced by
+`tools/families_figure.py` from `rows.json` + `families.json`:
+
+```bash
+python3 tools/families_figure.py --rows rows.json --families families.json \
+        --out-prefix <topic>_families --title "<Topic> — theoretical families"
+```
+
+It writes a self-contained `.html` (family lanes with their defining sentences,
+every paper as a dot beeswarm-packed by year, milestones labelled; hover any node
+for its full reference, click for citation + DOI, hover a family name to spotlight
+its lineage) plus a standalone `.svg` and — if `rsvg-convert`/`inkscape` is present
+— `.png` + `.pdf` of the panel for slides/papers. This replaces the old static
+matplotlib figure.
+
+The auto baseline labels the milestones (★) and draws no convergence arrows.
+**The editorial layer is the third human checkpoint** — which papers to label, the
+cross-family convergence arrows, and annotations are judgment, so curate them with
+the user via an optional `--spec figure_spec.json`
+(`{labels:{ref:short}, arrows:[{from,to,color,label}], notes:[{at,text,color}], order, subtitle}`).
+Don't expect a good arrow set auto-generated.
 
 ### Phase 7 — Hand off
 
@@ -421,6 +439,7 @@ outputs JSON/files. Run `python3 tools/<script>.py --help` for flags.
 | `tools/verify.py` | Verify a list of citations via PMC/PubMed/CrossRef. Reports mismatches. |
 | `tools/citations.py` | Phase 5b. Fetch per-paper citation counts from OpenAlex (primary) + Semantic Scholar (secondary) by DOI. Google Scholar is not usable (no API / CAPTCHA). |
 | `tools/families.py` | Phase 6b. Validate an (agent-proposed, human-approved) family taxonomy, stamp `family` onto rows, emit `families.json` + `families.md`. `--digest` prints a corpus digest for the proposal step. |
+| `tools/families_figure.py` | Phase 6b. Interactive HTML lineage figure from `rows.json` + `families.json` (+ standalone svg/png/pdf). Optional `--spec` for editorial labels/arrows/notes. Replaces the old static figure. |
 | `tools/xref.py` | Build cross-citation index from a list of (slug, doi) tuples via CrossRef. |
 | `tools/spreadsheet.py` | Build/rebuild xlsx from a JSON of accumulated rows (DOI URLs as Link). |
 | `tools/search_prompt_template.md` | Prompt template for the literature-search subagent. |

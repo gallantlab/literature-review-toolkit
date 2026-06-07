@@ -89,7 +89,25 @@ python3 tools/families.py --rows rows.json --assign families_input.json --out fa
 ```
 
 `families_input.json`: `{principle, families:[{key,name,claim,lineage}],
-assignments:{ref:key}}`. The lineage **figure** is a separate, bespoke step.
+assignments:{ref:key}}`.
+
+## `families_figure.py` — interactive HTML lineage figure (Phase 6b)
+
+Turns `rows.json` + `families.json` into a self-contained interactive `.html`
+figure (family lanes with their defining sentences; every paper a dot,
+beeswarm-packed by year; milestones labelled; hover for the full reference, click
+for citation + DOI, hover a family name to spotlight its lineage) plus a
+standalone `.svg` and — if `rsvg-convert`/`inkscape` is present — `.png` + `.pdf`
+for slides/papers. Replaces the old static matplotlib figure.
+
+```
+python3 tools/families_figure.py --rows rows.json --families families.json \
+        --out-prefix mytopic_families --title "My topic — theoretical families"
+```
+
+The editorial layer (which papers to label, cross-family convergence arrows,
+notes) is judgment — pass an optional `--spec figure_spec.json`
+(`{labels, arrows, notes, order, subtitle}`) and curate it with the user.
 
 ## `spreadsheet.py` — build the xlsx
 
