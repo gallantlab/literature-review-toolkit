@@ -54,11 +54,30 @@ python3 tools/xref.py --papers list.json --out xref.json \
 `list.json` per item: `{slug, doi?, pdf?}`. PDF fallback uses `pdftotext`
 to extract DOIs from the references section — install poppler if missing.
 
+## `citations.py` — per-paper citation counts (Phase 5b)
+
+Fetches citation counts by DOI from **OpenAlex** (primary; free, reliable,
+batchable) and **Semantic Scholar** (secondary; best-effort, rate-limits
+without `S2_API_KEY`). Google Scholar is deliberately not used — it has no API
+and CAPTCHA-blocks bots, so it can't be queried for a whole bibliography.
+Reads any rows JSON (DOI from a `doi` field or a `https://doi.org/...` link);
+arXiv DOIs are auto-mapped to the arXiv id for S2.
+
+```
+python3 tools/citations.py --rows rows.json --out citation_counts.json \
+                           --email you@inst.edu --asof 2026-06-07
+```
+
+Attach the counts to rows as `cite_openalex` / `cite_s2`, then rebuild — the
+spreadsheet auto-adds the two `Cite` columns.
+
 ## `spreadsheet.py` — build the xlsx
 
 Reads a JSON of accumulated rows and writes the xlsx with the standard
 schema and color coding (white = source-doc, cream = search, green = xref).
-Always rebuild from the full JSON; xlsxwriter is write-only.
+If any row carries `cite_openalex`/`cite_s2`, two `Cite` columns are added
+automatically after `Tag`. Always rebuild from the full JSON; xlsxwriter is
+write-only.
 
 ```
 python3 tools/spreadsheet.py --rows rows.json --out bibliography.xlsx

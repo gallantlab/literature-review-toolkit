@@ -25,9 +25,13 @@ boundary year is "today minus ~5 years"; adjust as the calendar advances.
 ## Output artifacts (per topic batch)
 
 1. New rows appended to `<spreadsheet>.xlsx` with columns:
-   `Topic | Ref# | APA reference | Link | Summary | Tag | PDF (local) | Xref`.
-   `Link` is always the DOI URL (`https://doi.org/<doi>`).
-2. Cross-reference index at `xref_<topic_slug>.json` (after Phase 6)
+   `Topic | Ref# | APA reference | Link | Summary | Tag | Cite (OpenAlex) |
+   Cite (S2) | PDF (local) | Xref`.
+   `Link` is always the DOI URL (`https://doi.org/<doi>`). The two `Cite`
+   columns are auto-added by `spreadsheet.py` whenever rows carry citation
+   counts (Phase 5b).
+2. `citation_counts.json` — per-paper OpenAlex + Semantic Scholar counts (Phase 5b)
+3. Cross-reference index at `xref_<topic_slug>.json` (after Phase 6)
 3. **Only if Phase 4 was opted into:**
    - PDFs at `papers/<topic_slug>/<paper_slug>.pdf`
    - Browser-helper page `papers/<topic_slug>/_download_helper.html` for
@@ -170,8 +174,10 @@ described in step 5 — don't keep retrying programmatically.
 Use `xlsxwriter` (no install if already present; if not, write CSV instead
 and tell the user). Schema:
 
-| Topic | Ref # | APA reference | Link | Summary | Tag | PDF (local) | Xref |
-|-------|-------|---------------|------|---------|-----|-------------|------|
+| Topic | Ref # | APA reference | Link | Summary | Tag | Cite (OpenAlex) | Cite (S2) | PDF (local) | Xref |
+|-------|-------|---------------|------|---------|-----|-----------------|-----------|-------------|------|
+
+(The two `Cite` columns appear only when Phase 5b has populated them.)
 
 - `Topic`: one of the project's topic categories (e.g. "Multimodal networks").
 - `Ref #`: numeric for source-document refs; use `<topic-letter><n>` for
@@ -196,6 +202,31 @@ Freeze the header row. Set column widths (~22, 8, 60, 50, 90, 14, 50, 8) and
 row heights (~110pt) for readability with wrapped text.
 
 `tools/spreadsheet.py` does the rebuild from a JSON of rows.
+
+### Phase 5b — Citation counts (standard; do this on every review)
+
+Add per-paper citation counts. **Google Scholar is not usable** — it has no
+API and CAPTCHA-blocks automated queries after a handful of requests, so it
+cannot be pulled for a whole bibliography. Use `tools/citations.py`, which
+queries two databases by DOI:
+
+- **OpenAlex** — primary source. Free, no key, reliable, near-complete by DOI,
+  batchable. (Undercounts arXiv-only preprints, which it often files under a
+  separate record from the published version — cross-check those with S2.)
+- **Semantic Scholar** — secondary. Often higher for CS/AI venues and gives an
+  `influentialCitationCount`. Its free endpoints rate-limit hard (HTTP 429/400)
+  from shared IPs and silently drop papers; treat as best-effort. Set
+  `S2_API_KEY` in the environment to make it reliable.
+
+```bash
+python3 tools/citations.py --rows rows.json --out citation_counts.json \
+        --email you@inst.edu --asof <YYYY-MM-DD>
+```
+
+Then attach the counts to each row (`cite_openalex` / `cite_s2` keys) in your
+`build_data.py`/rows pipeline and rebuild — `spreadsheet.py` auto-adds the two
+`Cite` columns when it sees them. Counts are a snapshot at run time; re-run to
+refresh. Papers with no DOI (books, blog/tech-report releases) stay blank.
 
 **Note on per-version data scripts.** If you keep your batch data inside
 numbered Python files (`build_bibliography.py`, `build_bibliography_v2.py`,
@@ -299,6 +330,19 @@ Tell the user:
 - The xref pass typically finds 25-35 papers per topic that the initial
   search missed — almost half as many again.
 
+### On citation counts (Phase 5b)
+- **Google Scholar can't be automated.** No API; CAPTCHA after ~10-20 requests.
+  Don't try to scrape it for a whole bibliography — use OpenAlex + S2.
+- **OpenAlex is the reliable workhorse** (~95%+ coverage by DOI). It undercounts
+  arXiv-only preprints (separate record from the published version), so for
+  preprint-heavy reviews lean on the S2 number for those rows.
+- **Semantic Scholar's free endpoints are flaky**: the `/paper/batch` endpoint
+  429s and sometimes 400s (one malformed id poisons the whole batch); the
+  single `/paper/{id}` endpoint 404s valid papers under load. Set `S2_API_KEY`
+  to fix it. Without a key, accept partial S2 coverage — OpenAlex stands alone.
+- Counts are a snapshot; record the `--asof` date. Don't expect the two columns
+  to match — GS-style totals (which neither gives) run higher than both.
+
 ---
 
 ## API endpoint reference
@@ -310,6 +354,8 @@ Tell the user:
 | PMC esummary | `...?db=pmc&id=<numeric_pmc>` | Same, for PMC |
 | Unpaywall | `https://api.unpaywall.org/v2/<doi>?email=<email>` | OA PDF URLs |
 | CrossRef metadata | `https://api.crossref.org/works/<doi>` | Title, authors, references |
+| OpenAlex (counts) | `https://api.openalex.org/works?filter=doi:<d1>\|<d2>...&mailto=<email>` | `cited_by_count`, batchable 50/req |
+| Semantic Scholar (counts) | `POST https://api.semanticscholar.org/graph/v1/paper/batch?fields=citationCount,influentialCitationCount` body `{"ids":["DOI:..","ARXIV:.."]}` | citation + influential counts; 429s without `S2_API_KEY` |
 | EuropePMC search | `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=<q>&format=json` | Full search |
 | EuropePMC PDF | `https://europepmc.org/articles/<PMCID>?pdf=render` | PDF (often) |
 | arxiv API | `http://export.arxiv.org/api/query?search_query=all:<q>` | Atom XML |
@@ -334,6 +380,7 @@ outputs JSON/files. Run `python3 tools/<script>.py --help` for flags.
 | Script | Purpose |
 |--------|---------|
 | `tools/verify.py` | Verify a list of citations via PMC/PubMed/CrossRef. Reports mismatches. |
+| `tools/citations.py` | Phase 5b. Fetch per-paper citation counts from OpenAlex (primary) + Semantic Scholar (secondary) by DOI. Google Scholar is not usable (no API / CAPTCHA). |
 | `tools/xref.py` | Build cross-citation index from a list of (slug, doi) tuples via CrossRef. |
 | `tools/spreadsheet.py` | Build/rebuild xlsx from a JSON of accumulated rows (DOI URLs as Link). |
 | `tools/search_prompt_template.md` | Prompt template for the literature-search subagent. |
@@ -358,7 +405,8 @@ not a framework — they're scaffolding to keep the LLM judgment work fast.
 5. Phase 2: spawn search agent using tools/search_prompt_template.md.
 6. Phase 3: verify EVERY citation (tools/verify.py).
 7. Phase 5: update spreadsheet (tools/spreadsheet.py) with DOI URLs as Link.
-8. Phase 6: cross-citation pass (tools/xref.py); verify and append xref
+8. Phase 5b: citation counts (tools/citations.py); attach to rows, rebuild.
+9. Phase 6: cross-citation pass (tools/xref.py); verify and append xref
    batch via Phases 3 + 5 again.
 9. Phase 7: report to user.
 10. Phase 4 (PDF download) is OPTIONAL. Only run if the user explicitly

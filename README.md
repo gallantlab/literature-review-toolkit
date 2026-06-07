@@ -46,10 +46,13 @@ want to extend or re-run the review later, the JSON files in the
 subdirectory are what the toolkit reads from.
 
 The spreadsheet has columns
-`Topic | Ref# | APA reference | Link | Summary | Tag | PDF (local) | Xref`,
+`Topic | Ref# | APA reference | Link | Summary | Tag | Cite (OpenAlex) | Cite (S2) | PDF (local) | Xref`,
 color-coded by origin (white = cited in your source doc if any, cream =
 initial agent search, green = cross-citation pass). The `Link` column is
-always the DOI URL (`https://doi.org/<doi>`).
+always the DOI URL (`https://doi.org/<doi>`). The two `Cite` columns are
+per-paper citation counts from `tools/citations.py` (Phase 5b) and appear only
+once populated — Google Scholar has no API, so OpenAlex + Semantic Scholar are
+the source.
 
 **PDF acquisition is opt-in.** By default the toolkit does not download
 PDFs — the `PDF (local)` column stays empty. Phase 4 (`tools/download.py`
