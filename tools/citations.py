@@ -23,7 +23,7 @@ OUTPUT: {key: {"openalex": int|None, "s2": int|None, "s2_influential": int|None,
 
 Counts are a snapshot at run time; re-run to refresh. See PLAYBOOK Phase 5b.
 """
-import argparse, json, os, re, sys, time, urllib.request, urllib.parse, urllib.error
+import argparse, datetime, json, os, re, sys, time, urllib.request, urllib.parse, urllib.error
 
 
 def parse_doi(row):
@@ -63,7 +63,7 @@ def fetch_openalex(items, email):
                 if doi:
                     by_doi[doi] = w.get("cited_by_count")
         except Exception as e:
-            print(f"  OpenAlex batch {i}: {e}", file=sys.stderr)
+            print(f"  OpenAlex batch {i}: {type(e).__name__}: {e}", file=sys.stderr)
         time.sleep(0.4)
     for key, doi in items:
         if doi in by_doi:
@@ -120,7 +120,8 @@ def main():
     ap.add_argument("--key", default=None, help="row key field (default: ref, else label)")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"),
                     help="contact email for OpenAlex polite pool (or set LITREVIEW_EMAIL)")
-    ap.add_argument("--asof", default="", help="snapshot date YYYY-MM-DD for the record")
+    ap.add_argument("--asof", default=datetime.date.today().isoformat(),
+                    help="snapshot date for the record (default: today)")
     ap.add_argument("--sources", default="openalex,s2", help="comma list: openalex,s2")
     args = ap.parse_args()
     if not args.email:
