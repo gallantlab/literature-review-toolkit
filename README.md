@@ -1,15 +1,37 @@
 # literature-review-toolkit
 
 Scaffolding to drive a Claude (or other LLM) agent through a structured
-literature review for an academic topic — search, verify, xref, and
-assemble a single annotated `.xlsx` bibliography. PDF acquisition is
-opt-in.
+literature review for an academic topic — search, verify, count citations,
+cross-reference, and assemble a single annotated `.xlsx` bibliography, then
+(optionally) group it into theoretical families. PDF acquisition is opt-in.
 
 The agent does the judgment work; these scripts handle the API calls,
 verification, and bookkeeping that keep the agent honest.
 
-See [`PLAYBOOK.md`](./PLAYBOOK.md) for the procedure. Scripts live in
+See [`PLAYBOOK.md`](./PLAYBOOK.md) for the full procedure. Scripts live in
 [`tools/`](./tools).
+
+## How it works — judgment vs. mechanics
+
+A review has **three points where a human decides**; everything between them
+runs automatically — but with a guardrail, not your attention, because those
+steps have a ground truth.
+
+| # | You decide… | Phase |
+|---|---|---|
+| 1 | **Scope** — the topic and span of the search | 1 |
+| 2 | **Families** *(optional)* — you approve/edit the agent's proposed grouping *before* it labels every paper | 6b |
+| 3 | **Figure** *(optional)* — you iterate on a lineage/taxonomy figure with the agent (bespoke, not auto-generated) | — |
+
+In between, the mechanical steps are guarded, not reviewed: **every citation is
+verified** against PMC/PubMed/CrossRef (search agents fabricate roughly 1 in 4 —
+wrong first authors, inverted findings, invented DOIs), **citation counts** are
+fetched and schema-checked, dedup and cross-citation mining run, and the
+spreadsheet is rebuilt from JSON each time.
+
+**Phases at a glance:** 1 scope · 2 search · 3 verify *(critical)* · 4 PDFs
+*(opt-in)* · 5 spreadsheet · 5b citation counts · 6 cross-citation · 6b families
+*(opt)* · 7 hand-off. Full detail in [`PLAYBOOK.md`](./PLAYBOOK.md).
 
 ## What you get out
 
@@ -32,6 +54,8 @@ the source of truth and the `.xlsx` is the rendered output.
 │   ├── verified.json                  (after Phase 3 corrections)
 │   ├── verify_report.json             (per-citation OK / MISMATCH / NOT-FOUND)
 │   ├── rows.json                      (everything the spreadsheet renders from)
+│   ├── citation_counts.json           (Phase 5b: OpenAlex + S2 counts, cached)
+│   ├── families.json / families.md    (Phase 6b: theoretical grouping, if run)
 │   ├── xref_visual_cerebellum.json    (cross-citation frequency table)
 │   ├── xref_picks.json                (the green-tier picks from xref)
 │   └── xref_meta.json                 (CrossRef metadata for xref picks)
@@ -46,13 +70,14 @@ want to extend or re-run the review later, the JSON files in the
 subdirectory are what the toolkit reads from.
 
 The spreadsheet has columns
-`Topic | Ref# | APA reference | Link | Summary | Tag | Cite (OpenAlex) | Cite (S2) | PDF (local) | Xref`,
+`Topic | Ref# | APA reference | Link | Summary | Tag | Family | Cite (OpenAlex) | Cite (S2) | PDF (local) | Xref`,
 color-coded by origin (white = cited in your source doc if any, cream =
 initial agent search, green = cross-citation pass). The `Link` column is
-always the DOI URL (`https://doi.org/<doi>`). The two `Cite` columns are
-per-paper citation counts from `tools/citations.py` (Phase 5b) and appear only
-once populated — Google Scholar has no API, so OpenAlex + Semantic Scholar are
-the source.
+always the DOI URL (`https://doi.org/<doi>`). Two columns appear only once their
+pass has run: the **`Cite`** columns are per-paper citation counts from
+`tools/citations.py` (Phase 5b) — Google Scholar has no API, so OpenAlex +
+Semantic Scholar are the source — and **`Family`** is the theoretical grouping
+from `tools/families.py` (Phase 6b). Both auto-add to the sheet when present.
 
 **PDF acquisition is opt-in.** By default the toolkit does not download
 PDFs — the `PDF (local)` column stays empty. Phase 4 (`tools/download.py`
@@ -94,6 +119,9 @@ of prompts that work:
 
 > extend the existing visual_cerebellum review with another 20 papers
   focused on cerebello-thalamic projections.
+
+> now group the world_models bibliography into a few theoretical families,
+  and let's iterate on a lineage figure.
 ```
 
 The agent will pick a slug for the subdirectory (`visual_cerebellum/`,
@@ -177,8 +205,11 @@ Earlier project, same workflow:
 | Script | Purpose |
 |---|---|
 | [`tools/verify.py`](./tools/verify.py) | Verify citations via PMC/PubMed/CrossRef; catches ~25% search-agent fabrications. |
+| [`tools/citations.py`](./tools/citations.py) | **Phase 5b.** Per-paper citation counts from OpenAlex (primary) + Semantic Scholar by DOI. Google Scholar isn't queryable (no API / CAPTCHA). |
 | [`tools/xref.py`](./tools/xref.py) | Cross-citation frequency table from CrossRef reference lists. |
-| [`tools/spreadsheet.py`](./tools/spreadsheet.py) | Build/rebuild the `.xlsx` from accumulated JSON rows (links are DOI URLs). |
+| [`tools/families.py`](./tools/families.py) | **Phase 6b.** Validate/stamp/render a theoretical-family grouping (agent proposes, you approve the definitions). |
+| [`tools/family_prompt_template.md`](./tools/family_prompt_template.md) | Two-step propose → assign prompt for the families pass. |
+| [`tools/spreadsheet.py`](./tools/spreadsheet.py) | Build/rebuild the `.xlsx` from accumulated JSON rows; auto-adds `Cite` / `Family` columns when present. |
 | [`tools/search_prompt_template.md`](./tools/search_prompt_template.md) | Prompt template for the literature-search subagent. |
 | [`tools/download.py`](./tools/download.py) | **Opt-in (Phase 4).** Multi-source PDF downloader (arxiv → Unpaywall → EuropePMC). |
 | [`tools/reconcile_downloads.py`](./tools/reconcile_downloads.py) | **Opt-in (Phase 4).** Move user-downloaded PDFs from `~/Downloads` into the per-topic dir with the right slug. |
