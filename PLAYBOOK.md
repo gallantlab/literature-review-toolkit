@@ -25,14 +25,16 @@ boundary year is "today minus ~5 years"; adjust as the calendar advances.
 ## Output artifacts (per topic batch)
 
 1. New rows appended to `<spreadsheet>.xlsx` with columns:
-   `Topic | Ref# | APA reference | Link | Summary | Tag | Cite (OpenAlex) |
+   `Topic | Ref# | APA reference | Link | Summary | Tag | Family | Cite (OpenAlex) |
    Cite (S2) | PDF (local) | Xref`.
-   `Link` is always the DOI URL (`https://doi.org/<doi>`). The two `Cite`
-   columns are auto-added by `spreadsheet.py` whenever rows carry citation
-   counts (Phase 5b).
+   `Link` is always the DOI URL (`https://doi.org/<doi>`). `Family` (Phase 6b)
+   and the two `Cite` columns (Phase 5b) are auto-added by `spreadsheet.py`
+   whenever rows carry them.
 2. `citation_counts.json` — per-paper OpenAlex + Semantic Scholar counts (Phase 5b)
-3. Cross-reference index at `xref_<topic_slug>.json` (after Phase 6)
-3. **Only if Phase 4 was opted into:**
+3. `families.json` + `families.md`, and `<topic>_families.{html,svg,png,pdf}` —
+   the theoretical grouping and its interactive figure (Phase 6b, optional)
+4. Cross-reference index at `xref_<topic_slug>.json` (after Phase 6)
+5. **Only if Phase 4 was opted into:**
    - PDFs at `papers/<topic_slug>/<paper_slug>.pdf`
    - Browser-helper page `papers/<topic_slug>/_download_helper.html` for
      paywalled / bot-blocked papers

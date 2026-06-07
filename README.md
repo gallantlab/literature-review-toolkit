@@ -56,6 +56,7 @@ the source of truth and the `.xlsx` is the rendered output.
 │   ├── rows.json                      (everything the spreadsheet renders from)
 │   ├── citation_counts.json           (Phase 5b: OpenAlex + S2 counts, cached)
 │   ├── families.json / families.md    (Phase 6b: theoretical grouping, if run)
+│   ├── visual_cerebellum_families.html (Phase 6b: interactive figure; + .svg/.png/.pdf)
 │   ├── xref_visual_cerebellum.json    (cross-citation frequency table)
 │   ├── xref_picks.json                (the green-tier picks from xref)
 │   └── xref_meta.json                 (CrossRef metadata for xref picks)
@@ -148,6 +149,9 @@ python3 ../tools/verify.py --citations agent_out.json --out verify_report.json
 # Phase 5: build the xlsx from your accumulated rows JSON.
 python3 ../tools/spreadsheet.py --rows rows.json --out my_topic_bibliography.xlsx
 
+# Phase 5b: citation counts; attach to rows (cite_openalex/cite_s2), rerun spreadsheet.py.
+python3 ../tools/citations.py --rows rows.json --out citation_counts.json
+
 # Phase 6: cross-citation pass.
 python3 ../tools/xref.py --papers verified.json \
                          --exclude existing_dois.json \
@@ -156,6 +160,11 @@ python3 ../tools/xref.py --papers verified.json \
 
 # Pick green-tier additions from xref_my_topic.json, repeat Phases 3+5
 # for that batch (append to rows.json, rerun spreadsheet.py).
+
+# Phase 6b (optional): theoretical families + interactive HTML figure.
+python3 ../tools/families.py --rows rows.json --assign families_input.json --out families.json
+python3 ../tools/families_figure.py --rows rows.json --families families.json \
+                                    --out-prefix my_topic_families --title "My topic — families"
 
 # --- OPTIONAL: Phase 4 (PDF download) ---
 # Only run if you've decided to grab PDFs. Default workflow skips this.

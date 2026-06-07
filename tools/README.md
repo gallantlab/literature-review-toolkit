@@ -165,6 +165,9 @@ python3 tools/verify.py --citations agent_output_to_verify.json --out verify_rep
 # Phase 5: build the spreadsheet
 python3 tools/spreadsheet.py --rows accumulated_rows.json --out bibliography.xlsx
 
+# Phase 5b: citation counts (attach to rows as cite_openalex/cite_s2, rerun spreadsheet)
+python3 tools/citations.py --rows accumulated_rows.json --out citation_counts.json
+
 # Phase 6: cross-citation analysis
 python3 tools/xref.py --papers all_papers_with_dois.json \
                       --exclude existing_spreadsheet_dois.json \
@@ -172,6 +175,11 @@ python3 tools/xref.py --papers all_papers_with_dois.json \
                       --min-cites 4 --resolve-unknown
 
 # ... pick from xref_$TOPIC.json, write summaries, repeat 3+5 ...
+
+# Phase 6b (optional): theoretical families (agent proposes, user approves) + figure
+python3 tools/families.py --rows accumulated_rows.json --assign families_input.json --out families.json
+python3 tools/families_figure.py --rows accumulated_rows.json --families families.json \
+                                 --out-prefix ${TOPIC}_families --title "$TOPIC — families"
 
 # --- OPTIONAL: Phase 4 (PDF download), only if user has asked for PDFs ---
 # python3 tools/download.py --papers verified_papers.json \
