@@ -272,6 +272,45 @@ unwieldy; less and you've under-mined.
 PDF download, append to spreadsheet (with the green color and Xref column
 populated).
 
+### Phase 6b — Thematic families (OPTIONAL)
+
+Group the finished bibliography into a few **theoretical families** — a
+conceptual axis *orthogonal to the Topic column* (Topic captures method/sub-area;
+families capture what each paper is fundamentally *for*). Adds a `Family` column
+and a `families.md` (grouped tables + a family×topic cross-tab). Run after the
+bibliography is assembled, verified, and counted.
+
+This phase has **two judgment gates with a human checkpoint between them**; the
+rest is mechanical, owned by `tools/families.py`:
+
+1. **Propose** (agent, reading the corpus via `tools/families.py --digest`):
+   propose ~3-8 families, each `{key, name, claim, lineage}`, and state the one
+   organizing principle. The hard constraint: families must cut *across* the
+   Topic lanes — a good family unites textually-dissimilar papers and splits
+   similar ones. **Do NOT cluster embeddings** to make families; that yields
+   surface-similarity groups, not theoretical ones. Use the prompt in
+   `tools/family_prompt_template.md`.
+2. **Confirm** — show the user *just the ~6 family definitions* for approval/edit.
+   This is the cheap, high-leverage checkpoint: iterating on six definitions is
+   free; redoing the assignment is not.
+3. **Assign** — against the frozen spec, assign every paper to one family
+   (dominant commitment). Assign in batches for large corpora; never one rushed
+   250-paper pass. Write `families_input.json`
+   (`{principle, families, assignments:{ref:key}}`).
+4. **Validate + render:**
+   ```bash
+   python3 tools/families.py --rows rows.json --assign families_input.json \
+           --out families.json
+   ```
+   It enforces exhaustive / exclusive / balanced (fails loud otherwise), stamps
+   `family` onto rows.json, writes `families.json` (the reproducible cache, like
+   `citation_counts.json`) + `families.md`, and `spreadsheet.py` auto-adds the
+   `Family` column on the next rebuild. Re-run only when the taxonomy changes.
+
+**The lineage/taxonomy FIGURE is a separate, bespoke step** — node selection and
+the cross-family convergence arrows are editorial, so hand-curate it with the
+user (the third human checkpoint). Don't expect a good figure auto-generated.
+
 ### Phase 7 — Hand off
 
 Tell the user:
@@ -381,6 +420,7 @@ outputs JSON/files. Run `python3 tools/<script>.py --help` for flags.
 |--------|---------|
 | `tools/verify.py` | Verify a list of citations via PMC/PubMed/CrossRef. Reports mismatches. |
 | `tools/citations.py` | Phase 5b. Fetch per-paper citation counts from OpenAlex (primary) + Semantic Scholar (secondary) by DOI. Google Scholar is not usable (no API / CAPTCHA). |
+| `tools/families.py` | Phase 6b. Validate an (agent-proposed, human-approved) family taxonomy, stamp `family` onto rows, emit `families.json` + `families.md`. `--digest` prints a corpus digest for the proposal step. |
 | `tools/xref.py` | Build cross-citation index from a list of (slug, doi) tuples via CrossRef. |
 | `tools/spreadsheet.py` | Build/rebuild xlsx from a JSON of accumulated rows (DOI URLs as Link). |
 | `tools/search_prompt_template.md` | Prompt template for the literature-search subagent. |
@@ -408,6 +448,8 @@ not a framework — they're scaffolding to keep the LLM judgment work fast.
 8. Phase 5b: citation counts (tools/citations.py); attach to rows, rebuild.
 9. Phase 6: cross-citation pass (tools/xref.py); verify and append xref
    batch via Phases 3 + 5 again.
+9b. Phase 6b (OPTIONAL): thematic families — propose → confirm with user →
+    assign → tools/families.py validates/stamps/renders. Figure is bespoke.
 9. Phase 7: report to user.
 10. Phase 4 (PDF download) is OPTIONAL. Only run if the user explicitly
     asks for PDFs.

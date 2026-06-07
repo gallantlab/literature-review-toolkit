@@ -71,6 +71,26 @@ python3 tools/citations.py --rows rows.json --out citation_counts.json \
 Attach the counts to rows as `cite_openalex` / `cite_s2`, then rebuild — the
 spreadsheet auto-adds the two `Cite` columns.
 
+## `families.py` — thematic families (Phase 6b)
+
+Groups the finished bibliography into a few theoretical families (a conceptual
+axis orthogonal to the Topic column). The *carving* is judgment: an agent
+proposes ~3-8 families and assigns every paper, with a **human checkpoint on the
+family definitions** (see `family_prompt_template.md`). This tool owns only the
+deterministic half — it validates the assignment (exhaustive / exclusive /
+balanced; fails loud), stamps `family` onto rows, and writes `families.json`
+(reproducible cache) + `families.md` (grouped tables + family×topic cross-tab).
+`spreadsheet.py` then auto-adds the `Family` column. Don't cluster embeddings to
+make families — good theoretical families cut across textual similarity.
+
+```
+python3 tools/families.py --digest --rows rows.json          # corpus digest for the proposal
+python3 tools/families.py --rows rows.json --assign families_input.json --out families.json
+```
+
+`families_input.json`: `{principle, families:[{key,name,claim,lineage}],
+assignments:{ref:key}}`. The lineage **figure** is a separate, bespoke step.
+
 ## `spreadsheet.py` — build the xlsx
 
 Reads a JSON of accumulated rows and writes the xlsx with the standard
