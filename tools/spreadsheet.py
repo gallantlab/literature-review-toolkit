@@ -4,6 +4,10 @@
 Base schema:
   Topic | Ref# | APA reference | Link | Summary | Tag | PDF (local) | Xref
 
+Optional columns, auto-added when the data carries them:
+  - `family` on any row -> a "Family" column after Tag (thematic grouping).
+  - citation counts -> "Cite (OpenAlex)" | "Cite (S2)" (see below).
+
 Citation columns (auto-added): if any row carries citation counts, two columns
   Cite (OpenAlex) | Cite (S2)
 are inserted after Tag. Counts come from tools/citations.py (Phase 5b); attach
@@ -80,6 +84,9 @@ def main():
             fmts[("link", src)] = fmts["link"]
             fmts[("num", src)] = fmts["num"]
 
+    # Optional thematic grouping column, auto-added when rows carry `family`.
+    has_family = any(r.get("family") for r in rows)
+
     # Column plan: (header, key, width, kind). kind in {text, link, num}.
     cols = [
         ("Topic",         "topic",   22, "text"),
@@ -89,6 +96,8 @@ def main():
         ("Summary",       "summary", 88, "text"),
         ("Tag",           "tag",     18, "text"),
     ]
+    if has_family:
+        cols.append(("Family", "family", 14, "text"))
     if has_cite:
         cols += [("Cite (OpenAlex)", "cite_openalex", 13, "num"),
                  ("Cite (S2)",       "cite_s2",       12, "num")]
