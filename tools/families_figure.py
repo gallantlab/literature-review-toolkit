@@ -24,7 +24,7 @@ OPTIONAL editorial overlay (--spec figure_spec.json), all keys optional:
 The lineage arrows/notes are editorial — curate them with the user; don't expect
 a good auto-generated set. See PLAYBOOK Phase 6b.
 """
-import argparse, html, json, os, re, shutil, subprocess
+import argparse, html, json, re, shutil, subprocess, sys
 
 PALETTE = ["#1b6ca8", "#2a9d8f", "#e76f51", "#8338ec", "#d4a017", "#6c757d",
            "#c1121f", "#177e89", "#7209b7", "#bc6c25"]
@@ -73,9 +73,12 @@ def main():
     ap.add_argument("--no-raster", action="store_true", help="skip png/pdf even if a converter exists")
     args = ap.parse_args()
 
-    rows = json.load(open(args.rows))
-    fam_spec = json.load(open(args.families))
-    spec = json.load(open(args.spec)) if args.spec else {}
+    def load(path):
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    rows = load(args.rows)
+    fam_spec = load(args.families)
+    spec = load(args.spec) if args.spec else {}
 
     fams = fam_spec["families"]
     order = spec.get("order") or [f["name"] for f in fams]
@@ -100,6 +103,10 @@ def main():
         labelled = {ref: lab for ref, lab in spec["labels"].items() if ref in papers}
     else:
         labelled = {ref: lead(p["apa"]) for ref, p in papers.items() if "★" in ref}
+
+    if not papers:
+        sys.exit("families_figure: no papers with a parseable year and a known family — "
+                 "nothing to plot (check rows.json has `family` + a (YYYY) in each apa).")
 
     # ---- geometry -----------------------------------------------------------
     W, H = 1560, max(620, 150 + 120 * len(order))
@@ -198,17 +205,26 @@ def main():
     s.append('</svg>')
     svg = "".join(s)
 
+    # `<\/` so a "</script>" inside any apa can't terminate the inline <script>
+    def js_json(o): return json.dumps(o).replace("</", "<\\/")
     doc = HTML_SHELL.replace("__TITLE__", esc(args.title)).replace("__SVG__", svg)\
-        .replace("__DATA__", json.dumps(data)).replace("__COLOR__", json.dumps(COLOR))
+        .replace("__DATA__", js_json(data)).replace("__COLOR__", js_json(COLOR))
 
     base = args.out_prefix
-    open(base + ".html", "w").write(doc)
-    open(base + ".svg", "w").write('<?xml version="1.0" encoding="UTF-8"?>\n' + svg)
+    with open(base + ".html", "w", encoding="utf-8") as f:
+        f.write(doc)
+    with open(base + ".svg", "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n' + svg)
     made = ["html", "svg"]
     conv = None if args.no_raster else (shutil.which("rsvg-convert") or shutil.which("inkscape"))
     if conv and conv.endswith("rsvg-convert"):
         for fmt, extra in (("png", ["-z", "2"]), ("pdf", [])):
             subprocess.run([conv, "-f", fmt, *extra, "-o", f"{base}.{fmt}", base + ".svg"], check=True)
+            made.append(fmt)
+    elif conv:  # inkscape — different CLI
+        for fmt in ("png", "pdf"):
+            subprocess.run([conv, base + ".svg", "--export-type=" + fmt,
+                            f"--export-filename={base}.{fmt}"], check=True)
             made.append(fmt)
     print(f"wrote {base}.{{{','.join(made)}}}  "
           f"({len(bg)} dots + {len(labelled)} labelled across {len(order)} families)")
@@ -240,16 +256,19 @@ HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><titl
 <aside id="panel"><div class="hint">Click any node to see its full reference here.</div></aside></main>
 <script>
 const DATA=__DATA__, FAMCOLOR=__COLOR__, panel=document.getElementById('panel');
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>(
+ {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function resetPanel(){document.querySelectorAll('.node.sel').forEach(n=>n.classList.remove('sel'));
  panel.innerHTML='<div class="hint">Click any node to see its full reference here.</div>';}
 function show(k){const d=DATA[k];if(!d)return;
  document.querySelectorAll('.node.sel').forEach(n=>n.classList.remove('sel'));
  const g=document.querySelector('.node[data-key="'+CSS.escape(k)+'"]');if(g)g.classList.add('sel');
- const doi=d.doi?'<a class="doi" href="'+d.doi+'" target="_blank" rel="noopener">Open paper \\u2197</a>':'<a class="doi off">no DOI</a>';
+ const url=(d.doi||'').startsWith('http')?d.doi:'';
+ const doi=url?'<a class="doi" href="'+esc(url)+'" target="_blank" rel="noopener">Open paper \\u2197</a>':'<a class="doi off">no DOI</a>';
  const c=[];if(Number.isInteger(d.oa))c.push(d.oa+' (OpenAlex)');if(Number.isInteger(d.s2))c.push(d.s2+' (S2)');
  panel.innerHTML='<button id="close" onclick="resetPanel()">\\u00d7</button>'
-  +'<div id="fam" style="background:'+FAMCOLOR[d.family]+'">'+d.family+'</div> <span id="meta">'+d.ref+' \\u00b7 '+d.topic+'</span>'
-  +'<div id="apa">'+d.apa+'</div>'+(c.length?'<div id="meta">Cited by: '+c.join(' \\u00b7 ')+'</div>':'')+doi;}
+  +'<div id="fam" style="background:'+esc(FAMCOLOR[d.family]||'#666')+'">'+esc(d.family)+'</div> <span id="meta">'+esc(d.ref)+' \\u00b7 '+esc(d.topic)+'</span>'
+  +'<div id="apa">'+esc(d.apa)+'</div>'+(c.length?'<div id="meta">Cited by: '+esc(c.join(' \\u00b7 '))+'</div>':'')+doi;}
 document.querySelectorAll('.node').forEach(g=>{g.addEventListener('click',()=>show(g.dataset.key));
  g.addEventListener('keydown',e=>{if(e.key==='Enter')show(g.dataset.key);});});
 document.querySelectorAll('.lanelabel').forEach(g=>{const f=g.dataset.fam;
