@@ -7,9 +7,10 @@ Base schema:
 Citation columns (auto-added): if any row carries citation counts, two columns
   Cite (OpenAlex) | Cite (S2)
 are inserted after Tag. Counts come from tools/citations.py (Phase 5b); attach
-them to each row as `cite_openalex` / `cite_s2` (also accepts the shorthand
-`cite_oa` / `cite_s2`). Google Scholar can't be queried at scale (no API,
-CAPTCHA) — these databases are the proxy. See PLAYBOOK.md.
+them to each row as `cite_openalex` / `cite_s2` — the exact key names
+citations.py emits (`openalex` / `s2`), prefixed `cite_`. Google Scholar can't
+be queried at scale (no API, CAPTCHA) — these databases are the proxy. See
+PLAYBOOK.md.
 
 `Link` should always be a DOI URL (`https://doi.org/<doi>`). PubMed/PMC URLs
 are not used as the primary link. `PDF (local)` is empty unless Phase 4 was
@@ -36,12 +37,11 @@ import xlsxwriter
 COLORS = {"source-doc": None, "search": "#FFF7E0", "xref": "#E2F0D9"}
 
 
-def cite_val(row, *keys):
-    for k in keys:
-        v = row.get(k)
-        if isinstance(v, int):
-            return v
-    return None
+def cite_val(row, key):
+    """Citation count for a column, or None. `0` is a real count, so test type
+    (not truthiness); a bool is never a valid count."""
+    v = row.get(key)
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
 
 
 def main():
@@ -55,8 +55,7 @@ def main():
 
     # Auto-detect citation counts on any row -> add the two columns.
     has_cite = any(
-        cite_val(r, "cite_openalex", "cite_oa") is not None
-        or cite_val(r, "cite_s2") is not None
+        cite_val(r, "cite_openalex") is not None or cite_val(r, "cite_s2") is not None
         for r in rows
     )
 
@@ -91,8 +90,8 @@ def main():
         ("Tag",           "tag",     18, "text"),
     ]
     if has_cite:
-        cols += [("Cite (OpenAlex)", "_cite_oa", 13, "num"),
-                 ("Cite (S2)",       "_cite_s2", 12, "num")]
+        cols += [("Cite (OpenAlex)", "cite_openalex", 13, "num"),
+                 ("Cite (S2)",       "cite_s2",       12, "num")]
     cols += [("PDF (local)", "pdf", 14, "text"), ("Xref", "xref", 8, "text")]
 
     for c, (header, _, width, _kind) in enumerate(cols):
@@ -108,9 +107,8 @@ def main():
                 link = r.get("link", "")
                 ws.write_url(i, c, link, lf, link) if link else ws.write(i, c, "", cf)
             elif kind == "num":
-                v = (cite_val(r, "cite_openalex", "cite_oa") if key == "_cite_oa"
-                     else cite_val(r, "cite_s2"))
-                ws.write_number(i, c, v, nf) if isinstance(v, int) else ws.write(i, c, "", nf)
+                v = cite_val(r, key)
+                ws.write_number(i, c, v, nf) if v is not None else ws.write(i, c, "", nf)
             elif key == "xref":
                 x = r.get("xref")
                 ws.write(i, c, "" if x in (None, "") else str(x), cf)
