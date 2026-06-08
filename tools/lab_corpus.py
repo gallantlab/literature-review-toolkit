@@ -18,7 +18,7 @@ Output: lab_papers.json — one row per paper with ref / title / year / doi / li
 Disambiguation is the #1 correctness risk: review the list (Phase L2) and prune
 false-positives before theming.  See PLAYBOOK "Lab mode".
 """
-import argparse, json, os, re, sys, time, urllib.parse, urllib.request
+import argparse, html, json, os, re, sys, time, urllib.parse, urllib.request
 
 API = "https://api.openalex.org"
 
@@ -46,23 +46,58 @@ def unabstract(inv):
     return " ".join(w for _, w in words)
 
 
-def apa(authorships, year, title, venue):
-    """A light APA whose first comma separates the lead surname (figure parses that)."""
-    names = [a.get("author", {}).get("display_name", "") for a in authorships]
-    if names:
-        parts = names[0].split()
-        fam = parts[-1] if parts else names[0]
-        initials = " ".join(p[0] + "." for p in parts[:-1])
-        lead = f"{fam}, {initials}".strip().rstrip(",")
+def _initials(given):
+    """'Jean-Rémi' -> 'J.-R.'; 'Jack L' -> 'J. L.'"""
+    out = []
+    for tok in (given or "").replace(".", " ").split():
+        out.append("-".join(s[0].upper() + "." for s in tok.split("-") if s))
+    return " ".join(out)
+
+
+def _norm_title(title):
+    """HTML-unescape, and sentence-case a title ONLY if it's entirely uppercase
+    (some records are stored ALL CAPS). Mixed-case titles — and their genuine
+    acronyms (FFA, BOLD, fMRI) — pass through untouched."""
+    t = html.unescape((title or "").strip())
+    alpha = [c for c in t if c.isalpha()]
+    if alpha and all(c.isupper() for c in alpha):
+        t = re.sub(r"(^|[.:]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), t.lower())
+    return t
+
+
+def apa(authorships, year, title, venue, biblio=None):
+    """A full APA-7 reference whose first comma separates the lead surname (the
+    figure parses that). Lists all authors (>20 -> first 19 + ellipsis + last)
+    and adds volume(issue), pages from OpenAlex `biblio` when present."""
+    people = []
+    for a in authorships:
+        name = (a.get("author", {}).get("display_name") or "").split()
+        if not name:
+            continue
+        people.append(f"{name[-1]}, {_initials(' '.join(name[:-1]))}".rstrip(", ").strip())
+    if not people:
+        authors = "Anon."
+    elif len(people) == 1:
+        authors = people[0]
+    elif len(people) <= 20:
+        authors = ", ".join(people[:-1]) + ", & " + people[-1]
     else:
-        lead = "Anon"
-    etal = ", et al." if len(names) > 1 else ""
-    return f"{lead}{etal} ({year}). {title}. {venue}."
+        authors = ", ".join(people[:19]) + ", … " + people[-1]
+    s = f"{authors} ({year}). {_norm_title(title).rstrip('.')}."
+    venue = re.sub(r"\s*\([^)]*\)\s*$", "", venue or "")   # 'bioRxiv (CSHL)' -> 'bioRxiv'
+    if venue:
+        tail, b = venue, biblio or {}
+        vol, issue = b.get("volume"), b.get("issue")
+        pages = "-".join(p for p in (b.get("first_page"), b.get("last_page")) if p)
+        if vol:
+            tail += f", {vol}" + (f"({issue})" if issue else "") + (f", {pages}" if pages else "")
+        s += f" {tail}."
+    return html.unescape(s)
 
 
 def fetch_works(author_id, email, from_year, to_year):
     select = ("id,doi,title,publication_year,cited_by_count,type,topics,"
-              "primary_location,abstract_inverted_index,authorships")
+              "primary_location,abstract_inverted_index,authorships,biblio")
     filt = f"authorships.author.id:{author_id}"
     if from_year:
         filt += f",from_publication_date:{from_year}-01-01"
@@ -113,7 +148,7 @@ def main():
                 "openalex": w["id"].split("/")[-1], "doi": doi,
                 "link": f"https://doi.org/{doi}" if doi else w["id"],
                 "title": title, "year": yr, "venue": venue,
-                "apa": apa(w.get("authorships") or [], yr, title, venue),
+                "apa": apa(w.get("authorships") or [], yr, title, venue, w.get("biblio")),
                 "cite_openalex": w.get("cited_by_count"),
                 "topic": (w.get("topics") or [{}])[0].get("display_name", ""),
                 "topics": [t.get("display_name", "") for t in (w.get("topics") or [])],

@@ -23,6 +23,28 @@ PMC, then PubMed, then CrossRef, then title-search. Verdict per item: `OK`,
 `MISMATCH`, `NOT-FOUND`. **A NOT-FOUND is a real failure to chase down — never
 wave through an arXiv/conference paper as unverifiable.**
 
+## `references.py` — canonical reference builder (Phase 3f)
+
+Makes every `apa` perfect, in **both** modes. Verification proves a citation is
+real; this rebuilds its text from the verified DOI/arXiv id so it's never trusted
+from an agent's memory (topic mode) or OpenAlex's light metadata (lab mode).
+
+```
+python3 tools/references.py --rows rows.json --out rows.json --email you@inst.edu
+python3 tools/references.py --rows rows.json --audit        # gate: exit 1 on any defect
+```
+
+Per row it reads a key (`ref`/`label`), a DOI (`doi` field or `https://doi.org/`
+link) and/or an `arxiv` id, with an optional `venue` fallback. It fetches
+CrossRef or the arXiv API and emits APA-7: full author list (>20 → 19 + ellipsis
++ last), correct initials + nobiliary particles (`de Heer`), fixed casing
+(`ANDERSON`→`Anderson`), HTML-unescaped + sentence-cased all-caps titles, and a
+real venue — including preprint servers CrossRef leaves bare (`bioRxiv`,
+`PsyArXiv`, `arXiv`; arXiv's `journal_ref` is used when present). `--audit`
+fails on any defect (no author/year, `et al.`, HTML entity, truncated/empty
+venue, uppercase title); a DOI-less item (book/report) is the only non-fatal
+case — reported as a manual ref to check by hand.
+
 ## `download.py` — multi-source PDF downloader **(opt-in, Phase 4)**
 
 PDF acquisition is **not** part of the default workflow. Run only when the

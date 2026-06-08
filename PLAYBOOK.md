@@ -31,7 +31,7 @@ same way. There are no mode-specific shortcuts.
 | **Topic** | a query/topic | "lit review on X", "extend the bibliography for Y" | Phase 1 (scope) → 2 (search) | topic name + 1-paragraph definition, source doc if any, target spreadsheet path, tier criteria |
 | **Lab** | a lab's publications | "review lab Z's work", "how has Z's research evolved" | Phase L1–L3 (ingest corpus → derive themes) → **L4c** | the lab/author ids, the inclusion filter (e.g. human-only), target paths |
 
-Both then converge on the shared pipeline: **Phase 3 verify → 5 spreadsheet →
+Both then converge on the shared pipeline: **Phase 3 verify → 3f canonicalize refs → 5 spreadsheet →
 5b citation counts → 6 cross-citation → 6b families → 7 hand-off.** Lab mode's
 outward/contextualize layer (**L4c**) is not a lighter pass — it *runs the
 topic-mode front-end (Phases 2–6) once per theme*, with the identical
@@ -133,6 +133,30 @@ Common fabrication patterns to flag:
 - Conclusion that is the OPPOSITE of the paper's actual finding.
 - bioRxiv DOIs not matching the `10.1101/...` pattern.
 - arxiv preprint IDs that don't resolve.
+
+### Phase 3f — Canonicalize EVERY reference (`tools/references.py`)
+
+Verification (3a–3e) confirms a citation is *real*; this makes its `apa` string
+*perfect*. **Never ship a reference typed from an agent's memory (topic mode) or
+OpenAlex's light metadata (lab mode)** — rebuild every `apa` from the verified
+DOI against the authoritative source. `references.py` is the single canonical
+formatter and a hard gate, used identically in BOTH modes:
+
+```
+python3 tools/references.py --rows rows.json --out rows.json   # rebuild + report
+python3 tools/references.py --rows rows.json --audit           # gate: exit 1 on any defect
+```
+
+It pulls CrossRef (DOIs) or the arXiv API (arXiv ids / `10.48550/arXiv.*` DOIs),
+then builds APA-7 with: full author list (>20 → 19 + ellipsis + last), correct
+initials and nobiliary particles (`de Heer`, `Dupré la Tour`), fixed name casing
+(`ANDERSON`→`Anderson`, `zhang`→`Zhang`), HTML-unescaped + sentence-cased
+all-caps titles, and a real venue — including preprint servers CrossRef leaves
+bare (`bioRxiv`, `PsyArXiv`, `arXiv`). The `--audit` gate fails the build on any
+defect (missing author/year, `et al.`, HTML entity, truncated/empty venue,
+uppercase title). The ONLY allowed non-fatal case is a DOI-less item (book,
+report, old proceedings) — it keeps its hand-written `apa` and is reported as a
+manual ref; verify those by hand. **Run the gate before every deliverable.**
 
 ### Phase 4 (OPTIONAL) — Download PDFs
 
@@ -546,7 +570,8 @@ outputs JSON/files. Run `python3 tools/<script>.py --help` for flags.
 
 | Script | Purpose |
 |--------|---------|
-| `tools/verify.py` | Verify a list of citations via PMC/PubMed/CrossRef. Reports mismatches. |
+| `tools/verify.py` | Verify a list of citations via PMC/PubMed/CrossRef + arXiv. Reports mismatches. |
+| `tools/references.py` | Phase 3f. Rebuild every `apa` from the verified DOI (CrossRef) or arXiv id into canonical APA-7; `--audit` gates the build (exit 1 on any defect). Both modes. |
 | `tools/citations.py` | Phase 5b. Fetch per-paper citation counts from OpenAlex (primary) + Semantic Scholar (secondary) by DOI. Google Scholar is not usable (no API / CAPTCHA). |
 | `tools/families.py` | Phase 6b. Validate an (agent-proposed, human-approved) family taxonomy, stamp `family` onto rows, emit `families.json` + `families.md`. `--digest` prints a corpus digest for the proposal step. |
 | `tools/families_figure.py` | Phase 6b. Interactive HTML lineage figure from `rows.json` + `families.json` (+ standalone svg/png/pdf). Optional `--spec` for editorial labels/arrows/notes. Replaces the old static figure. |

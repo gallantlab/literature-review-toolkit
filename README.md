@@ -1,9 +1,10 @@
 # literature-review-toolkit
 
 Scaffolding to drive a Claude (or other LLM) agent through a structured
-literature review for an academic topic — search, verify, count citations,
-cross-reference, and assemble a single annotated `.xlsx` bibliography, then
-(optionally) group it into theoretical families. PDF acquisition is opt-in.
+literature review — search, verify, rebuild every reference into canonical form,
+count citations, cross-reference, and assemble a single annotated `.xlsx`
+bibliography, then (optionally) group it into theoretical families with an
+interactive lineage figure. PDF acquisition is opt-in.
 
 The agent does the judgment work; these scripts handle the API calls,
 verification, and bookkeeping that keep the agent honest.
@@ -31,14 +32,18 @@ steps have a ground truth.
 | 3 | **Figure** *(optional)* — you iterate on a lineage/taxonomy figure with the agent (bespoke, not auto-generated) | — |
 
 In between, the mechanical steps are guarded, not reviewed: **every citation is
-verified** against PMC/PubMed/CrossRef (search agents fabricate roughly 1 in 4 —
-wrong first authors, inverted findings, invented DOIs), **citation counts** are
-fetched and schema-checked, dedup and cross-citation mining run, and the
+verified** against PMC/PubMed/CrossRef/arXiv (search agents fabricate roughly 1
+in 4 — wrong first authors, inverted findings, invented DOIs), **every reference
+is rebuilt** from its verified DOI into canonical APA-7 with a hard audit gate
+(no agent-typed or OpenAlex-typed reference text is trusted), **citation counts**
+are fetched and schema-checked, dedup and cross-citation mining run, and the
 spreadsheet is rebuilt from JSON each time.
 
-**Phases at a glance:** 1 scope · 2 search · 3 verify *(critical)* · 4 PDFs
-*(opt-in)* · 5 spreadsheet · 5b citation counts · 6 cross-citation · 6b families
-*(opt)* · 7 hand-off. Full detail in [`PLAYBOOK.md`](./PLAYBOOK.md).
+**Phases at a glance:** 1 scope · 2 search · 3 verify *(critical)* · 3f
+canonicalize refs · 4 PDFs *(opt-in)* · 5 spreadsheet · 5b citation counts · 6
+cross-citation · 6b families *(opt)* · 7 hand-off. **Lab mode** swaps phases 1–2
+for ingest-corpus → derive-themes, then converges on this same pipeline. Full
+detail in [`PLAYBOOK.md`](./PLAYBOOK.md).
 
 ## What you get out
 
@@ -153,6 +158,11 @@ mkdir my_topic && cd my_topic
 # Phase 3: verify everything before trusting any of it.
 python3 ../tools/verify.py --citations agent_out.json --out verify_report.json
 
+# Phase 3f: rebuild every reference into canonical APA-7 from the verified DOI,
+#           then gate (exit 1 on any imperfect ref). Both modes.
+python3 ../tools/references.py --rows rows.json --out rows.json
+python3 ../tools/references.py --rows rows.json --audit
+
 # Phase 5: build the xlsx from your accumulated rows JSON.
 python3 ../tools/spreadsheet.py --rows rows.json --out my_topic_bibliography.xlsx
 
@@ -221,6 +231,7 @@ Earlier project, same workflow:
 | Script | Purpose |
 |---|---|
 | [`tools/verify.py`](./tools/verify.py) | Verify citations via PMC/PubMed/CrossRef + the arXiv API (preprints/conference papers get a real verdict, not a misleading NOT-FOUND); catches ~25% search-agent fabrications. |
+| [`tools/references.py`](./tools/references.py) | **Phase 3f.** Rebuild every reference from its verified DOI/arXiv id into canonical APA-7 (full authors, particles, casing, real venue incl. bioRxiv/PsyArXiv); `--audit` is a hard gate. Used in **both** topic and lab mode so refs are never imperfect. |
 | [`tools/citations.py`](./tools/citations.py) | **Phase 5b.** Per-paper citation counts from OpenAlex (primary) + Semantic Scholar by DOI. Google Scholar isn't queryable (no API / CAPTCHA). |
 | [`tools/xref.py`](./tools/xref.py) | Cross-citation frequency table from CrossRef reference lists. |
 | [`tools/lab_corpus.py`](./tools/lab_corpus.py) | **Lab mode (L1).** Ingest a lab's full publication corpus from OpenAlex by author id. Enrich abstracts before classifying — OpenAlex metadata alone is insufficient. |

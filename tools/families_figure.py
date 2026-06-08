@@ -62,6 +62,16 @@ def beeswarm(items, r=2.7, step=5.6, maxoff=52):
     return out
 
 
+def _boxes_overlap(a, b):
+    """a, b = (x0, x1, y0, y1). True if the two rectangles intersect."""
+    return not (a[1] < b[0] or a[0] > b[1] or a[3] < b[2] or a[2] > b[3])
+
+
+def _box_hits_dot(box, dx, dy, margin=11):
+    """True if a dot at (dx, dy) falls within `margin` of the label box."""
+    return box[0] - margin <= dx <= box[1] + margin and box[2] - margin <= dy <= box[3] + margin
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -113,7 +123,7 @@ def main():
                  "nothing to plot (check rows.json has `family` + a (YYYY) in each apa).")
 
     # ---- geometry -----------------------------------------------------------
-    W, H = 1560, max(620, 150 + 120 * len(order))
+    W, H = 1560, max(660, 150 + 140 * len(order))
     PADL, PADR, PADT, PADB = 270, 60, 112, 56
     plotW, laneH = W - PADL - PADR, (H - PADT - PADB) / len(order)
     yrs = [p["year"] for p in papers.values()]
@@ -143,26 +153,39 @@ def main():
         bigs = [ref for ref, p in papers.items() if p["family"] == name and ref in big]
         if emph:
             for x, off, ref in beeswarm([(xf(papers[r]["year"]), r) for r in bigs],
-                                        r=6, step=11, maxoff=50):
+                                        r=7, step=12, maxoff=42):
                 pos[ref] = (x, yf(name) + off)
         else:
             for r in bigs:
                 pos[r] = (xf(papers[r]["year"]), yf(name))
 
-    # greedy multi-tier label placement so labels don't overlap within a lane
-    TIERS = [-17, 18, -31, 32, -45, 46, -59, 60]
-    loff = {}
+    # Greedy multi-tier label placement. A label must clear BOTH other labels and
+    # every big dot (with --emphasize-source the lane is full of big dots at
+    # beeswarm offsets, so a label placed only by x-spacing can land on a dot —
+    # e.g. "Gao 2015" under the Huth 2015 circle). Offsets are measured from each
+    # label's own dot; tiers fan outward so labels migrate clear of the dot band.
+    TIERS = [-18, 19, -33, 34, -49, 50, -66, 67, -84, 85, -103, 104]
+    big_dots = [pos[r] for r in big]              # (x, y) of every big circle
+    loff, placed_lbl = {}, []                     # placed_lbl: label bounding boxes
     for name in order:
-        lane = sorted(((ref, pos[ref][0]) for ref in labelled if papers[ref]["family"] == name),
-                      key=lambda t: t[1])
-        right = {o: -1e9 for o in TIERS}
-        for ref, x in lane:
+        lane = sorted(((ref, pos[ref]) for ref in labelled if papers[ref]["family"] == name),
+                      key=lambda t: t[1][0])
+        for ref, (x, dy) in lane:
             w = len(labelled[ref]) * 6.2 + 8
+            pick = TIERS[-1]
             for o in TIERS:
-                if x - w / 2 > right[o] + 5:
-                    loff[ref] = o; right[o] = x + w / 2; break
-            else:
-                loff[ref] = TIERS[-1]
+                ly = dy + o
+                box = (x - w / 2, x + w / 2, ly - 8, ly + 6)
+                if any(_boxes_overlap(box, b) for b in placed_lbl):
+                    continue
+                if any(not (abs(bx - x) < 0.5 and abs(by - dy) < 0.5)  # ignore own dot
+                       and _box_hits_dot(box, bx, by) for bx, by in big_dots):
+                    continue
+                pick = o
+                break
+            loff[ref] = pick
+            ly = dy + pick
+            placed_lbl.append((x - w / 2, x + w / 2, ly - 8, ly + 6))
 
     # ---- SVG ----------------------------------------------------------------
     s = [f'<svg id="fig" viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" '
@@ -204,7 +227,7 @@ def main():
     for ref in bg:
         p = papers[ref]; x, y = pos[ref]; data[ref] = p
         s.append(f'<g class="node bg" data-key="{ref}" tabindex="0"><title>{esc(p["apa"])}</title>'
-                 f'<circle cx="{x:.0f}" cy="{y:.0f}" r="2.7" fill="{COLOR[p["family"]]}"/></g>')
+                 f'<circle cx="{x:.0f}" cy="{y:.0f}" r="2.4" fill="{COLOR[p["family"]]}"/></g>')
     # editorial arrows + notes (optional)
     for a in spec.get("arrows", []):
         if a.get("from") in pos and a.get("to") in pos:
@@ -224,7 +247,7 @@ def main():
     # ones also get a leader line + text label
     for ref in sorted(big, key=lambda r: papers[r]["year"]):
         p = papers[ref]; x, y = pos[ref]; data[ref] = p
-        rr = 7 if ref in labelled else 6
+        rr = 8.5 if ref in labelled else 7
         leader = label = ""
         if ref in labelled:
             off = loff[ref]
@@ -282,9 +305,9 @@ HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><titl
  main{flex:1;display:flex;min-height:0;}
  #figwrap{flex:1;min-width:0;overflow:auto;padding:6px 10px;}
  #fig{width:100%;height:auto;display:block;}
- .node{cursor:pointer;} .node.bg circle{opacity:.45;}
+ .node{cursor:pointer;} .node.bg circle{opacity:.38;}
  .node.bg:hover circle,.node.bg:focus circle{r:6;opacity:1;}
- .node.spine:hover circle,.node.spine:focus circle{r:9.5;}
+ .node.spine:hover circle,.node.spine:focus circle{r:11;}
  .node:hover .lbl{fill:#000;} .node.sel circle{stroke:#000;stroke-width:2.6px;opacity:1;}
  .dim{opacity:.1;transition:opacity .15s;}
  aside{width:340px;border-left:1px solid #e5e5e5;padding:16px 18px;overflow:auto;font-size:13.5px;line-height:1.45;}
