@@ -24,7 +24,7 @@ OPTIONAL editorial overlay (--spec figure_spec.json), all keys optional:
 The lineage arrows/notes are editorial — curate them with the user; don't expect
 a good auto-generated set. See PLAYBOOK Phase 6b.
 """
-import argparse, html, json, re, shutil, subprocess, sys
+import argparse, base64, html, json, os, re, shutil, subprocess, sys
 
 PALETTE = ["#1b6ca8", "#2a9d8f", "#e76f51", "#8338ec", "#d4a017", "#6c757d",
            "#c1121f", "#177e89", "#7209b7", "#bc6c25"]
@@ -71,6 +71,10 @@ def main():
     ap.add_argument("--title", default="Theoretical families")
     ap.add_argument("--spec", help="optional editorial overlay JSON (labels/arrows/notes)")
     ap.add_argument("--no-raster", action="store_true", help="skip png/pdf even if a converter exists")
+    ap.add_argument("--min-year", type=int, help="clamp the x-axis start; older papers pin to the left edge")
+    ap.add_argument("--xlsx", help="embed this .xlsx and add a download button to the figure")
+    ap.add_argument("--emphasize-source", help="render rows with this source as big circles "
+                    "(e.g. 'lab' so a lab's own papers stand out from the field)")
     args = ap.parse_args()
 
     def load(path):
@@ -95,7 +99,7 @@ def main():
         if y and fam in LANE:
             papers[r["ref"]] = {"ref": r["ref"], "family": fam, "year": y,
                                 "apa": r.get("apa", ""), "doi": r.get("link", ""),
-                                "topic": r.get("topic", ""),
+                                "topic": r.get("topic", ""), "source": r.get("source", ""),
                                 "oa": r.get("cite_openalex"), "s2": r.get("cite_s2")}
 
     # which papers get labels: spec.labels, else the milestones (★ in ref)
@@ -113,21 +117,37 @@ def main():
     PADL, PADR, PADT, PADB = 270, 60, 112, 56
     plotW, laneH = W - PADL - PADR, (H - PADT - PADB) / len(order)
     yrs = [p["year"] for p in papers.values()]
-    YMIN, YMAX = min(yrs) - 3, max(yrs) + 2
+    YMIN = args.min_year if args.min_year else min(yrs) - 3
+    YMAX = max(yrs) + 2
+    n_pre = sum(1 for y in yrs if y < YMIN)   # older papers pinned to the axis (y-axis)
 
-    def xf(y): return PADL + (y - YMIN) / (YMAX - YMIN) * plotW
+    def xf(y): return PADL + (max(YMIN, min(y, YMAX)) - YMIN) / (YMAX - YMIN) * plotW
     def yf(f): return PADT + (LANE[f] + 0.5) * laneH
 
-    # positions: labelled on the lane centre; the rest beeswarm-packed
-    pos = {}
-    for ref in labelled:
-        p = papers[ref]; pos[ref] = (xf(p["year"]), yf(p["family"]))
-    bg = []
+    # "big" = labelled milestones plus (optionally) every paper of an emphasized
+    # source — those render as big circles; everything else is a small dot.
+    emph = args.emphasize_source
+    big = set(labelled)
+    if emph:
+        big |= {ref for ref, p in papers.items() if p.get("source") == emph}
+
+    pos, bg = {}, []
+    # small (non-big) -> beeswarm background
     for name in order:
         items = [(xf(p["year"]), ref) for ref, p in papers.items()
-                 if p["family"] == name and ref not in labelled]
+                 if p["family"] == name and ref not in big]
         for x, off, ref in beeswarm(items):
             pos[ref] = (x, yf(name) + off); bg.append(ref)
+    # big -> lane centre (default spine) or a wider beeswarm when emphasizing a source
+    for name in order:
+        bigs = [ref for ref, p in papers.items() if p["family"] == name and ref in big]
+        if emph:
+            for x, off, ref in beeswarm([(xf(papers[r]["year"]), r) for r in bigs],
+                                        r=6, step=11, maxoff=50):
+                pos[ref] = (x, yf(name) + off)
+        else:
+            for r in bigs:
+                pos[r] = (xf(papers[r]["year"]), yf(name))
 
     # greedy multi-tier label placement so labels don't overlap within a lane
     TIERS = [-17, 18, -31, 32, -45, 46, -59, 60]
@@ -160,9 +180,14 @@ def main():
                  f'fill="{c}" opacity="0.05"/>')
         s.append(f'<line x1="{PADL}" y1="{y:.0f}" x2="{W-PADR}" y2="{y:.0f}" stroke="{c}" opacity="0.25"/>')
         s.append(f'<g class="lanelabel" data-fam="{esc(name)}">')
-        s.append(f'<text x="10" y="{top+24:.0f}" font-size="16" font-weight="bold" fill="{c}">{esc(name)}</text>')
-        for j, ln in enumerate(wrap(claim[name], 40)):
-            s.append(f'<text x="10" y="{top+42+j*13:.0f}" font-size="10" fill="{c}" opacity="0.85">{esc(ln)}</text>')
+        ly = top + 20
+        for ln in wrap(name, 24):                       # wrap long theme names onto multiple lines
+            s.append(f'<text x="10" y="{ly:.0f}" font-size="14" font-weight="bold" fill="{c}">{esc(ln)}</text>')
+            ly += 15
+        ly += 4
+        for ln in wrap(claim[name], 42):
+            s.append(f'<text x="10" y="{ly:.0f}" font-size="9.5" fill="{c}" opacity="0.85">{esc(ln)}</text>')
+            ly += 12
         s.append('</g>')
 
     # x axis
@@ -170,6 +195,9 @@ def main():
     ticks = [t for t in range(((YMIN + 4) // 10) * 10, YMAX + 1, 10 if span > 40 else 5)]
     for t in ticks:
         s.append(f'<text x="{xf(t):.0f}" y="{H-PADB+22:.0f}" text-anchor="middle" font-size="12" fill="#555">{t}</text>')
+    if n_pre:   # note the older papers pinned to the left edge (the y-axis)
+        s.append(f'<text x="{PADL:.0f}" y="{H-PADB+34:.0f}" text-anchor="middle" font-size="9.5" '
+                 f'fill="#999">{n_pre} pre-{YMIN}</text>')
 
     data = {}
     # background dots
@@ -192,22 +220,38 @@ def main():
             x, y = pos[nt["at"]]
             s.append(f'<text x="{x:.0f}" y="{y-12:.0f}" text-anchor="middle" font-size="10.5" '
                      f'fill="{nt.get("color","#333")}">{esc(nt["text"])}</text>')
-    # labelled spine nodes (on top), with leader lines
-    for ref, label in labelled.items():
-        p = papers[ref]; x, y = pos[ref]; off = loff[ref]; data[ref] = p
-        ly1, ly2 = (y - 7, y + off + 1) if off < 0 else (y + 7, y + off - 9)
-        s.append(f'<line x1="{x:.0f}" y1="{ly1:.0f}" x2="{x:.0f}" y2="{ly2:.0f}" '
-                 f'stroke="{COLOR[p["family"]]}" stroke-width="1" opacity="0.65"/>')
-        s.append(f'<g class="node spine" data-key="{ref}" tabindex="0"><title>{esc(p["apa"])}</title>'
-                 f'<circle cx="{x:.0f}" cy="{y:.0f}" r="7" fill="{COLOR[p["family"]]}" stroke="#fff" stroke-width="1.2"/>'
-                 f'<text class="lbl" x="{x:.0f}" y="{y+off:.0f}" text-anchor="middle" font-size="11" '
-                 f'font-weight="bold" fill="#222">{esc(label)}</text></g>')
+    # big nodes (labelled milestones + any emphasized source) on top; labelled
+    # ones also get a leader line + text label
+    for ref in sorted(big, key=lambda r: papers[r]["year"]):
+        p = papers[ref]; x, y = pos[ref]; data[ref] = p
+        rr = 7 if ref in labelled else 6
+        leader = label = ""
+        if ref in labelled:
+            off = loff[ref]
+            ly1, ly2 = (y - 7, y + off + 1) if off < 0 else (y + 7, y + off - 9)
+            leader = (f'<line x1="{x:.0f}" y1="{ly1:.0f}" x2="{x:.0f}" y2="{ly2:.0f}" '
+                      f'stroke="{COLOR[p["family"]]}" stroke-width="1" opacity="0.65"/>')
+            label = (f'<text class="lbl" x="{x:.0f}" y="{y+off:.0f}" text-anchor="middle" '
+                     f'font-size="11" font-weight="bold" fill="#222">{esc(labelled[ref])}</text>')
+        s.append(f'{leader}<g class="node spine" data-key="{ref}" tabindex="0">'
+                 f'<title>{esc(p["apa"])}</title>'
+                 f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{rr}" fill="{COLOR[p["family"]]}" '
+                 f'stroke="#fff" stroke-width="1.2"/>{label}</g>')
     s.append('</svg>')
     svg = "".join(s)
+
+    # optional embedded xlsx download button (base64 data URI -> works offline)
+    xlsx_btn = ""
+    if args.xlsx and os.path.exists(args.xlsx):
+        b64 = base64.b64encode(open(args.xlsx, "rb").read()).decode()
+        xlsx_btn = (f'<a class="dl" download="{esc(os.path.basename(args.xlsx))}" '
+                    f'href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;'
+                    f'base64,{b64}">⬇ Download table (.xlsx)</a>')
 
     # `<\/` so a "</script>" inside any apa can't terminate the inline <script>
     def js_json(o): return json.dumps(o).replace("</", "<\\/")
     doc = HTML_SHELL.replace("__TITLE__", esc(args.title)).replace("__SVG__", svg)\
+        .replace("__XLSXBTN__", xlsx_btn)\
         .replace("__DATA__", js_json(data)).replace("__COLOR__", js_json(COLOR))
 
     base = args.out_prefix
@@ -227,7 +271,7 @@ def main():
                             f"--export-filename={base}.{fmt}"], check=True)
             made.append(fmt)
     print(f"wrote {base}.{{{','.join(made)}}}  "
-          f"({len(bg)} dots + {len(labelled)} labelled across {len(order)} families)")
+          f"({len(bg)} dots + {len(big)} big ({len(labelled)} labelled) across {len(order)} families)")
 
 
 HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>__TITLE__</title>
@@ -249,8 +293,9 @@ HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><titl
  a.doi{display:inline-block;margin-top:12px;padding:7px 13px;background:#1b6ca8;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;}
  a.doi.off{background:#bbb;pointer-events:none;} .hint{color:#999;}
  #close{float:right;border:none;background:#eee;border-radius:50%;width:24px;height:24px;font-size:16px;cursor:pointer;color:#444;}
+ a.dl{float:right;margin-left:12px;padding:5px 11px;background:#217346;color:#fff;border-radius:6px;text-decoration:none;font-size:12.5px;}
 </style></head><body>
-<header><div class="sub">Hover a node for its full reference; click it for the citation + DOI.
+<header>__XLSXBTN__<div class="sub">Hover a node for its full reference; click it for the citation + DOI.
  Hover a family's name at left to spotlight its lineage.</div></header>
 <main><div id="figwrap">__SVG__</div>
 <aside id="panel"><div class="hint">Click any node to see its full reference here.</div></aside></main>
