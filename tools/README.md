@@ -16,9 +16,12 @@ years, or are fabricated. Run before adding anything to the spreadsheet.
 python3 tools/verify.py --citations cits.json --out report.json --email you@inst.edu
 ```
 
-`cits.json` per item: `{label, pmcid?, pmid?, doi?, title?,
-expect_first_author?, expect_year?}`. Looks up via PMC, then PubMed, then
-CrossRef, then title-search. Verdict per item: `OK`, `MISMATCH`, `NOT-FOUND`.
+`cits.json` per item: `{label, pmcid?, pmid?, doi?, arxiv?, title?,
+expect_first_author?, expect_year?}`. arXiv papers (an `arxiv` id or a
+`10.48550/arXiv.<id>` DOI) route to the arXiv API first; otherwise looks up via
+PMC, then PubMed, then CrossRef, then title-search. Verdict per item: `OK`,
+`MISMATCH`, `NOT-FOUND`. **A NOT-FOUND is a real failure to chase down — never
+wave through an arXiv/conference paper as unverifiable.**
 
 ## `download.py` — multi-source PDF downloader **(opt-in, Phase 4)**
 

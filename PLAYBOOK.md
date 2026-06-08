@@ -372,15 +372,39 @@ and every ambiguous call**. Prune false-positives; keep what the user asked for.
 paper). The "families" are now the lab's research programs; `tools/families.py`
 validates/stamps and emits `families.json` + `families.md`.
 
-**Phase L4 — render + contextualize.**
+**Phase L4 — render the lab's trajectory.**
 - **Trajectory figure:** `tools/families_figure.py` — themes × year, the lab's
   papers as the spine (milestones labelled, the rest dots). This *is* "the lab's
   topics and how they changed over time."
 - **Bibliography:** `tools/spreadsheet.py` (lab papers get the `lab` row color).
-- **Optional outward layer:** run topic mode once per theme, seeding the search
-  with the lab's papers in that theme as the "already have" list, to pull the
-  surrounding literature (precursors, contemporaries, who-cites-whom) — this is
-  what places the lab in the broader field.
+
+**Phase L4c — contextualize: a FULL topic-mode review, once per theme.** This is
+NOT an optional or "lighter" pass. Placing the lab in its field means running the
+*entire* topic-mode workflow (Phases 2–6) for each theme — same rigor, same
+guardrails, no shortcuts. The recurring failure mode is treating this as a quick
+"context" add-on and skipping the machinery; that is exactly how a sloppy,
+half-fabricated field set sneaks into an otherwise careful review. For each
+theme:
+1. **Search (Phase 2)** with `search_prompt_template.md` — precise theme
+   definition, the lab's papers in that theme as the "already have"/exclude list,
+   two-tier criteria (foundational vs recent), a capped target (~30–40), multiple
+   query angles. One agent per theme.
+2. **Verify EVERY citation (Phase 3, non-negotiable)** with `tools/verify.py`.
+   It now resolves arXiv/conference papers against the arXiv API — so a NOT-FOUND
+   is a real failure to investigate, never "an arXiv paper, skip it." Expect ~1
+   in 4 to need a fix (fabricated author lists, wrong arXiv ids, garbage DOIs).
+3. **Citation counts (Phase 5b)** with `tools/citations.py` for every field
+   paper — bibliographies always carry counts.
+4. **Consolidate with two guarded steps (fail loud):**
+   (a) **cross-theme dedup** — a paper found by several themes must be assigned to
+   exactly ONE (`families.py` checks ref-level exclusivity but NOT duplicate
+   DOIs, so dedup by DOI yourself first); (b) **exclude the reviewed lab's own
+   DOIs** — the agents only excluded each theme's seed list, so a lab paper from
+   theme A can resurface as "field" in theme B. Assert zero field↔lab DOI
+   collisions and zero cross-theme duplicate DOIs before merging.
+5. **Merge** into the context corpus (lab rows `source=lab`, field rows
+   `source=search`) and re-run families + figure (`--emphasize-source lab` to
+   keep the lab papers as the labelled spine over the field dots).
 
 The three human checkpoints mirror topic mode: **(1) the corpus** (not a topic),
 **(2) the themes**, **(3) the figure**.
@@ -400,6 +424,24 @@ The three human checkpoints mirror topic mode: **(1) the corpus** (not a topic),
   as possible" gives sprawl with more fabrications.
 - **Give exhaustive "do not include" lists.** Without these, the agent
   re-finds papers already in the spreadsheet (3 of 44 in the first run).
+- **NOT-FOUND ≠ unverifiable ≠ fine.** arXiv/conference papers used to slip
+  through because CrossRef/PubMed can't see them, so they returned NOT-FOUND and
+  got waved through. `verify.py` now hits the arXiv API directly; a NOT-FOUND is
+  a real problem to chase, never a license to skip. (One run: a "Vo et al."
+  attention paper was actually Foster et al.; two Jain & Huth arXiv ids pointed
+  at unrelated papers — all caught only because every citation, preprint
+  included, was verified.)
+
+### On contextualizing a lab review (lab mode L4c)
+- **The outward search is a FULL topic-mode review, not a "context" add-on.**
+  Framing it as optional/lighter is precisely how a sloppy, half-fabricated field
+  set sneaks into an otherwise careful review. Run Phases 2–6 per theme with the
+  same verify/count/dedup guardrails — no shortcuts.
+- **Dedup by DOI and exclude the lab's own papers before merging.** Multiple
+  theme-agents find the same landmark (one paper turned up under three themes),
+  and an agent only excludes its own theme's seeds — so a lab paper resurfaces as
+  "field." `families.py` enforces ref-level exclusivity but not duplicate DOIs;
+  assert zero cross-theme dup DOIs and zero field↔lab collisions yourself.
 
 ### On PDF downloads
 - **PMC direct PDFs are hopeless via curl.** Cloudflare PoW challenge.

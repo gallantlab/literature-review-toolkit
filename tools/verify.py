@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
-"""Verify a list of citations against PMC / PubMed / CrossRef.
+"""Verify a list of citations against PMC / PubMed / CrossRef / arXiv.
 
 Reports: confirmed-OK, author-mismatch, year-mismatch, not-found.
+
+arXiv/conference papers are a verification BLIND SPOT for PMC/PubMed/CrossRef:
+an arXiv DOI (10.48550/arXiv.<id>) is not in CrossRef, and a PubMed title-search
+returns a plausible-but-wrong paper — so they come back NOT-FOUND or a garbage
+MISMATCH, which reads as "skip" and lets a whole class of papers (AI/ML venues,
+preprints) dodge the check. So this tool resolves arXiv DOIs and bare `arxiv`
+ids directly against the arXiv API. Never treat NOT-FOUND as "fine to add."
 
 Input format (JSON list of dicts):
 [
   {"label": "Tang2023_decoder",
    "pmcid": "PMC11304553",        # optional
    "pmid":  "37127759",           # optional
-   "doi":   "10.1038/s41593-...", # optional
+   "doi":   "10.1038/s41593-...", # optional (incl. arXiv DOIs 10.48550/arXiv.X)
+   "arxiv": "2305.18274",         # optional; bare arXiv id (else parsed from doi)
    "title": "Semantic reconstruction ...",  # optional, used as fallback search
    "expect_first_author": "Tang J",  # optional; if given, will be checked
    "expect_year": "2023"             # optional; if given, will be checked
@@ -19,7 +27,11 @@ Input format (JSON list of dicts):
 Run:  python3 verify.py < input.json > report.json
 Or:   python3 verify.py --citations input.json --out report.json
 """
-import argparse, json, os, sys, time, urllib.parse, urllib.request
+import argparse, json, os, re, sys, time, urllib.parse, urllib.request
+import xml.etree.ElementTree as ET
+
+ARXIV_DOI = re.compile(r"10\.48550/arxiv\.(.+)$", re.I)
+ATOM = "{http://www.w3.org/2005/Atom}"
 
 # Set via --email flag or LITREVIEW_EMAIL env var. NCBI/CrossRef expect a
 # contact email in the User-Agent for API politeness.
@@ -93,20 +105,63 @@ def lookup_crossref(doi):
         return None
 
 
+def lookup_arxiv(aid):
+    """Resolve a bare arXiv id (e.g. '2305.18274') via the arXiv Atom API."""
+    aid = aid.strip()
+    url = f"http://export.arxiv.org/api/query?id_list={urllib.parse.quote(aid)}"
+    req = urllib.request.Request(url, headers=HDRS)
+    with urllib.request.urlopen(req, timeout=20) as r:
+        root = ET.fromstring(r.read())
+    e = root.find(f"{ATOM}entry")
+    if e is None or e.find(f"{ATOM}title") is None:
+        return None
+    authors = [a.find(f"{ATOM}name").text for a in e.findall(f"{ATOM}author")]
+    return {
+        "title": " ".join((e.find(f"{ATOM}title").text or "").split()),
+        # arXiv 'published' is the submission date, which can precede the venue
+        # publication year by a year or two — the ±1 year tolerance below absorbs
+        # the common case; a larger gap is surfaced as a (reviewable) MISMATCH.
+        "year": (e.find(f"{ATOM}published").text or "")[:4],
+        "first_author": authors[0] if authors else "",
+        "journal": "arXiv",
+    }
+
+
+def arxiv_id_of(c):
+    """Bare arXiv id from an explicit `arxiv` field or an arXiv DOI, else None."""
+    if c.get("arxiv"):
+        return c["arxiv"].strip()
+    m = ARXIV_DOI.match((c.get("doi") or "").strip())
+    return m.group(1) if m else None
+
+
 def verify_one(c):
-    """Try lookups in priority order and return result + verdict."""
+    """Try lookups in priority order and return result + verdict.
+
+    arXiv papers route to the arXiv API FIRST (CrossRef has no arXiv DOIs and a
+    PubMed title-search mis-resolves them), so they get a real verdict instead of
+    a misleading NOT-FOUND/MISMATCH."""
     found = None
     src = None
-    for fn, key in [(lookup_pmc, "pmcid"), (lookup_pubmed_id, "pmid"), (lookup_crossref, "doi")]:
-        if c.get(key):
-            try:
-                r = fn(c[key])
-                if r:
-                    found = r
-                    src = key
-                    break
-            except Exception:
-                pass
+    aid = arxiv_id_of(c)
+    if aid:
+        try:
+            r = lookup_arxiv(aid)
+            if r:
+                found, src = r, "arxiv"
+        except Exception:
+            pass
+    if not found:
+        for fn, key in [(lookup_pmc, "pmcid"), (lookup_pubmed_id, "pmid"), (lookup_crossref, "doi")]:
+            if c.get(key):
+                try:
+                    r = fn(c[key])
+                    if r:
+                        found = r
+                        src = key
+                        break
+                except Exception:
+                    pass
     if not found and c.get("title"):
         try:
             found = lookup_pubmed_title(c["title"])

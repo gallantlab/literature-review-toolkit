@@ -220,7 +220,7 @@ Earlier project, same workflow:
 
 | Script | Purpose |
 |---|---|
-| [`tools/verify.py`](./tools/verify.py) | Verify citations via PMC/PubMed/CrossRef; catches ~25% search-agent fabrications. |
+| [`tools/verify.py`](./tools/verify.py) | Verify citations via PMC/PubMed/CrossRef + the arXiv API (preprints/conference papers get a real verdict, not a misleading NOT-FOUND); catches ~25% search-agent fabrications. |
 | [`tools/citations.py`](./tools/citations.py) | **Phase 5b.** Per-paper citation counts from OpenAlex (primary) + Semantic Scholar by DOI. Google Scholar isn't queryable (no API / CAPTCHA). |
 | [`tools/xref.py`](./tools/xref.py) | Cross-citation frequency table from CrossRef reference lists. |
 | [`tools/lab_corpus.py`](./tools/lab_corpus.py) | **Lab mode (L1).** Ingest a lab's full publication corpus from OpenAlex by author id. Enrich abstracts before classifying — OpenAlex metadata alone is insufficient. |
