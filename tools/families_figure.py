@@ -24,7 +24,7 @@ OPTIONAL editorial overlay (--spec figure_spec.json), all keys optional:
 The lineage arrows/notes are editorial — curate them with the user; don't expect
 a good auto-generated set. See PLAYBOOK Phase 6b.
 """
-import argparse, base64, html, json, os, re, shutil, subprocess, sys
+import argparse, base64, bisect, html, json, os, re, shutil, subprocess, sys
 
 PALETTE = ["#1b6ca8", "#2a9d8f", "#e76f51", "#8338ec", "#d4a017", "#6c757d",
            "#c1121f", "#177e89", "#7209b7", "#bc6c25"]
@@ -82,6 +82,10 @@ def main():
     ap.add_argument("--spec", help="optional editorial overlay JSON (labels/arrows/notes)")
     ap.add_argument("--no-raster", action="store_true", help="skip png/pdf even if a converter exists")
     ap.add_argument("--min-year", type=int, help="clamp the x-axis start; older papers pin to the left edge")
+    ap.add_argument("--time-warp", type=float, default=0.0,
+                    help="nonlinear time axis in [0,1]: blend the linear axis with the empirical CDF "
+                         "of paper years, so sparse (early) spans compress and dense (recent) spans "
+                         "expand. 0 = linear (default), 1 = full density-equalizing.")
     ap.add_argument("--xlsx", help="embed this .xlsx and add a download button to the figure")
     ap.add_argument("--emphasize-source", help="render rows with this source as big circles "
                     "(e.g. 'lab' so a lab's own papers stand out from the field)")
@@ -131,7 +135,25 @@ def main():
     YMAX = max(yrs) + 2
     n_pre = sum(1 for y in yrs if y < YMIN)   # older papers pinned to the axis (y-axis)
 
-    def xf(y): return PADL + (max(YMIN, min(y, YMAX)) - YMIN) / (YMAX - YMIN) * plotW
+    # Density-equalizing time axis (optional): blend the linear position with the
+    # empirical CDF of paper years so sparse early spans compress and dense recent
+    # spans expand. warp=0 -> linear; warp=1 -> equal #papers per unit width.
+    warp = max(0.0, min(1.0, args.time_warp))
+    yrs_sorted = sorted(yrs)
+    N = len(yrs_sorted) or 1
+
+    def _cdf(y):  # midpoint rank of year y in the paper-year distribution
+        return (bisect.bisect_left(yrs_sorted, y) + bisect.bisect_right(yrs_sorted, y)) / 2 / N
+    _c0, _cspan = _cdf(YMIN), (_cdf(YMAX) - _cdf(YMIN)) or 1
+
+    def _frac(y):
+        y = max(YMIN, min(y, YMAX))
+        lin = (y - YMIN) / (YMAX - YMIN)
+        if warp <= 0:
+            return lin
+        return (1 - warp) * lin + warp * (_cdf(y) - _c0) / _cspan
+
+    def xf(y): return PADL + _frac(y) * plotW
     def yf(f): return PADT + (LANE[f] + 0.5) * laneH
 
     # "big" = labelled milestones plus (optionally) every paper of an emphasized
@@ -213,11 +235,22 @@ def main():
             ly += 12
         s.append('</g>')
 
-    # x axis
+    # x axis. A warped axis bunches early decades, so consider 5-year candidates and
+    # greedily drop any label that would collide with the previous one (kept >=34px
+    # apart). A faint gridline marks each drawn tick so the nonlinear scale is legible.
     span = YMAX - YMIN
-    ticks = [t for t in range(((YMIN + 4) // 10) * 10, YMAX + 1, 10 if span > 40 else 5)]
-    for t in ticks:
-        s.append(f'<text x="{xf(t):.0f}" y="{H-PADB+22:.0f}" text-anchor="middle" font-size="12" fill="#555">{t}</text>')
+    step = 5 if (warp > 0 or span <= 40) else 10
+    cand = list(range(((YMIN + step - 1) // step) * step, YMAX + 1, step))
+    drawn_x = -1e9
+    for t in cand:
+        x = xf(t)
+        if x - drawn_x < 34:
+            continue
+        drawn_x = x
+        if warp > 0:
+            s.append(f'<line x1="{x:.0f}" y1="{PADT:.0f}" x2="{x:.0f}" y2="{H-PADB:.0f}" '
+                     f'stroke="#000" stroke-opacity="0.04"/>')
+        s.append(f'<text x="{x:.0f}" y="{H-PADB+22:.0f}" text-anchor="middle" font-size="12" fill="#555">{t}</text>')
     if n_pre:   # note the older papers pinned to the left edge (the y-axis)
         s.append(f'<text x="{PADL:.0f}" y="{H-PADB+34:.0f}" text-anchor="middle" font-size="9.5" '
                  f'fill="#999">{n_pre} pre-{YMIN}</text>')

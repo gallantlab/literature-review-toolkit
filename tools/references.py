@@ -24,7 +24,7 @@ OUTPUT (default): rewrites each row's `apa` (and `link` to the DOI URL), prints 
 per-defect audit. `--audit` reports without writing and exits nonzero if any row
 is imperfect — wire it into the build so a bad ref can never ship.
 """
-import argparse, html, json, os, re, sys, time, urllib.parse, urllib.request
+import argparse, html, json, os, re, socket, sys, time, urllib.error, urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
 
 ARXIV_DOI = re.compile(r"10\.48550/arxiv\.(.+)$", re.I)
@@ -40,9 +40,23 @@ def set_email(email):
     HDRS["User-Agent"] = f"litreview-toolkit/1.0 (mailto:{email})"
 
 
-def http(url):
-    with urllib.request.urlopen(urllib.request.Request(url, headers=HDRS), timeout=25) as r:
-        return r.read()
+def http(url, retries=5):
+    """GET with exponential backoff on rate-limits (429/503) and timeouts, so a
+    throttled fetch retries instead of silently keeping the old (imperfect) ref."""
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=HDRS), timeout=30) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 503) and attempt < retries - 1:
+                time.sleep(3 * 2 ** attempt)          # 3, 6, 12, 24s
+                continue
+            raise
+        except (urllib.error.URLError, TimeoutError, socket.timeout):
+            if attempt < retries - 1:
+                time.sleep(2 * 2 ** attempt)          # 2, 4, 8, 16s
+                continue
+            raise
 
 
 # ---- formatting -----------------------------------------------------------
