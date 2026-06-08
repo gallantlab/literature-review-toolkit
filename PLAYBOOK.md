@@ -6,19 +6,37 @@ classified and summarised. Each row's link is the paper's DOI URL
 (`https://doi.org/<doi>`). PDFs are NOT downloaded by default — Phase 4 is
 opt-in only.
 
-**When to use.** The user names a topic ("now do X for memory", "extend the
-bibliography for attention", or "do a fresh lit review on Y"). Existing
-spreadsheet sits at `<project>/<spreadsheet>.xlsx`. If this is a fresh start,
-ask for: (1) topic name + 1-paragraph definition, (2) source document if any,
-(3) target spreadsheet path, (4) tier criteria (default below),
-(5) contact email for NCBI/CrossRef User-Agent (export `LITREVIEW_EMAIL`
-or pass `--email` to each tool — required by `verify.py` and `xref.py`).
-Do NOT ask whether to download PDFs — the default is no. Only run Phase 4
-if the user explicitly requests it.
+**When to use.** This is ONE tool with two front-ends — **topic mode** (start
+from a query) and **lab mode** (start from a lab's corpus). They share the entire
+downstream pipeline; only the front-end differs. Decide the mode first (Phase 0),
+then gather that mode's inputs. Do NOT ask whether to download PDFs — the default
+is no; only run Phase 4 if the user explicitly requests it. Always need a contact
+email for the NCBI/CrossRef/OpenAlex User-Agent (export `LITREVIEW_EMAIL` or pass
+`--email` — required by `verify.py`, `citations.py`, `xref.py`).
 
 **Default tier criteria.** Pre-2021: only highly cited / foundational. 2022+:
 promiscuous (no citation-count gate, since they haven't had time). The
 boundary year is "today minus ~5 years"; adjust as the calendar advances.
+
+---
+
+## Phase 0 — choose the mode (do this first)
+
+One tool, two front-ends. Everything after the front-end — verify, citation
+counts, families, figure, spreadsheet — is the SAME shared machinery, run the
+same way. There are no mode-specific shortcuts.
+
+| Mode | Start from | User says… | Front-end | Then gather |
+|------|-----------|-----------|-----------|-------------|
+| **Topic** | a query/topic | "lit review on X", "extend the bibliography for Y" | Phase 1 (scope) → 2 (search) | topic name + 1-paragraph definition, source doc if any, target spreadsheet path, tier criteria |
+| **Lab** | a lab's publications | "review lab Z's work", "how has Z's research evolved" | Phase L1–L3 (ingest corpus → derive themes) → **L4c** | the lab/author ids, the inclusion filter (e.g. human-only), target paths |
+
+Both then converge on the shared pipeline: **Phase 3 verify → 5 spreadsheet →
+5b citation counts → 6 cross-citation → 6b families → 7 hand-off.** Lab mode's
+outward/contextualize layer (**L4c**) is not a lighter pass — it *runs the
+topic-mode front-end (Phases 2–6) once per theme*, with the identical
+verify/count/dedup guardrails. Topic mode is the next section; lab mode is under
+"Lab mode" below.
 
 ---
 
@@ -41,7 +59,10 @@ boundary year is "today minus ~5 years"; adjust as the calendar advances.
 
 ---
 
-## The workflow — 7 phases
+## Topic mode — the 7-phase workflow
+
+(The query-driven front-end. Lab mode reuses Phases 3–7 verbatim; see "Lab mode"
+below.)
 
 ### Phase 1 — Scope the topic
 
