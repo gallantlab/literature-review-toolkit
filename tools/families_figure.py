@@ -114,6 +114,7 @@ def main():
             papers[r["ref"]] = {"ref": r["ref"], "family": fam, "year": y,
                                 "apa": r.get("apa", ""), "doi": r.get("link", ""),
                                 "topic": r.get("topic", ""), "source": r.get("source", ""),
+                                "summary": r.get("summary", ""),
                                 "oa": r.get("cite_openalex"), "s2": r.get("cite_s2")}
 
     # which papers get labels: spec.labels, else the milestones (★ in ref)
@@ -260,6 +261,7 @@ def main():
     for ref in bg:
         p = papers[ref]; x, y = pos[ref]; data[ref] = p
         s.append(f'<g class="node bg" data-key="{ref}" tabindex="0"><title>{esc(p["apa"])}</title>'
+                 f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="9" fill="none" pointer-events="all"/>'
                  f'<circle cx="{x:.0f}" cy="{y:.0f}" r="2.4" fill="{COLOR[p["family"]]}"/></g>')
     # editorial arrows + notes (optional)
     for a in spec.get("arrows", []):
@@ -291,6 +293,7 @@ def main():
                      f'font-size="11" font-weight="bold" fill="#222">{esc(labelled[ref])}</text>')
         s.append(f'{leader}<g class="node spine" data-key="{ref}" tabindex="0">'
                  f'<title>{esc(p["apa"])}</title>'
+                 f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="12" fill="none" pointer-events="all"/>'
                  f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{rr}" fill="{COLOR[p["family"]]}" '
                  f'stroke="#fff" stroke-width="1.2"/>{label}</g>')
     s.append('</svg>')
@@ -338,20 +341,21 @@ HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><titl
  main{flex:1;display:flex;min-height:0;}
  #figwrap{flex:1;min-width:0;overflow:auto;padding:6px 10px;}
  #fig{width:100%;height:auto;display:block;}
- .node{cursor:pointer;} .node.bg circle{opacity:.38;}
- .node.bg:hover circle,.node.bg:focus circle{r:6;opacity:1;}
- .node.spine:hover circle,.node.spine:focus circle{r:11;}
- .node:hover .lbl{fill:#000;} .node.sel circle{stroke:#000;stroke-width:2.6px;opacity:1;}
+ .node{cursor:pointer;} .node.bg circle:not(.hit){opacity:.38;}
+ .node.bg:hover circle:not(.hit),.node.bg:focus circle:not(.hit){r:6;opacity:1;}
+ .node.spine:hover circle:not(.hit),.node.spine:focus circle:not(.hit){r:11;}
+ .node:hover .lbl{fill:#000;} .node.sel circle:not(.hit){stroke:#000;stroke-width:2.6px;opacity:1;}
  .dim{opacity:.1;transition:opacity .15s;}
  aside{width:340px;border-left:1px solid #e5e5e5;padding:16px 18px;overflow:auto;font-size:13.5px;line-height:1.45;}
  #fam{display:inline-block;padding:2px 9px;border-radius:11px;color:#fff;font-size:12px;font-weight:bold;}
  #apa{margin:12px 0;} #meta{color:#666;font-size:12.5px;}
+ #summary{margin:10px 0;color:#333;font-size:12.5px;line-height:1.5;}
  a.doi{display:inline-block;margin-top:12px;padding:7px 13px;background:#1b6ca8;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;}
  a.doi.off{background:#bbb;pointer-events:none;} .hint{color:#999;}
  #close{float:right;border:none;background:#eee;border-radius:50%;width:24px;height:24px;font-size:16px;cursor:pointer;color:#444;}
  a.dl{float:right;margin-left:12px;padding:5px 11px;background:#217346;color:#fff;border-radius:6px;text-decoration:none;font-size:12.5px;}
 </style></head><body>
-<header>__XLSXBTN__<div class="sub">Hover a node for its full reference; click it for the citation + DOI.
+<header>__XLSXBTN__<div class="sub">Hover a node for its citation + summary; click it to pin the citation + DOI.
  Hover a family's name at left to spotlight its lineage.</div></header>
 <main><div id="figwrap">__SVG__</div>
 <aside id="panel"><div class="hint">Click any node to see its full reference here.</div></aside></main>
@@ -369,8 +373,10 @@ function show(k){const d=DATA[k];if(!d)return;
  const c=[];if(Number.isInteger(d.oa))c.push(d.oa+' (OpenAlex)');if(Number.isInteger(d.s2))c.push(d.s2+' (S2)');
  panel.innerHTML='<button id="close" onclick="resetPanel()">\\u00d7</button>'
   +'<div id="fam" style="background:'+esc(FAMCOLOR[d.family]||'#666')+'">'+esc(d.family)+'</div> <span id="meta">'+esc(d.ref)+' \\u00b7 '+esc(d.topic)+'</span>'
-  +'<div id="apa">'+esc(d.apa)+'</div>'+(c.length?'<div id="meta">Cited by: '+esc(c.join(' \\u00b7 '))+'</div>':'')+doi;}
+  +'<div id="apa">'+esc(d.apa)+'</div>'+(d.summary?'<div id="summary">'+esc(d.summary)+'</div>':'')+(c.length?'<div id="meta">Cited by: '+esc(c.join(' \\u00b7 '))+'</div>':'')+doi;}
 document.querySelectorAll('.node').forEach(g=>{g.addEventListener('click',()=>show(g.dataset.key));
+ g.addEventListener('mouseenter',()=>show(g.dataset.key));
+ g.addEventListener('focus',()=>show(g.dataset.key));
  g.addEventListener('keydown',e=>{if(e.key==='Enter')show(g.dataset.key);});});
 document.querySelectorAll('.lanelabel').forEach(g=>{const f=g.dataset.fam;
  g.addEventListener('mouseenter',()=>document.querySelectorAll('.node').forEach(n=>{if(DATA[n.dataset.key].family!==f)n.classList.add('dim');}));
