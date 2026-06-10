@@ -26,8 +26,9 @@ Manifest format (JSON list):
 
 Run:  python3 reconcile_downloads.py --manifest list.json --out-dir papers/attention/
 """
-import argparse, json, os, pathlib, re, shutil, subprocess, sys, time
-from difflib import SequenceMatcher
+import argparse, os, pathlib, re, shutil, subprocess, time
+
+import common
 
 
 def normalize(s: str) -> str:
@@ -64,7 +65,9 @@ def filename_doi_match(filename: str, manifest):
         candidates.add(m.group(1).lower())
     matches = []
     for entry in manifest:
-        doi = entry["doi"].lower()
+        doi = (entry.get("doi") or "").lower()
+        if not doi:               # a manifest row may legitimately have no DOI
+            continue
         # Drop the "10.<registrant>/" prefix to get the suffix
         suffix = doi.split("/", 1)[1] if "/" in doi else doi
         # Pieces of the suffix to test against the filename
@@ -140,7 +143,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    manifest = json.load(open(args.manifest))
+    manifest = common.load_json(args.manifest)
     os.makedirs(args.out_dir, exist_ok=True)
 
     cutoff = time.time() - args.since_hours * 3600

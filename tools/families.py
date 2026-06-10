@@ -23,8 +23,10 @@ INPUT (--assign FILE): JSON the agent produced and the user approved:
   python3 tools/families.py --rows rows.json --assign families_input.json \
           --out families.json
 """
-import argparse, datetime, json, re, sys
+import argparse, datetime, re, sys
 from collections import Counter, defaultdict
+
+import common
 
 MIN_FAMILIES, MAX_FAMILIES = 2, 9
 DOMINANT_WARN = 0.60   # warn if one family holds > this fraction of papers
@@ -62,7 +64,7 @@ def main():
                          "(ref / topic / cite / lead-year / summary) for the proposal step")
     args = ap.parse_args()
 
-    rows = json.load(open(args.rows))
+    rows = common.load_json(args.rows)
 
     # --- digest mode: help the agent propose families without re-reading rows.json
     if args.digest:
@@ -75,7 +77,7 @@ def main():
 
     if not args.assign:
         ap.error("--assign is required (unless --digest)")
-    spec = json.load(open(args.assign))
+    spec = common.load_json(args.assign)
     principle = spec.get("principle", "")
     families = spec.get("families", [])
     assign = spec.get("assignments", {})
@@ -119,10 +121,10 @@ def main():
     # ---- stamp rows.json (display name) + persist canonical cache ------------
     for r in rows:
         r["family"] = name_of[assign[r["ref"]]]
-    json.dump(rows, open(args.rows, "w"), indent=2)
+    common.dump_json(rows, args.rows)   # ensure_ascii=False: don't undo references.py's UTF-8
     cache = {"principle": principle, "generated": args.asof,
              "families": families, "assignments": {r: assign[r] for r in refs}}
-    json.dump(cache, open(args.out, "w"), indent=2)
+    common.dump_json(cache, args.out)
 
     # ---- families.md : grouped tables + family x topic cross-tab ------------
     topics = sorted({r.get("topic", "") for r in rows})

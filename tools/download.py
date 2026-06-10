@@ -24,6 +24,8 @@ Run:  python3 download.py --papers list.json --out-dir papers/topic_X/ \
 import argparse, json, os, sys, time
 import urllib.request, urllib.parse
 
+import common
+
 HDRS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Chrome/120.0.0.0",
     "Accept": "application/pdf,*/*;q=0.8",
@@ -119,7 +121,7 @@ def main():
     args = ap.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
-    papers = json.load(open(args.papers))
+    papers = common.load_json(args.papers)
 
     results = []
     for p in papers:

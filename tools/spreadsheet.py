@@ -35,8 +35,10 @@ Input format (JSON list):
 
 Run:  python3 spreadsheet.py --rows rows.json --out bibliography.xlsx
 """
-import argparse, json
+import argparse
 import xlsxwriter
+
+import common
 
 COLORS = {"source-doc": None, "search": "#FFF7E0", "xref": "#E2F0D9", "lab": "#DDEBF7"}
 
@@ -55,7 +57,7 @@ def main():
     ap.add_argument("--sheet-name", default="References")
     args = ap.parse_args()
 
-    rows = json.load(open(args.rows))
+    rows = common.load_json(args.rows)
 
     # Auto-detect citation counts on any row -> add the two columns.
     has_cite = any(

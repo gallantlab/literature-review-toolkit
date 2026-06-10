@@ -27,25 +27,14 @@ Input format (JSON list of dicts):
 Run:  python3 verify.py < input.json > report.json
 Or:   python3 verify.py --citations input.json --out report.json
 """
-import argparse, json, os, re, sys, time, urllib.parse, urllib.request
+import argparse, json, os, sys, time, urllib.parse
 import xml.etree.ElementTree as ET
 
-ARXIV_DOI = re.compile(r"10\.48550/arxiv\.(.+)$", re.I)
-ATOM = "{http://www.w3.org/2005/Atom}"
+import common
+from common import ATOM, arxiv_id_of, http, http_json, set_user_agent
 
-# Set via --email flag or LITREVIEW_EMAIL env var. NCBI/CrossRef expect a
-# contact email in the User-Agent for API politeness.
-HDRS = {"User-Agent": "litreview-toolkit/1.0"}
-
-
-def set_user_agent(email: str):
-    HDRS["User-Agent"] = f"litreview-toolkit/1.0 (mailto:{email})"
-
-
-def http_get_json(url, timeout=20):
-    req = urllib.request.Request(url, headers=HDRS)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())
+# NCBI/CrossRef expect a contact email in the User-Agent; backoff on 429/503.
+http_get_json = http_json
 
 
 def lookup_pmc(pmcid):
@@ -109,9 +98,7 @@ def lookup_arxiv(aid):
     """Resolve a bare arXiv id (e.g. '2305.18274') via the arXiv Atom API."""
     aid = aid.strip()
     url = f"http://export.arxiv.org/api/query?id_list={urllib.parse.quote(aid)}"
-    req = urllib.request.Request(url, headers=HDRS)
-    with urllib.request.urlopen(req, timeout=20) as r:
-        root = ET.fromstring(r.read())
+    root = ET.fromstring(http(url))
     e = root.find(f"{ATOM}entry")
     if e is None or e.find(f"{ATOM}title") is None:
         return None
@@ -125,14 +112,6 @@ def lookup_arxiv(aid):
         "first_author": authors[0] if authors else "",
         "journal": "arXiv",
     }
-
-
-def arxiv_id_of(c):
-    """Bare arXiv id from an explicit `arxiv` field or an arXiv DOI, else None."""
-    if c.get("arxiv"):
-        return c["arxiv"].strip()
-    m = ARXIV_DOI.match((c.get("doi") or "").strip())
-    return m.group(1) if m else None
 
 
 def verify_one(c):
@@ -175,10 +154,16 @@ def verify_one(c):
     issues = []
     expect_au = (c.get("expect_first_author") or "").lower().strip()
     actual_au = (found.get("first_author") or "").lower().strip()
+    # Fuzzy surname containment (handles "Tang" vs "Tang J"). It can over-accept
+    # a short surname that is a substring of another ("Lee" in "Leeson") — a
+    # deliberate trade to avoid false MISMATCH spam; verdicts are human-reviewed.
     if expect_au and actual_au and expect_au.split()[0] not in actual_au and actual_au.split()[0] not in expect_au:
         issues.append(f"first-author mismatch: expected '{c.get('expect_first_author')}', got '{found['first_author']}'")
     expect_year = (c.get("expect_year") or "").strip()
-    if expect_year and found.get("year") and abs(int(expect_year) - int(found["year"])) > 1:
+    actual_year = (found.get("year") or "").strip()
+    # Guard the int() — a human-typed "in press"/"2023a" must not crash the run;
+    # compare numerically only when both years are clean 4-digit values.
+    if expect_year.isdigit() and actual_year.isdigit() and abs(int(expect_year) - int(actual_year)) > 1:
         issues.append(f"year mismatch: expected {expect_year}, got {found['year']}")
 
     return {
@@ -204,8 +189,10 @@ def main():
                  "(NCBI/CrossRef expect a contact email in the User-Agent)")
     set_user_agent(args.email)
 
-    raw = open(args.citations).read() if args.citations else sys.stdin.read()
-    cits = json.loads(raw)
+    if args.citations:
+        cits = common.load_json(args.citations)
+    else:
+        cits = json.loads(sys.stdin.read())
     out = []
     for c in cits:
         r = verify_one(c)
@@ -221,11 +208,10 @@ def main():
                 print(f"             ↳ {i}", file=sys.stderr)
         time.sleep(args.sleep)
 
-    js = json.dumps(out, indent=2)
     if args.out:
-        open(args.out, "w").write(js)
+        common.dump_json(out, args.out)
     else:
-        print(js)
+        print(json.dumps(out, indent=2, ensure_ascii=False))
     n_ok = sum(1 for r in out if r["verdict"] == "OK")
     n_mm = sum(1 for r in out if r["verdict"] == "MISMATCH")
     n_nf = sum(1 for r in out if r["verdict"] == "NOT-FOUND")

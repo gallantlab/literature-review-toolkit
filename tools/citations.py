@@ -23,29 +23,21 @@ OUTPUT: {key: {"openalex": int|None, "s2": int|None, "s2_influential": int|None,
 
 Counts are a snapshot at run time; re-run to refresh. See PLAYBOOK Phase 5b.
 """
-import argparse, datetime, json, os, re, sys, time, urllib.request, urllib.parse, urllib.error
+import argparse, datetime, json, os, sys, time, urllib.parse, urllib.error
+
+import common
+from common import ARXIV_DOI, doi_of, http_json
 
 
 def parse_doi(row):
     """Return a bare lowercase DOI from row['doi'] or a doi.org link, else None."""
-    d = (row.get("doi") or "").strip()
-    if d:
-        return d.lower().replace("https://doi.org/", "")
-    link = row.get("link", "") or ""
-    m = re.match(r"https?://doi\.org/(10\..+)$", link, re.I)
-    return m.group(1).lower() if m else None
+    return doi_of(row, lower=True)
 
 
 def s2_id(doi):
     """Map a DOI to the best Semantic Scholar id (ARXIV: for arXiv DOIs)."""
-    m = re.match(r"10\.48550/arxiv\.(.+)$", doi, re.I)
+    m = ARXIV_DOI.match(doi)
     return ("ARXIV:" + m.group(1)) if m else ("DOI:" + doi)
-
-
-def http_json(url, data=None, headers=None, timeout=60):
-    req = urllib.request.Request(url, data=data, headers=headers or {})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.load(resp)
 
 
 def fetch_openalex(items, email):
@@ -127,7 +119,7 @@ def main():
     if not args.email:
         ap.error("--email or LITREVIEW_EMAIL required (OpenAlex polite pool)")
 
-    rows = json.load(open(args.rows))
+    rows = common.load_json(args.rows)
     keyf = args.key or ("ref" if rows and "ref" in rows[0] else "label")
     items, no_doi = [], []
     for r in rows:
@@ -149,7 +141,7 @@ def main():
             counts[k]["s2"] = n
             counts[k]["s2_influential"] = infl
 
-    json.dump(counts, open(args.out, "w"), indent=2)
+    common.dump_json(counts, args.out)
     oa = sum(1 for c in counts.values() if c["openalex"] is not None)
     s2 = sum(1 for c in counts.values() if c["s2"] is not None)
     print(f"{len(rows)} rows -> {args.out}")

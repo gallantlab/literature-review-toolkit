@@ -18,15 +18,17 @@ Output: lab_papers.json — one row per paper with ref / title / year / doi / li
 Disambiguation is the #1 correctness risk: review the list (Phase L2) and prune
 false-positives before theming.  See PLAYBOOK "Lab mode".
 """
-import argparse, html, json, os, re, sys, time, urllib.parse, urllib.request
+import argparse, os, time, urllib.parse
+
+import common
+from common import build_apa, http_json, person, split_name
 
 API = "https://api.openalex.org"
 
 
 def get(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "litreview (lab_corpus)"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.load(r)
+    """OpenAlex GET with backoff (the cursor loop can run for many pages)."""
+    return http_json(url, timeout=60)
 
 
 def search_authors(name, email):
@@ -46,53 +48,19 @@ def unabstract(inv):
     return " ".join(w for _, w in words)
 
 
-def _initials(given):
-    """'Jean-Rémi' -> 'J.-R.'; 'Jack L' -> 'J. L.'"""
-    out = []
-    for tok in (given or "").replace(".", " ").split():
-        out.append("-".join(s[0].upper() + "." for s in tok.split("-") if s))
-    return " ".join(out)
-
-
-def _norm_title(title):
-    """HTML-unescape, and sentence-case a title ONLY if it's entirely uppercase
-    (some records are stored ALL CAPS). Mixed-case titles — and their genuine
-    acronyms (FFA, BOLD, fMRI) — pass through untouched."""
-    t = html.unescape((title or "").strip())
-    alpha = [c for c in t if c.isalpha()]
-    if alpha and all(c.isupper() for c in alpha):
-        t = re.sub(r"(^|[.:]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), t.lower())
-    return t
-
-
 def apa(authorships, year, title, venue, biblio=None):
     """A full APA-7 reference whose first comma separates the lead surname (the
-    figure parses that). Lists all authors (>20 -> first 19 + ellipsis + last)
-    and adds volume(issue), pages from OpenAlex `biblio` when present."""
+    figure parses that). Uses the shared formatter so OpenAlex names get the same
+    canonical treatment as CrossRef/arXiv — including nobiliary particles
+    ('de Heer' stays the surname, not 'Heer' with a stray 'D.' initial)."""
     people = []
     for a in authorships:
-        name = (a.get("author", {}).get("display_name") or "").split()
-        if not name:
-            continue
-        people.append(f"{name[-1]}, {_initials(' '.join(name[:-1]))}".rstrip(", ").strip())
-    if not people:
-        authors = "Anon."
-    elif len(people) == 1:
-        authors = people[0]
-    elif len(people) <= 20:
-        authors = ", ".join(people[:-1]) + ", & " + people[-1]
-    else:
-        authors = ", ".join(people[:19]) + ", … " + people[-1]
-    s = f"{authors} ({year}). {_norm_title(title).rstrip('.')}."
-    venue = re.sub(r"\s*\([^)]*\)\s*$", "", venue or "")   # 'bioRxiv (CSHL)' -> 'bioRxiv'
-    if venue:
-        tail, b = venue, biblio or {}
-        vol, issue = b.get("volume"), b.get("issue")
-        pages = "-".join(p for p in (b.get("first_page"), b.get("last_page")) if p)
-        if vol:
-            tail += f", {vol}" + (f"({issue})" if issue else "") + (f", {pages}" if pages else "")
-        s += f" {tail}."
-    return html.unescape(s)
+        disp = (a.get("author", {}).get("display_name") or "").strip()
+        if disp:
+            people.append(person(*split_name(disp)))
+    b = biblio or {}
+    pages = "-".join(p for p in (b.get("first_page"), b.get("last_page")) if p)
+    return build_apa(people, year, title, venue, b.get("volume"), b.get("issue"), pages)
 
 
 def fetch_works(author_id, email, from_year, to_year):
@@ -126,6 +94,7 @@ def main():
     args = ap.parse_args()
     if not args.email:
         ap.error("--email or LITREVIEW_EMAIL required (OpenAlex polite pool)")
+    common.set_user_agent(args.email)
     if args.search:
         print(f"author candidates for {args.search!r} (pass the id to --author):")
         search_authors(args.search, args.email)
@@ -162,8 +131,7 @@ def main():
     for i, p in enumerate(papers, 1):
         p["ref"] = f"L{i}"
 
-    with open(args.out, "w", encoding="utf-8") as f:
-        json.dump(papers, f, indent=2)
+    common.dump_json(papers, args.out)
 
     yrs = [p["year"] for p in papers if p["year"]]
     abs_n = sum(1 for p in papers if p["summary"] and p["summary"] != p["title"])

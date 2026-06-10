@@ -17,21 +17,17 @@ Input format (JSON list):
 
 Run:  python3 xref.py --papers list.json --out xref.json --min-cites 3
 """
-import argparse, json, os, re, subprocess, sys, time, urllib.parse, urllib.request
+import argparse, os, re, subprocess, sys, time, urllib.parse
 from collections import defaultdict
 
-HDRS = {"User-Agent": "litreview-toolkit/1.0"}
-
-
-def set_user_agent(email: str):
-    HDRS["User-Agent"] = f"litreview-toolkit/1.0 (mailto:{email})"
+import common
+from common import http_json, set_user_agent
 
 
 def crossref_refs(doi):
     url = f"https://api.crossref.org/works/{urllib.parse.quote(doi)}"
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=HDRS), timeout=30) as r:
-            d = json.loads(r.read())
+        d = http_json(url)
         refs = d["message"].get("reference", [])
         return [{
             "doi": (r.get("DOI") or "").lower(),
@@ -71,8 +67,7 @@ def resolve_doi(doi):
     """Get title/author/year/journal for a DOI via CrossRef."""
     try:
         url = f"https://api.crossref.org/works/{urllib.parse.quote(doi)}"
-        with urllib.request.urlopen(urllib.request.Request(url, headers=HDRS), timeout=15) as r:
-            d = json.loads(r.read())["message"]
+        d = http_json(url)["message"]
         au = (d.get("author") or [{}])[0]
         first = f"{au.get('family','?')} {au.get('given','')[:1]}"
         year = ""
@@ -109,8 +104,8 @@ def main():
                  "(CrossRef polite pool expects a contact email in the User-Agent)")
     set_user_agent(args.email)
 
-    papers = json.load(open(args.papers))
-    excludes = set(d.lower() for d in (json.load(open(args.exclude)) if args.exclude else []))
+    papers = common.load_json(args.papers)
+    excludes = set(d.lower() for d in (common.load_json(args.exclude) if args.exclude else []))
 
     print(f"Fetching reference lists for {len(papers)} papers...", file=sys.stderr)
     all_refs = {}
@@ -164,7 +159,7 @@ def main():
     for doi, slugs in ranked:
         out.append({"doi": doi, "n_citations": len(slugs), "cited_by": slugs, **meta.get(doi, {})})
 
-    json.dump(out, open(args.out, "w"), indent=1)
+    common.dump_json(out, args.out, indent=1)
 
     # Summary to stderr
     print(f"\n{'cnt':>3}  {'doi':40s}  {'auth/year':25s}  title", file=sys.stderr)

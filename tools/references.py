@@ -24,111 +24,14 @@ OUTPUT (default): rewrites each row's `apa` (and `link` to the DOI URL), prints 
 per-defect audit. `--audit` reports without writing and exits nonzero if any row
 is imperfect — wire it into the build so a bad ref can never ship.
 """
-import argparse, html, json, os, re, socket, sys, time, urllib.error, urllib.parse, urllib.request
+import argparse, json, os, re, sys, time, urllib.parse
 import xml.etree.ElementTree as ET
 
-ARXIV_DOI = re.compile(r"10\.48550/arxiv\.(.+)$", re.I)
-ATOM = "{http://www.w3.org/2005/Atom}"
-ARXIV_NS = "{http://arxiv.org/schemas/atom}"
-HDRS = {"User-Agent": "litreview-toolkit/1.0"}
-# lowercase nobiliary particles that belong to the surname, not the given name
-PARTICLES = {"van", "von", "der", "den", "de", "del", "della", "di", "da", "du",
-             "la", "le", "el", "al", "bin", "ibn", "dos", "das", "ten", "ter", "st"}
+import common
+from common import (ARXIV_DOI, ATOM, ARXIV_NS, build_apa, clean_venue, doi_of,
+                    http, person, split_name)
 
-
-def set_email(email):
-    HDRS["User-Agent"] = f"litreview-toolkit/1.0 (mailto:{email})"
-
-
-def http(url, retries=5):
-    """GET with exponential backoff on rate-limits (429/503) and timeouts, so a
-    throttled fetch retries instead of silently keeping the old (imperfect) ref."""
-    for attempt in range(retries):
-        try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=HDRS), timeout=30) as r:
-                return r.read()
-        except urllib.error.HTTPError as e:
-            if e.code in (429, 503) and attempt < retries - 1:
-                time.sleep(3 * 2 ** attempt)          # 3, 6, 12, 24s
-                continue
-            raise
-        except (urllib.error.URLError, TimeoutError, socket.timeout):
-            if attempt < retries - 1:
-                time.sleep(2 * 2 ** attempt)          # 2, 4, 8, 16s
-                continue
-            raise
-
-
-# ---- formatting -----------------------------------------------------------
-def initials(given):
-    """'Jean-Rémi' -> 'J.-R.'; 'Jack L' -> 'J. L.'"""
-    out = []
-    for tok in (given or "").replace(".", " ").split():
-        out.append("-".join(s[0].upper() + "." for s in tok.split("-") if s))
-    return " ".join(out)
-
-
-def fix_fam(fam):
-    """'ANDERSON' -> 'Anderson'; 'zhang' -> 'Zhang'; leave 'de Heer', 'McDermott'."""
-    if fam.isupper():
-        return " ".join(w.capitalize() for w in fam.split())
-    if fam.islower() and " " not in fam:
-        return fam.capitalize()
-    return fam
-
-
-def split_name(display):
-    """Split a 'First M. Last' display name into (family, given), keeping
-    nobiliary particles ('van', 'de', ...) with the surname."""
-    toks = display.split()
-    if not toks:
-        return "", ""
-    i = len(toks) - 1
-    while i - 1 >= 1 and toks[i - 1].lower().strip(".") in PARTICLES:
-        i -= 1
-    return " ".join(toks[i:]), " ".join(toks[:i])
-
-
-def person(family, given):
-    return f"{fix_fam(family.strip())}, {initials(given)}".rstrip(", ").strip()
-
-
-def join_authors(people):
-    people = [p for p in people if p and p != ","]
-    n = len(people)
-    if n == 0:
-        return "Anon."
-    if n == 1:
-        return people[0]
-    if n <= 20:
-        return ", ".join(people[:-1]) + ", & " + people[-1]
-    return ", ".join(people[:19]) + ", … " + people[-1]   # APA 7: 19 + ellipsis + last
-
-
-def clean_venue(v):
-    """'bioRxiv (Cold Spring Harbor Laboratory)' -> 'bioRxiv'."""
-    return re.sub(r"\s*\([^)]*\)\s*$", "", (v or "").strip())
-
-
-def norm_title(title):
-    """HTML-unescape; sentence-case a title only if it is ENTIRELY uppercase
-    (acronyms inside a mixed-case title are left alone)."""
-    t = html.unescape((title or "").strip())
-    alpha = [c for c in t if c.isalpha()]
-    if alpha and all(c.isupper() for c in alpha):
-        t = re.sub(r"(^|[.:]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), t.lower())
-    return t
-
-
-def build_apa(people, year, title, journal, vol=None, issue=None, pages=None):
-    s = f"{join_authors(people)} ({year}). {norm_title(title).rstrip('.')}."
-    journal = clean_venue(journal)
-    if journal:
-        tail = journal
-        if vol:
-            tail += f", {vol}" + (f"({issue})" if issue else "") + (f", {pages}" if pages else "")
-        s += f" {tail}."
-    return html.unescape(re.sub(r"\s+", " ", s).strip())
+set_email = common.set_user_agent
 
 
 # ---- authoritative sources ------------------------------------------------
@@ -172,14 +75,6 @@ def arxiv(aid, fallback_venue=""):
     journal = (jref or "").strip() or clean_venue(fallback_venue) or "arXiv"
     apa = build_apa(people, year, e.findtext(f"{ATOM}title"), journal)
     return {"apa": apa, "venue": journal, "source": "arxiv"}
-
-
-def doi_of(row):
-    d = (row.get("doi") or "").strip()
-    if d:
-        return d.replace("https://doi.org/", "")
-    m = re.match(r"https?://doi\.org/(10\..+)$", row.get("link", "") or "", re.I)
-    return m.group(1) if m else None
 
 
 def canonical(row):
@@ -238,9 +133,12 @@ def audit(apa, has_source):
         mx = max(mx, run)
     if mx >= 3:
         defects.append(f"uppercase-title run ({mx} consecutive caps words)")
-    # a DOI-backed ref should name a venue (text after the title sentence)
-    body = apa.split(").", 1)[1].strip() if ")." in apa else ""
-    if has_source and body and "." in body and not body.rsplit(".", 2)[-2].strip():
+    # a DOI-backed ref should name a venue: real text after the title sentence.
+    # Structure is "Authors (YEAR). Title. Venue...."; drop the year-paren and the
+    # title sentence (its trailing ". ") and require something non-empty to remain.
+    after_year = apa.split(").", 1)[1] if ")." in apa else ""
+    venue_part = after_year.split(". ", 1)[1].strip(" .") if ". " in after_year else ""
+    if has_source and not venue_part:
         defects.append("empty venue")
     return defects, notes
 
@@ -258,7 +156,7 @@ def main():
         ap.error("--email or LITREVIEW_EMAIL required (CrossRef/arXiv polite pool)")
     set_email(args.email)
 
-    rows = json.load(open(args.rows))
+    rows = common.load_json(args.rows)
     keyf = args.key or ("ref" if rows and "ref" in rows[0] else "label")
     defects, notes, rebuilt = {}, {}, 0
     for r in rows:
@@ -280,7 +178,7 @@ def main():
             notes[k] = n
 
     if not args.audit:
-        json.dump(rows, open(args.out or args.rows, "w"), indent=2, ensure_ascii=False)
+        common.dump_json(rows, args.out or args.rows)
 
     print(f"{len(rows)} refs | rebuilt {rebuilt} | {len(defects)} defects | {len(notes)} manual (no-DOI)")
     for k, n in notes.items():
