@@ -9,11 +9,23 @@ spotlight its lineage. Also writes a standalone .svg of the panel and, if
 rsvg-convert/inkscape is present, .png + .pdf for slides/papers.
 
 Data-driven: family lanes come from families.json, dots from rows.json (one per
-paper, beeswarm-packed by year within its lane). By default the milestones
-(★ in Ref#) are labelled; everything else is an unlabelled dot you hover.
+paper, beeswarm-packed by year within its lane).
+
+LANDMARKS are auto-selected and labelled (big dots) — no hand-made overlay needed.
+A paper is a landmark if ANY of:
+  (1) it is among the most-cited in its family (top --per-family by max(OpenAlex, S2)),
+  (2) it is foundational *within this review* — cited by >= --motif-min of the corpus's
+      own papers (needs --internal internal_citations.json from `xref.py --internal-out`;
+      silently skipped if not supplied),
+  (3) it is a home-lab paper (an author surname in --lab-author, default "Gallant", or a
+      row with source == "lab") — these are starred (★) and gold-ringed.
+Total labels are capped at --max-labels (lab + internal-motif papers are always kept).
+Pass --spec with a "labels" map to override auto-selection entirely (manual curation wins);
+--no-auto-landmarks turns labelling off.
 
   python3 tools/families_figure.py --rows rows.json --families families.json \
-          --out-prefix mytopic_families --title "My topic — theoretical families"
+          --out-prefix mytopic_families --title "My topic — theoretical families" \
+          --internal internal_citations.json   # optional, from xref.py --internal-out
 
 OPTIONAL editorial overlay (--spec figure_spec.json), all keys optional:
   { "labels":  {"<ref>": "short label", ...},     # which papers to label (overrides milestones)
@@ -89,6 +101,21 @@ def main():
     ap.add_argument("--xlsx", help="embed this .xlsx and add a download button to the figure")
     ap.add_argument("--emphasize-source", help="render rows with this source as big circles "
                     "(e.g. 'lab' so a lab's own papers stand out from the field)")
+    ap.add_argument("--no-auto-landmarks", action="store_true",
+                    help="disable automatic landmark labelling (default: on when --spec has no labels)")
+    ap.add_argument("--per-family", type=int, default=4,
+                    help="auto-landmarks: label the top-N most-cited papers per family (default 4)")
+    ap.add_argument("--max-labels", type=int, default=28,
+                    help="auto-landmarks: cap total labels for legibility (default 28); each lane is "
+                         "guaranteed its top-2 most-cited + all home-lab papers, rest filled by centrality")
+    ap.add_argument("--motif-min", type=int, default=3,
+                    help="auto-landmarks: a paper cited by >= this many corpus siblings is a landmark "
+                         "(needs --internal)")
+    ap.add_argument("--internal", help="auto-landmarks: {ref: internal_indegree} JSON from "
+                    "`xref.py --internal-out` — enables criterion (2), within-review centrality")
+    ap.add_argument("--lab-author", action="append", default=[],
+                    help="auto-landmarks: home-lab author surname(s) to star as landmarks "
+                         "(repeatable; default 'Gallant'). Rows with source=='lab' are also starred.")
     args = ap.parse_args()
 
     def load(path):
@@ -117,15 +144,58 @@ def main():
                                 "summary": r.get("summary", ""),
                                 "oa": r.get("cite_openalex"), "s2": r.get("cite_s2")}
 
-    # which papers get labels: spec.labels, else the milestones (★ in ref)
-    if spec.get("labels"):
-        labelled = {ref: lab for ref, lab in spec["labels"].items() if ref in papers}
-    else:
-        labelled = {ref: lead(p["apa"]) for ref, p in papers.items() if "★" in ref}
-
     if not papers:
         sys.exit("families_figure: no papers with a parseable year and a known family — "
                  "nothing to plot (check rows.json has `family` + a (YYYY) in each apa).")
+
+    # ---- landmark (big, labelled) selection --------------------------------
+    # Home-lab detection (criterion 3): author surname match or source=="lab".
+    lab_surnames = [s for s in args.lab_author if s.strip()] or ["Gallant"]
+
+    def _is_lab(p):
+        if p.get("source") == "lab":
+            return True
+        authors = p.get("apa", "").split("(")[0]        # author list, before the (year)
+        return any(re.search(r"\b" + re.escape(sn) + r"\b", authors, re.I) for sn in lab_surnames)
+
+    def _cites(p):
+        vals = [v for v in (p.get("oa"), p.get("s2")) if isinstance(v, int)]
+        return max(vals) if vals else -1
+
+    internal = load(args.internal) if (args.internal and os.path.exists(args.internal)) else {}
+    lab = {ref for ref, p in papers.items() if _is_lab(p)}
+
+    # which papers get labels: spec.labels (manual, overrides) > legacy ★-in-ref > auto-landmarks
+    if spec.get("labels"):
+        labelled = {ref: lab for ref, lab in spec["labels"].items() if ref in papers}
+    elif any("★" in ref for ref in papers):
+        labelled = {ref: lead(p["apa"]) for ref, p in papers.items() if "★" in ref}
+    elif args.no_auto_landmarks:
+        labelled = {}
+    else:
+        def _fam_by_cites(name):
+            return sorted((ref for ref, p in papers.items() if p["family"] == name),
+                          key=lambda r: -_cites(papers[r]))
+        cite_top = set()                                                   # (1) top-cited per family
+        for name in order:
+            cite_top |= set(_fam_by_cites(name)[:max(0, args.per_family)])
+        motif = {ref for ref in papers if internal.get(ref, 0) >= args.motif_min}  # (2) within-review centrality
+        chosen = set(lab) | motif | cite_top                               # (3) home-lab papers
+        if len(chosen) > args.max_labels:
+            # Cap for legibility. Guarantee each lane is represented (lab + top-2 most-cited
+            # per family), then fill the budget by within-review in-degree — the "motivates
+            # other work" signal — breaking ties by citation count.
+            keep = set(lab)
+            for name in order:
+                keep |= set(_fam_by_cites(name)[:2])
+            pool = sorted(chosen - keep,
+                          key=lambda r: (internal.get(r, 0), _cites(papers[r])), reverse=True)
+            chosen = keep | set(pool[:max(0, args.max_labels - len(keep))])
+        labelled = {ref: f'{lead(papers[ref]["apa"]).strip()} {papers[ref]["year"]}' for ref in chosen}
+
+    # star home-lab papers in their label (auto or manual), so they read as the lab's own
+    labelled = {ref: (("★ " + t) if (ref in lab and not t.startswith("★")) else t)
+                for ref, t in labelled.items()}
 
     # ---- geometry -----------------------------------------------------------
     W, H = 1560, max(660, 150 + 140 * len(order))
@@ -282,7 +352,9 @@ def main():
     # ones also get a leader line + text label
     for ref in sorted(big, key=lambda r: papers[r]["year"]):
         p = papers[ref]; x, y = pos[ref]; data[ref] = p
-        rr = 8.5 if ref in labelled else 7
+        is_lab = ref in lab
+        rr = (9.5 if is_lab else 8.5) if ref in labelled else 7
+        stroke, sw = ("#d4a017", 2.6) if is_lab else ("#fff", 1.2)   # home-lab -> gold ring
         leader = label = ""
         if ref in labelled:
             off = loff[ref]
@@ -290,12 +362,13 @@ def main():
             leader = (f'<line x1="{x:.0f}" y1="{ly1:.0f}" x2="{x:.0f}" y2="{ly2:.0f}" '
                       f'stroke="{COLOR[p["family"]]}" stroke-width="1" opacity="0.65"/>')
             label = (f'<text class="lbl" x="{x:.0f}" y="{y+off:.0f}" text-anchor="middle" '
-                     f'font-size="11" font-weight="bold" fill="#222">{esc(labelled[ref])}</text>')
+                     f'font-size="11" font-weight="bold" fill="{"#9a7400" if is_lab else "#222"}">'
+                     f'{esc(labelled[ref])}</text>')
         s.append(f'{leader}<g class="node spine" data-key="{ref}" tabindex="0">'
                  f'<title>{esc(p["apa"])}</title>'
                  f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="12" fill="none" pointer-events="all"/>'
                  f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{rr}" fill="{COLOR[p["family"]]}" '
-                 f'stroke="#fff" stroke-width="1.2"/>{label}</g>')
+                 f'stroke="{stroke}" stroke-width="{sw}"/>{label}</g>')
     s.append('</svg>')
     svg = "".join(s)
 

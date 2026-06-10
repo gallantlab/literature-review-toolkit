@@ -359,23 +359,35 @@ rest is mechanical, owned by `tools/families.py`:
 `tools/families_figure.py` from `rows.json` + `families.json`:
 
 ```bash
+# first emit the within-review citation graph (criterion 2 below); reuses the xref pass:
+python3 tools/xref.py --papers xref_papers.json --out xref_<topic>.json \
+        --exclude xref_exclude.json --internal-out internal_citations.json --email you@inst.edu
 python3 tools/families_figure.py --rows rows.json --families families.json \
+        --internal internal_citations.json \
         --out-prefix <topic>_families --title "<Topic> — theoretical families"
 ```
 
 It writes a self-contained `.html` (family lanes with their defining sentences,
-every paper as a dot beeswarm-packed by year, milestones labelled; hover any node
-for its full reference, click for citation + DOI, hover a family name to spotlight
-its lineage) plus a standalone `.svg` and — if `rsvg-convert`/`inkscape` is present
-— `.png` + `.pdf` of the panel for slides/papers. This replaces the old static
-matplotlib figure.
+every paper as a dot beeswarm-packed by year, landmark studies as big labelled dots;
+hover any node for its full reference, click for citation + DOI, hover a family name
+to spotlight its lineage) plus a standalone `.svg` and — if `rsvg-convert`/`inkscape`
+is present — `.png` + `.pdf` for slides/papers. This replaces the old static figure.
 
-The auto baseline labels the milestones (★) and draws no convergence arrows.
-**The editorial layer is the third human checkpoint** — which papers to label, the
-cross-family convergence arrows, and annotations are judgment, so curate them with
-the user via an optional `--spec figure_spec.json`
-(`{labels:{ref:short}, arrows:[{from,to,color,label}], notes:[{at,text,color}], order, subtitle}`).
-Don't expect a good arrow set auto-generated.
+**Landmark labelling is AUTOMATIC — do not hand-build a labels overlay.** A paper is
+labelled as a landmark (big dot) if ANY of: (1) it is among the **most-cited in its
+family** (top `--per-family`, default 4, by max(OpenAlex, S2)); (2) it is **foundational
+within this review** — cited by ≥ `--motif-min` (default 3) of the corpus's own papers
+(this is criterion (2) and needs `internal_citations.json` from `xref.py --internal-out`;
+silently skipped if absent — so always pass `--internal`); or (3) it is a **home-lab
+paper** (an author surname in `--lab-author`, default `Gallant`, or a row with
+`source=="lab"`) — these are **starred (★) and gold-ringed** so the lab's own work stands
+out. Total labels are capped at `--max-labels` (lab + internal-motif papers always kept).
+
+**Only the editorial *arrows/notes* remain a human checkpoint** (cross-family convergence
+arrows and annotations are judgment). Curate those via an optional `--spec figure_spec.json`
+(`{arrows:[{from,to,color,label}], notes:[{at,text,color}], order, subtitle}`); a `labels`
+map there still overrides auto-selection if you ever need to force a specific set. Don't
+expect a good arrow set auto-generated.
 
 ### Phase 7 — Hand off
 

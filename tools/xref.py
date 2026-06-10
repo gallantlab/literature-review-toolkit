@@ -90,6 +90,9 @@ def main():
     ap.add_argument("--papers", required=True, help="JSON list of papers (slug + doi or pdf)")
     ap.add_argument("--out", required=True, help="JSON output path")
     ap.add_argument("--exclude", help="JSON list of DOIs to exclude (already in spreadsheet)")
+    ap.add_argument("--internal-out", help="also write {slug: internal_indegree} — how many OTHER "
+                    "corpus papers cite each corpus paper. Feeds families_figure.py auto-landmark "
+                    "selection (a paper cited by many of its own siblings is foundational within the review).")
     ap.add_argument("--min-cites", type=int, default=3)
     ap.add_argument("--resolve-unknown", action="store_true",
                     help="Look up titles for top-cited DOIs via CrossRef")
@@ -134,6 +137,21 @@ def main():
             counts[d].append(slug)
             if d not in meta:
                 meta[d] = {k: r.get(k, "") for k in ("title", "year", "author", "journal", "raw")}
+
+    # Internal citation graph: how many OTHER corpus papers cite each corpus paper.
+    # (Reuses `counts` — no extra fetching. Independent of the --exclude filter, which
+    # only governs the external candidate ranking below.)
+    if args.internal_out:
+        doi_to_slug = {p["doi"].lower(): p["slug"] for p in papers if p.get("doi")}
+        indeg = {p["slug"]: 0 for p in papers}
+        for d, citing in counts.items():
+            tgt = doi_to_slug.get(d)
+            if tgt is not None:
+                indeg[tgt] = len(set(citing) - {tgt})   # exclude any self-citation
+        common.dump_json(indeg, args.internal_out, indent=1)
+        top = sorted(indeg.items(), key=lambda kv: -kv[1])[:10]
+        print(f"Wrote internal in-degrees -> {args.internal_out} "
+              f"(top: {', '.join(f'{s}:{n}' for s, n in top if n)})", file=sys.stderr)
 
     # Filter excludes and threshold
     ranked = sorted(
