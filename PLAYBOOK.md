@@ -153,9 +153,10 @@ initials and nobiliary particles (`de Heer`, `Dupré la Tour`), fixed name casin
 (`ANDERSON`→`Anderson`, `zhang`→`Zhang`), HTML-unescaped + sentence-cased
 all-caps titles, and a real venue — including preprint servers CrossRef leaves
 bare (`bioRxiv`, `PsyArXiv`, `arXiv`). The `--audit` gate fails the build on any
-defect (missing author/year, `et al.`, HTML entity, truncated/empty venue,
-uppercase title). The ONLY allowed non-fatal case is a DOI-less item (book,
-report, old proceedings) — it keeps its hand-written `apa` and is reported as a
+defect (missing author/year, `et al.`, HTML entity, `U+FFFD` replacement-char
+mojibake, truncated/empty venue, uppercase title). The ONLY allowed non-fatal
+case is a DOI-less item (book, report, old proceedings) — it keeps its
+hand-written `apa` and is reported as a
 manual ref; verify those by hand. **Run the gate before every deliverable.**
 
 ### Phase 4 (OPTIONAL) — Download PDFs

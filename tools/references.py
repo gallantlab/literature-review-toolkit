@@ -221,6 +221,10 @@ def audit(apa, has_source):
         defects.append("et-al (should list all authors)")
     if "&amp;" in apa or "&#x" in apa or "&lt;" in apa or "&gt;" in apa:
         defects.append("html-entity")
+    if "�" in apa:
+        # U+FFFD replacement char = mojibake the source (often CrossRef) stored with
+        # broken encoding; the original glyph is unrecoverable, so flag for a hand fix.
+        defects.append("replacement-char (U+FFFD mojibake — fix by hand)")
     if re.search(r"\.\s+[A-Z]\.\s*$", apa):
         defects.append("single-letter venue (truncated)")
     # Catch an uppercase TITLE (norm_title misses titles that are only MOSTLY
