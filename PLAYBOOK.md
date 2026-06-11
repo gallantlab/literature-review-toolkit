@@ -32,7 +32,7 @@ same way. There are no mode-specific shortcuts.
 | **Lab** | a lab's publications | "review lab Z's work", "how has Z's research evolved" | Phase L1–L3 (ingest corpus → derive themes) → **L4c** | the lab/author ids, the inclusion filter (e.g. human-only), target paths |
 
 Both then converge on the shared pipeline: **Phase 3 verify → 3f canonicalize refs → 5 spreadsheet →
-5b citation counts → 6 cross-citation → 6b families → 7 hand-off.** Lab mode's
+5b citation counts → 6 cross-citation → 6b families → 7 review article (optional) → 8 hand-off.** Lab mode's
 outward/contextualize layer (**L4c**) is not a lighter pass — it *runs the
 topic-mode front-end (Phases 2–6) once per theme*, with the identical
 verify/count/dedup guardrails. Topic mode is the next section; lab mode is under
@@ -52,14 +52,17 @@ verify/count/dedup guardrails. Topic mode is the next section; lab mode is under
 3. `families.json` + `families.md`, and `<topic>_families.{html,svg,png,pdf}` —
    the theoretical grouping and its interactive figure (Phase 6b, optional)
 4. Cross-reference index at `xref_<topic_slug>.json` (after Phase 6)
-5. **Only if Phase 4 was opted into:**
+5. **Only if Phase 7 was opted into:** a narrative review article `<Topic>_review.docx`
+   (prose authored into `content.json`, rendered with `tools/review_paper.py`; APA-7 reference
+   list pulled from `rows.json`).
+6. **Only if Phase 4 was opted into:**
    - PDFs at `papers/<topic_slug>/<paper_slug>.pdf`
    - Browser-helper page `papers/<topic_slug>/_download_helper.html` for
      paywalled / bot-blocked papers
 
 ---
 
-## Topic mode — the 7-phase workflow
+## Topic mode — the 8-phase workflow
 
 (The query-driven front-end. Lab mode reuses Phases 3–7 verbatim; see "Lab mode"
 below.)
@@ -389,7 +392,47 @@ arrows and annotations are judgment). Curate those via an optional `--spec figur
 map there still overrides auto-selection if you ever need to force a specific set. Don't
 expect a good arrow set auto-generated.
 
-### Phase 7 — Hand off
+### Phase 7 — Write the review article (OPTIONAL)
+
+Turn the finished corpus into a narrative **review article** as a `.docx`. Run only when
+the user asks for a written review (not for the bibliography itself). Prerequisites: Phase 3f
+(canonical `apa`) and 5b (counts) are done; ideally Phase 6b families + figure exist too, since
+the families are the natural section structure.
+
+**Authorship and honesty (non-negotiable when an LLM writes it).** If the article is
+AI-authored, say so plainly. Put the model's name in `authors`, add an `author_note` that
+identifies it as an AI, and include a `disclosure` paragraph stating that the bibliography was
+machine-assembled and machine-verified and that the author has read only abstracts/metadata, not
+full texts. Language models fabricate citations; the Phase-3/3f verification is what makes an
+AI-written review trustworthy, and the disclosure must make that provenance explicit.
+
+**Prose.** Author the prose with the `scientific-writing` skill (one idea per sentence, forward
+flow, reserve "represent" for brain representations). Organize sections by the **Phase-6b
+families** — the theoretical axis orthogonal to the topic lanes makes a better narrative than the
+method/region lanes. The title should convey the question, the answer, and why it matters. Every
+in-text citation is **APA author–date** (`(Huth et al., 2016)`) and MUST name a paper that exists
+in `rows.json`, so the reference list backs it.
+
+**Mechanics — `tools/review_paper.py`.** The tool owns only the mechanical render; it does not
+write prose. It reads `rows.json` and builds the **APA-7 reference list straight from the
+canonical `apa` strings** (deduped, alphabetised, hanging indent, with DOI links), embeds the
+families figure with a standalone caption, and lays out the title/author/disclosure block + the
+abstract + sections. Keep the prose in a small per-project emitter that dumps `content.json`
+(see the schema in `review_paper.py`); render with the shared tool:
+
+```bash
+python3 write_review.py            # project file: authors prose -> content.json
+python3 tools/review_paper.py --rows rows.json --content content.json \
+        --figure <topic>_families.png --out <Topic>_review.docx
+```
+
+The reference list comes from `rows.json`, so it is automatically canonical and complete; verify
+by opening the `.docx` and confirming the figure renders and the section/citation structure reads
+correctly. Worked example: `distributed_conceptual_network/` (`write_review.py` + `content.json`
+→ an AI-authored review with all 370 refs in APA-7). Output artifact:
+`<Topic>_review.docx` (plus the project's `content.json`).
+
+### Phase 8 — Hand off
 
 Tell the user:
 - Total rows in spreadsheet, broken down (source / search / xref).
@@ -591,6 +634,7 @@ outputs JSON/files. Run `python3 tools/<script>.py --help` for flags.
 | `tools/lab_corpus.py` | **Lab mode** Phase L1. Ingest a lab's full publication corpus from OpenAlex by author id (`--search` to resolve). Enrich abstracts before classifying — OpenAlex alone is insufficient. |
 | `tools/xref.py` | Build cross-citation index from a list of (slug, doi) tuples via CrossRef. |
 | `tools/spreadsheet.py` | Build/rebuild xlsx from a JSON of accumulated rows (DOI URLs as Link). |
+| `tools/review_paper.py` | **Phase 7 (optional).** Render a review-article `.docx` from `content.json` (prose) + `rows.json`. Builds the title/author/disclosure block, abstract, sections, embedded figure, and an APA-7 reference list pulled from the canonical `apa`. Prose is authored separately (scientific-writing skill); the tool owns only the mechanics. |
 | `tools/search_prompt_template.md` | Prompt template for the literature-search subagent. |
 | `tools/download.py` | **Opt-in (Phase 4).** Multi-source PDF downloader. Not run by default. |
 | `tools/reconcile_downloads.py` | **Opt-in (Phase 4).** After the user manually downloads PDFs via the browser-helper page, this reads each PDF's first-page title via `pdftotext`, fuzzy-matches it against a manifest of slug+title pairs, and moves the PDF into the per-topic dir with the correct slug filename. |
@@ -618,8 +662,11 @@ not a framework — they're scaffolding to keep the LLM judgment work fast.
    batch via Phases 3 + 5 again.
 9b. Phase 6b (OPTIONAL): thematic families — propose → confirm with user →
     assign → tools/families.py validates/stamps/renders. Figure is bespoke.
-9. Phase 7: report to user.
-10. Phase 4 (PDF download) is OPTIONAL. Only run if the user explicitly
+9c. Phase 7 (OPTIONAL): review article — author prose into content.json,
+    render with tools/review_paper.py (APA-7 refs from rows.json). If
+    AI-authored, state the AI author + a verification disclosure.
+10. Phase 8: report to user.
+11. Phase 4 (PDF download) is OPTIONAL. Only run if the user explicitly
     asks for PDFs.
 ```
 
