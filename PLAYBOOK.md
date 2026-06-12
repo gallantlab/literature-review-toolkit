@@ -28,8 +28,11 @@ same way. There are no mode-specific shortcuts.
 
 | Mode | Start from | User says… | Front-end | Then gather |
 |------|-----------|-----------|-----------|-------------|
-| **Topic** | a query/topic | "lit review on X", "extend the bibliography for Y" | Phase 1 (scope) → 2 (search) | topic name + 1-paragraph definition, source doc if any, target spreadsheet path, tier criteria |
-| **Lab** | a lab's publications | "review lab Z's work", "how has Z's research evolved" | Phase L1–L3 (ingest corpus → derive themes) → **L4c** | the lab/author ids, the inclusion filter (e.g. human-only), target paths |
+| **Topic** | a query/topic | "lit review on X", "extend the bibliography for Y" | Phase 1 (scope) → 2 (search) → **2b (antecedents)** | topic name + 1-paragraph definition, source doc if any, target spreadsheet path, tier criteria |
+| **Lab** | a lab's publications | "review lab Z's work", "how has Z's research evolved" | Phase L1–L3 (ingest corpus → derive themes) → **L4c** (+ **2b antecedents**) | the lab/author ids, the inclusion filter (e.g. human-only), target paths |
+
+**Phase 2b (antecedents) is required in both modes** — the forward search misses a
+topic's methodological, empirical, and theoretical roots; do not skip it.
 
 Both then converge on the shared pipeline: **Phase 3 verify → 3f canonicalize refs → 5 spreadsheet →
 5b citation counts → 6 cross-citation → 6b families → 7 review article (optional) → 8 hand-off.** Lab mode's
@@ -100,7 +103,57 @@ The agent should return a numbered list with: APA citation, **DOI link in
 `recent-method`/`recent-LLM`/`recent-theory`/`recent-clinical`), and year.
 
 **Do not act on the agent's output yet.** It will contain errors. Proceed
-to Phase 3.
+to Phase 2b, then Phase 3.
+
+### Phase 2b — Antecedents (the foundations pass) — REQUIRED
+
+The Phase-2 search is biased toward recent work and the topic's *current*
+framing, so it systematically misses the literature the topic was built on. A
+review that omits its antecedents reads as if the field began ~10 years ago.
+**Always run a dedicated antecedents pass, in BOTH modes**, after the main search
+and before verifying.
+
+Spawn a separate search agent **per axis** for the topic's intellectual roots:
+
+1. **Measurement / methodology origins** — the instrument, signal, or technique
+   the work depends on, and the papers that established and validated it (e.g.
+   for human-fMRI work: the BOLD mechanism, the first functional studies, what
+   the signal actually measures).
+2. **Foundational empirical results** — the classic findings the topic builds on,
+   including older work in adjacent methods, species, or eras that the forward
+   search's recency bias skips (e.g. single-unit neurophysiology, psychophysics,
+   the first description of an effect or region).
+3. **Theory / computational framework** — the conceptual claims that motivate the
+   work (e.g. efficient coding, a normative principle, a levels-of-analysis
+   framing).
+
+Reuse `tools/search_prompt_template.md`, but **flip the tier emphasis**: the
+target here is foundational / highly-cited / classic work that PRE-DATES the
+modern literature, not recent papers. Give each agent the already-have list
+(now including the Phase-2 results) so it does not re-find them, and have it tag
+each paper with the best-fit **existing** theme/family. Antecedents fold into the
+existing lanes by default — do NOT spin up new lanes for them unless the user
+asks. Feed every returned paper through Phase 3 → 3f → 5b like any other.
+
+**Old classics often have no DOI** (pre-2000 papers, books, book chapters). Keep
+them as hand-written canonical APA `no-source` rows (references.py flags them;
+the audit gate allows them) and exclude them from `citations.json` — the same
+pattern as any DOI-less item. Beware reissue DOIs for old books (they re-date the
+work to the reprint year); prefer a hand APA citing the original edition. Verify
+each by title/author against the publisher or a library record before trusting
+the agent's APA.
+
+**Lab mode:** the antecedents include the lab's OWN pre-paradigm work — the
+earlier-method, other-species, or pre-tool publications that the inclusion filter
+(Phase L2) drops. Reconsider that filter: a lab's foundational pre-paradigm papers
+are usually the most direct antecedent of its current program, and belong in the
+corpus as `source=lab` (starred) rather than excluded.
+
+**Effect on the figure:** antecedents widen the time span (often back to the
+mid-20th century) while most papers cluster in the last decade. Set the figure's
+`--min-year` to the earliest antecedent and add `--time-warp` so the sparse early
+decades compress and the dense recent years expand — otherwise the modern
+literature collapses into an unreadable clump at the right. See Phase 6b.
 
 ### Phase 3 — Verify EVERY citation (CRITICAL)
 
@@ -396,6 +449,15 @@ paper** (an author surname in `--lab-author`, default `Gallant`, or a row with
 `source=="lab"`) — these are **starred (★) and gold-ringed** so the lab's own work stands
 out. Total labels are capped at `--max-labels` (lab + internal-motif papers always kept).
 
+**Time axis.** `--min-year` clamps the axis start (older papers pin to the left edge).
+When the corpus spans many decades but is recency-heavy — the usual shape after a
+**Phase-2b antecedents pass** — add `--time-warp <0–1>`. It blends the linear axis with
+the empirical CDF of all paper years, GLOBALLY (not per-region): sparse early spans
+compress, dense recent spans expand. `0` = linear, `1` = full density-equalizing; **~0.85**
+keeps old foundations legible while decluttering the modern clump. Faint gridlines mark the
+labelled years so the nonlinear scale stays readable. Always note the nonlinear axis in the
+figure caption (independence principle).
+
 **Only the editorial *arrows/notes* remain a human checkpoint** (cross-family convergence
 arrows and annotations are judgment). Curate those via an optional `--spec figure_spec.json`
 (`{arrows:[{from,to,color,label}], notes:[{at,text,color}], order, subtitle}`); a `labels`
@@ -477,6 +539,11 @@ every paper **from its actual content — not database topic tags** — into the
 buckets the user wants (e.g. for "human work only": `human` / `primate` /
 `other`), and **web-verify (PubMed / publisher) every paper without an abstract
 and every ambiguous call**. Prune false-positives; keep what the user asked for.
+**But do not let the inclusion filter discard the lab's foundational pre-paradigm
+work** (the macaque physiology, the pre-tool methods papers): those are the lab's
+own antecedents and should re-enter as `source=lab` (starred) in the Phase-2b
+pass even when the headline filter is, say, "human fMRI only." Flag them for the
+user at this checkpoint rather than silently dropping them.
 
 **Phase L3 — derive themes (HUMAN CHECKPOINT #2).** Run the families step
 (`family_prompt_template.md` → user approves the ~N themes → assign every kept

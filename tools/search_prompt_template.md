@@ -5,6 +5,13 @@ Agent call (subagent_type: `general-purpose`). The agent has WebSearch +
 WebFetch and will return a curated list. Do NOT trust its citations — verify
 them all in Phase 3.
 
+**Antecedents variant (Phase 2b).** This same template is reused for the required
+antecedents pass. For that pass, FLIP the tier emphasis: the target is
+foundational / classic / highly-cited work that PRE-DATES the modern literature
+(methodology origins, foundational empirical results, or theory), not recent
+papers. Run one agent per axis, set `{TIER_BOUNDARY_YEAR}` so "classic" dominates,
+and expect some no-DOI books/chapters (handle per Phase 2b).
+
 ---
 
 You are doing a literature search for an academic neuroscience review on the
