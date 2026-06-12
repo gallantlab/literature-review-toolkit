@@ -134,8 +134,18 @@ page and confirm author/year. Don't rely on the agent's claim.
 Common fabrication patterns to flag:
 - Author name that doesn't appear in any of the paper's actual authors.
 - Conclusion that is the OPPOSITE of the paper's actual finding.
-- bioRxiv DOIs not matching the `10.1101/...` pattern.
+- A DOI that does not resolve, or that resolves to an unrelated paper (agents
+  invent plausible DOIs and also mis-copy real ones — confirm the *target*, not
+  just that it resolves).
 - arxiv preprint IDs that don't resolve.
+
+**Don't treat an unfamiliar DOI shape as fabrication evidence — resolve it.**
+Prefixes and suffix formats drift, so a DOI not matching the shape you expect is
+often just a newer pattern, not a fake. Seen in real builds: bioRxiv now issues
+`10.64898/...` DOIs alongside the older `10.1101/...`; Imaging Neuroscience uses
+`10.1162/imag.a.NNNN` (dots, not the `imag_a_NNNNN` underscores you might guess —
+the wrong shape 404s). Always judge a DOI by what it resolves to, never by its
+string.
 
 ### Phase 3f — Canonicalize EVERY reference (`tools/references.py`)
 
@@ -568,6 +578,26 @@ The three human checkpoints mirror topic mode: **(1) the corpus** (not a topic),
   rewrites the spreadsheet as a side effect of import. The simpler
   alternative is to keep all rows in a single JSON and rebuild via
   `tools/spreadsheet.py`.
+
+### On canonicalization & the live table
+- **When `--audit` flags `U+FFFD` mojibake, hand-fix it LAST.** CrossRef stores a
+  few names/venues with broken encoding (the original glyph is unrecoverable), so
+  `references.py` pulls the broken character back in on *every* run. Fix it
+  directly in `rows.json` AFTER the final `references.py` pass and before building
+  the spreadsheet/figure — fixing it earlier just gets it overwritten on the next
+  canon, and you loop on the gate. Real cases: `Bürgel`, `Zeitschrift für
+  Anatomie`.
+- **CrossRef mis-splits compound / particle surnames** (`Lambon Ralph` →
+  `Ralph, M. A. L.`; `de Heer` → `Heer, W. A. D.`). The shared formatter handles
+  the common particles, but novel ones slip through and re-canon reintroduces the
+  bad split — so correct these in `rows.json` after the last canon, same as
+  mojibake.
+- **`rows.json` is the live table; the row-emitter script is destructive once you
+  pass Phase 3f.** A per-project `build_data.py` (or equivalent) only knows the
+  original search rows — re-running it after canon/xref/families drops the xref
+  rows and wipes the canonical `apa` + citation counts. After the first build,
+  edit `rows.json` directly (or splice via targeted canon); don't regenerate it
+  from the emitter.
 
 ### On cross-citation analysis
 - CrossRef coverage varies by publisher. Nature, Cell, OUP, JNeurosci have
