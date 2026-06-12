@@ -40,7 +40,10 @@ import xlsxwriter
 
 import common
 
-COLORS = {"source-doc": None, "search": "#FFF7E0", "xref": "#E2F0D9", "lab": "#DDEBF7"}
+COLORS = {"source-doc": None, "search": "#FFF7E0", "xref": "#E2F0D9", "lab": "#DDEBF7",
+          # Phase 2b antecedents (foundations pass): a distinct band. DOI'd classics
+          # get the fill; no-DOI hand-cited classics ("anteced-nosrc") share it.
+          "anteced": "#F3E6F5", "anteced-nosrc": "#F3E6F5"}
 
 
 def cite_val(row, key):
