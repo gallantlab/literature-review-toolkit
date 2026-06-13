@@ -1,22 +1,49 @@
 # Literature Review Agent Playbook
 
-**Purpose.** Build or extend a bibliography spreadsheet for an academic
-review topic. Per topic, produce ~50-70 high-impact and recent papers,
-classified and summarised. Each row's link is the paper's DOI URL
-(`https://doi.org/<doi>`). PDFs are NOT downloaded by default — Phase 4 is
-opt-in only.
+**Purpose.** Build or extend a bibliography for an academic review topic, and
+optionally render it as a figure and a written review. This is ONE tool with two
+front-ends — **topic mode** (start from a query) and **lab mode** (start from a
+lab's corpus) — that share the entire downstream pipeline; only the front-end
+differs. Per topic, aim for ~50-70 high-impact and recent papers, classified and
+summarised. Decide the mode first (Phase 0), then gather that mode's inputs.
 
-**When to use.** This is ONE tool with two front-ends — **topic mode** (start
-from a query) and **lab mode** (start from a lab's corpus). They share the entire
-downstream pipeline; only the front-end differs. Decide the mode first (Phase 0),
-then gather that mode's inputs. Do NOT ask whether to download PDFs — the default
-is no; only run Phase 4 if the user explicitly requests it. Always need a contact
-email for the NCBI/CrossRef/OpenAlex User-Agent (export `LITREVIEW_EMAIL` or pass
-`--email` — required by `verify.py`, `citations.py`, `xref.py`).
+## Operating contract — the rules that don't bend
+
+These are the load-bearing invariants. Everything below the contract is reference
+detail that elaborates them; when in doubt, obey this list. Section pointers are in
+parentheses. Treat bold emphasis elsewhere in this file as ordinary guidance — the
+genuinely inviolable rules are *only* the eight here.
+
+1. **Verify EVERY citation before it enters a deliverable** (Phase 3). About 1 in 4
+   agent-returned refs has a fabricated author list, wrong year, reversed
+   conclusion, or bad DOI. No exceptions — preprints included.
+2. **Every reference is canonical** (Phase 3f). Rebuild each `apa` from the verified
+   DOI/arXiv with `references.py`; never ship an agent-typed or OpenAlex-typed
+   string. `references.py --audit` is a hard gate (exit 1) — run it before every
+   deliverable.
+3. **One row per DOI** — global dedup; a paper appears once in `rows.json`. Bites
+   hardest at the lab-mode merge, where one paper surfaces under several
+   theme-searches and a lab paper can resurface as "field" (Phase L4c). (Distinct
+   from the *one-family-per-paper* rule, which `families.py` enforces automatically
+   — Phase 6b. This contract item is only about row-level deduplication.)
+4. **Run the antecedents pass on every review, both modes** (Phase 2b). The forward
+   search misses the topic's methodological, empirical, and theoretical roots;
+   without it the field looks ~10 years old.
+5. **Audit the temporal order of ideas before delivering any written review**
+   (Phase 7). Origin claims must cite the EARLIEST deserving paper, oldest-first —
+   not whichever ref fits the sentence.
+6. **`rows.json` is the live table after Phase 3f.** Edit it by hand for any later
+   change; never re-run the row-emitter (it wipes canonical `apa` + citation counts).
+7. **Don't ask before fetching** from PubMed/PMC/CrossRef/OpenAlex/Unpaywall/arXiv/
+   publishers — these are read-only academic GETs; do confirm destructive or
+   shared-state actions. Every link is a bare `https://doi.org/<doi>` (never a
+   libproxy URL). Set a contact email (`LITREVIEW_EMAIL` or `--email`) for the API
+   User-Agent.
+8. **PDFs are opt-in** (Phase 4) — default no, and never ask whether to fetch them.
 
 **Default tier criteria.** Pre-2021: only highly cited / foundational. 2022+:
-promiscuous (no citation-count gate, since they haven't had time). The
-boundary year is "today minus ~5 years"; adjust as the calendar advances.
+promiscuous (no citation-count gate — too recent to have accrued cites). The
+boundary is "today minus ~5 years"; advance it as the calendar moves.
 
 ---
 
@@ -109,8 +136,8 @@ to Phase 2b, then Phase 3.
 
 The Phase-2 search is biased toward recent work and the topic's *current*
 framing, so it systematically misses the literature the topic was built on. A
-review that omits its antecedents reads as if the field began ~10 years ago.
-**Always run a dedicated antecedents pass, in BOTH modes**, after the main search
+review that omits its antecedents reads as if the field began ~10 years ago. Run a
+dedicated antecedents pass in both modes (contract rule 4), after the main search
 and before verifying.
 
 Spawn a separate search agent **per axis** for the topic's intellectual roots:
@@ -203,10 +230,10 @@ string.
 ### Phase 3f — Canonicalize EVERY reference (`tools/references.py`)
 
 Verification (3a–3e) confirms a citation is *real*; this makes its `apa` string
-*perfect*. **Never ship a reference typed from an agent's memory (topic mode) or
-OpenAlex's light metadata (lab mode)** — rebuild every `apa` from the verified
-DOI against the authoritative source. `references.py` is the single canonical
-formatter and a hard gate, used identically in BOTH modes:
+*perfect* (contract rule 2). Never ship a reference typed from an agent's memory
+(topic mode) or OpenAlex's light metadata (lab mode) — rebuild every `apa` from the
+verified DOI against the authoritative source. `references.py` is the single
+canonical formatter and a hard gate, used identically in both modes:
 
 ```
 python3 tools/references.py --rows rows.json --out rows.json   # rebuild + report
@@ -342,15 +369,11 @@ Then attach the counts to each row (`cite_openalex` / `cite_s2` keys) in your
 `Cite` columns when it sees them. Counts are a snapshot at run time; re-run to
 refresh. Papers with no DOI (books, blog/tech-report releases) stay blank.
 
-**Note on per-version data scripts.** If you keep your batch data inside
-numbered Python files (`build_bibliography.py`, `build_bibliography_v2.py`,
-...) that import each other to inherit prior rows, then **the
-xlsx-writing block in each one must live under `if __name__ == "__main__":`**.
-Without the guard, a casual `from build_bibliography import ROWS` rewrites
-the spreadsheet as a side effect of import. Module-level data and helpers
-stay at top level so they're importable; only the xlsxwriter block is
-guarded. The simpler alternative is to keep all rows in a single JSON and
-rebuild via `tools/spreadsheet.py`.
+**Per-version data scripts:** if you split batch data across importing Python
+files, guard the xlsx-writing block under `if __name__ == "__main__":` so an
+import doesn't rewrite the spreadsheet as a side effect — or just keep all rows in
+one JSON and rebuild via `tools/spreadsheet.py` (the simpler path; see Lessons →
+On the spreadsheet).
 
 ### Phase 6 — Cross-citation analysis (second pass)
 
@@ -485,6 +508,37 @@ method/region lanes. The title should convey the question, the answer, and why i
 in-text citation is **APA author–date** (`(Huth et al., 2016)`) and MUST name a paper that exists
 in `rows.json`, so the reference list backs it.
 
+**Respect the temporal order of ideas — distil the intellectual history, do not force refs into
+the narrative (contract rule 5; confirmed by user 2026-06-13).** The single most common failure of an
+AI-written review is crediting the wrong paper for an idea: it picks whichever citation fits the
+sentence it wants to write, rather than the paper that actually established the idea first. When a
+sentence makes an **origin claim** — signalled by *emerges, first, established, identified,
+introduced, was mapped, showed that, had been, early work, foundational, began, demonstrated,
+discovery* — it MUST cite the **earliest** paper that deserves priority, and order multiple
+citations oldest-first. Four recurring inversions to watch for (each example is a real miss caught
+2026-06-13):
+- crediting a later **review** for a finding an earlier **primary paper** made (e.g. Tanaka 1996
+  review vs. Desimone et al. 1984 for object/face selectivity in IT);
+- crediting a later **model/normalisation/synthesis** for a phenomenon earlier **empirical** work
+  established (e.g. Reynolds & Heeger 2009 model vs. McAdams & Maunsell 1999 for attention changing
+  gain/tuning);
+- crediting a later, narrower paper while ignoring an earlier, **more general** one from the same
+  year (e.g. Dumoulin & Wandell 2008 pRF vs. Kay et al. 2008's more general per-voxel model);
+- in **lab mode**, relegating the lab's OWN foundational paper to a later section while a follow-up
+  from another group gets the priority slot (e.g. Hegdé & Van Essen 2000 vs. Gallant et al. 1993
+  for complex-form selectivity in V4). The lab's antecedents (Phase 2b / L4c) exist precisely so
+  the review can assign priority correctly — use them.
+
+**Priority audit (before delivering the review; contract rule 5).** After drafting `content.json`, run a
+dedicated audit pass — analogous to the Phase-3 citation verify and the Phase-2b antecedents pass.
+Dispatch one agent with the draft prose plus `rows.json` (which carries every candidate paper and
+its `year`) and instruct it to: scan every origin-claim sentence; for each, check whether an
+**earlier** paper in `rows.json` (or an undisputed classic) deserves priority for that specific
+idea; and report each inversion as `claim → currently cites (year) → earlier source (year) → fix`.
+Apply the confirmed fixes (reorder citations oldest-first, add the originating paper, demote the
+later review/model to "later", and adjust wording so the sentence reads as history not narrative).
+This pass catches what self-review misses because the drafting model is biased toward its own story.
+
 **Mechanics — `tools/review_paper.py`.** The tool owns only the mechanical render; it does not
 write prose. It reads `rows.json` and builds the **APA-7 reference list straight from the
 canonical `apa` strings** (deduped, alphabetised, hanging indent, with DOI links), embeds the
@@ -527,7 +581,7 @@ Everything downstream (verify, count, families, figure) is the same machinery.
 publication list from OpenAlex by author id (use `--search` to find it; pass
 several `--author` ids for PI + key lab members). Output `lab_papers.json`.
 
-**Phase L1b — enrich abstracts (REQUIRED).** **OpenAlex metadata is not enough:**
+**Phase L1b — enrich abstracts (REQUIRED).** OpenAlex metadata is not enough:
 its abstracts are missing for a sizable minority of papers and its `topics` tags
 are coarse, so classifying from them alone mislabels papers. Fill missing
 abstracts from Semantic Scholar (`/paper/batch`, by DOI) and/or PubMed first.
@@ -567,7 +621,7 @@ theme:
    definition, the lab's papers in that theme as the "already have"/exclude list,
    two-tier criteria (foundational vs recent), a capped target (~30–40), multiple
    query angles. One agent per theme.
-2. **Verify EVERY citation (Phase 3, non-negotiable)** with `tools/verify.py`.
+2. **Verify EVERY citation (Phase 3)** with `tools/verify.py`.
    It now resolves arXiv/conference papers against the arXiv API — so a NOT-FOUND
    is a real failure to investigate, never "an arXiv paper, skip it." Expect ~1
    in 4 to need a fix (fabricated author lists, wrong arXiv ids, garbage DOIs).
@@ -586,6 +640,10 @@ theme:
 
 The three human checkpoints mirror topic mode: **(1) the corpus** (not a topic),
 **(2) the themes**, **(3) the figure**.
+
+The lab's foundational pre-paradigm papers (gathered in L2 + Phase 2b) exist so a Phase-7 review
+can assign priority to the lab's own earlier work over later follow-ups from other groups — enforce
+that with the priority audit (contract rule 5; Phase 7).
 
 ---
 
@@ -621,16 +679,19 @@ The three human checkpoints mirror topic mode: **(1) the corpus** (not a topic),
   "field." `families.py` enforces ref-level exclusivity but not duplicate DOIs;
   assert zero cross-theme dup DOIs and zero field↔lab collisions yourself.
 
+### On writing the review (Phase 7)
+- **Order ideas by publication date, not by your narrative.** The drafting model reliably presents
+  a later paper as an idea's origin because that ref fits the sentence it wants to write. The rule,
+  the four inversion patterns, the real misses caught 2026-06-13, and the required pre-delivery
+  **priority audit** are all in Phase 7 — run the audit. Self-review misses these because the
+  author is biased toward its own story; an independent pass with the publication years catches them.
+
 ### On PDF downloads
-- **PMC direct PDFs are hopeless via curl.** Cloudflare PoW challenge.
-  Always go through Europe PMC or Unpaywall.
-- **Cell, Elsevier, Wiley, OUP, MIT Press, PNAS, biorxiv all block bots.**
-  Don't waste retries; route to manual list.
-- **Author institutional repos work.** When Unpaywall returns a
-  university-domain URL (`.edu`, `.ac.uk`, etc.), it almost always
-  downloads cleanly.
-- **Always validate the bytes.** A 200 response with `%PDF` magic = real PDF.
-  A 200 response with HTML = challenge page or paywall preview.
+Phase 4 has the full source order and the bot-blocked list. Three things that recur:
+institutional-repo URLs (`.edu`/`.ac.uk`) from Unpaywall almost always work;
+PMC/Cell/Elsevier/Wiley/OUP/MIT Press/PNAS/bioRxiv all block bots (route to the
+helper page, don't retry); always validate the first 4 bytes are `%PDF` (a 200 can
+be an HTML challenge page).
 
 ### On the spreadsheet
 - Use a "source" column or color code so a future you (or the user) knows
@@ -761,7 +822,9 @@ not a framework — they're scaffolding to keep the LLM judgment work fast.
     assign → tools/families.py validates/stamps/renders. Figure is bespoke.
 9c. Phase 7 (OPTIONAL): review article — author prose into content.json,
     render with tools/review_paper.py (APA-7 refs from rows.json). If
-    AI-authored, state the AI author + a verification disclosure.
+    AI-authored, state the AI author + a verification disclosure. REQUIRED
+    before delivery: run the priority audit (origin claims must cite the
+    EARLIEST paper, oldest-first) — see Phase 7.
 10. Phase 8: report to user.
 11. Phase 4 (PDF download) is OPTIONAL. Only run if the user explicitly
     asks for PDFs.
