@@ -85,9 +85,16 @@ def canonical(row):
     am = ARXIV_DOI.match(doi or "")
     if am:
         aid = aid or am.group(1)
+    # A real (non-arXiv) DOI is the version of record: prefer CrossRef over the
+    # arXiv preprint even when the row carries both, so a published paper is cited
+    # by its journal version rather than its preprint. arXiv is used only when
+    # there is no journal DOI (preprint-only rows) or the DOI is itself an arXiv DOI.
+    journal_doi = doi if (doi and not am) else ""
     fv = row.get("venue", "")
     try:
-        if aid:
+        if journal_doi:
+            r = crossref(journal_doi, fv)
+        elif aid:
             r = arxiv(aid, fv)
         elif doi:
             r = crossref(doi, fv)

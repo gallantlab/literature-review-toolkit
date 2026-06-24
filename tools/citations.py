@@ -40,6 +40,18 @@ def s2_id(doi):
     return ("ARXIV:" + m.group(1)) if m else ("DOI:" + doi)
 
 
+def openalex_single(doi, email):
+    """Canonical cited_by_count for one DOI via the single-work endpoint, or None.
+    OpenAlex resolves /works/doi:<doi> to the merged primary record, so this is
+    more reliable than the batch filter (which can return a low-count duplicate)."""
+    try:
+        w = http_json(f"https://api.openalex.org/works/doi:{urllib.parse.quote(doi, safe='/.:')}"
+                      f"?mailto={email}&select=cited_by_count")
+        return w.get("cited_by_count")
+    except Exception:
+        return None
+
+
 def fetch_openalex(items, email):
     """items: list of (key, doi). Returns {key: count}. Batch + single retry."""
     out, by_doi = {}, {}
@@ -48,12 +60,15 @@ def fetch_openalex(items, email):
         batch = dois[i:i + 50]
         filt = "doi:" + "|".join(batch)
         url = (f"https://api.openalex.org/works?filter={urllib.parse.quote(filt, safe=':|/.')}"
-               f"&per-page=50&mailto={email}")
+               f"&per-page=100&mailto={email}")
         try:
             for w in http_json(url).get("results", []):
                 doi = (w.get("doi") or "").lower().replace("https://doi.org/", "")
-                if doi:
-                    by_doi[doi] = w.get("cited_by_count")
+                c = w.get("cited_by_count")
+                if doi and c is not None:
+                    # OpenAlex can return several works for one DOI (a merged primary
+                    # plus stub duplicates); keep the highest count, never last-wins.
+                    by_doi[doi] = max(by_doi.get(doi, 0), c)
         except Exception as e:
             print(f"  OpenAlex batch {i}: {type(e).__name__}: {e}", file=sys.stderr)
         time.sleep(0.4)
@@ -64,13 +79,9 @@ def fetch_openalex(items, email):
     for key, doi in items:
         if key in out:
             continue
-        try:
-            w = http_json(f"https://api.openalex.org/works/doi:{urllib.parse.quote(doi, safe='/.:')}"
-                          f"?mailto={email}")
-            if w.get("cited_by_count") is not None:
-                out[key] = w["cited_by_count"]
-        except Exception:
-            pass
+        c = openalex_single(doi, email)
+        if c is not None:
+            out[key] = c
         time.sleep(0.3)
     return out
 
@@ -140,6 +151,18 @@ def main():
         for k, (n, infl) in fetch_s2(items).items():
             counts[k]["s2"] = n
             counts[k]["s2_influential"] = infl
+
+    # Reconcile suspiciously-low OpenAlex counts against S2. OpenAlex's batch filter
+    # sometimes returns a low-count duplicate record for a DOI; when S2 reports many
+    # more citations, re-query the canonical single-work endpoint and keep the higher.
+    if "openalex" in srcs and "s2" in srcs:
+        doi_by_key = {k: d for k, d in items}
+        for k, c in counts.items():
+            oa, s2c = c["openalex"], c["s2"]
+            if oa is not None and s2c is not None and s2c >= 50 and oa < 0.5 * s2c:
+                canon = openalex_single(doi_by_key.get(k, ""), args.email)
+                if canon is not None and canon > oa:
+                    c["openalex"] = canon
 
     common.dump_json(counts, args.out)
     oa = sum(1 for c in counts.values() if c["openalex"] is not None)

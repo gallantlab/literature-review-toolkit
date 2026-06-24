@@ -696,6 +696,17 @@ be an HTML challenge page).
 ### On the spreadsheet
 - Use a "source" column or color code so a future you (or the user) knows
   where each ref came from and how confident to be.
+- **Ref ids must be globally unique, and stay unique across merges.** A
+  single-character lane prefix plus a multi-digit counter is ambiguous: lane `4`
+  with refs `41…49` then `410…423` parses the same as lane `41`, and a naive
+  merge re-emitted the xref batch as `410…` on top of the existing `410…`,
+  silently duplicating ids. Two failures followed: `families.py` assigned the same
+  paper twice, and — worse — `citation_counts.json` keyed by ref got
+  cross-contaminated (two rows sharing id `415` shared one count, so Carvalho 2024
+  inherited Elman 1990's 10,838 cites). After any merge, assert
+  `len(refs)==len(set(refs))`; attach citation counts only AFTER ids are final (or
+  key the counts by DOI, not by ref); and prefer zero-padded or separator'd ids
+  (`4-01`, or two-char lanes) so the counter can't collide with the prefix.
 - Keep summaries to 3-5 sentences. Long ones become unreadable in a row.
 - Don't try to read existing xlsx with xlsxwriter — it's write-only. If
   appending, regenerate the whole file from a JSON of accumulated rows.
@@ -726,6 +737,12 @@ be an HTML challenge page).
   rows and wipes the canonical `apa` + citation counts. After the first build,
   edit `rows.json` directly (or splice via targeted canon); don't regenerate it
   from the emitter.
+- **`references.py` prefers the journal DOI over arXiv when a row has both** (the
+  version of record), and falls back to arXiv only for preprint-only rows (no
+  journal DOI) or rows whose DOI is itself an arXiv DOI. So you no longer need to
+  hand-clear an `arxiv` field to stop a published paper from being cited as its
+  preprint — just keep both ids and let canon pick the journal version. (Agents
+  routinely return a journal DOI *and* the preprint id for the same paper.)
 
 ### On cross-citation analysis
 - CrossRef coverage varies by publisher. Nature, Cell, OUP, JNeurosci have
@@ -741,6 +758,14 @@ be an HTML challenge page).
 - **OpenAlex is the reliable workhorse** (~95%+ coverage by DOI). It undercounts
   arXiv-only preprints (separate record from the published version), so for
   preprint-heavy reviews lean on the S2 number for those rows.
+- **OpenAlex's BATCH filter can return a low-count duplicate record** for a DOI
+  that has both a merged primary work and a stub (e.g. Whittington 2020 TEM came
+  back as 6 from the batch but 667 from the canonical `/works/doi:` endpoint;
+  Tolman 1948 as 1 vs 6656). `citations.py` now (a) keeps the MAX count when a DOI
+  appears more than once in a batch, and (b) re-queries the single-work endpoint
+  whenever the OpenAlex count is < half the S2 count (with S2 ≥ 50). Still
+  **spot-check landmark/foundational counts against the S2 column** before
+  delivering — a famous old paper showing single-digit OpenAlex is the tell.
 - **Semantic Scholar's free endpoints are flaky**: the `/paper/batch` endpoint
   429s and sometimes 400s (one malformed id poisons the whole batch); the
   single `/paper/{id}` endpoint 404s valid papers under load. Set `S2_API_KEY`
