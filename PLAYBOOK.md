@@ -47,6 +47,21 @@ boundary is "today minus ~5 years"; advance it as the calendar moves.
 
 ---
 
+## Documentation site — keep it in sync
+
+There is a public documentation website built from `docs/` (MkDocs + Material),
+live at **https://gallantlab.org/literature-review-toolkit/**. It is a *superset*
+of this PLAYBOOK and the README, not a fork. **When you change the toolkit — a
+tool, a phase, a command/flag, a guardrail or lesson — update the matching page
+under `docs/` in the same change** (fastest to drift: `docs/phases.md`,
+`docs/tools.md`, `docs/pipeline.md`). It auto-deploys via
+`.github/workflows/docs.yml` on push to `main` (build runs `mkdocs build
+--strict`). Full editing/figure/snippet details live in `docs/maintaining.md`.
+The repo is **public** (that's what enables free Pages); `site_url` uses the org's
+`gallantlab.org` custom domain, not `github.io`.
+
+---
+
 ## Phase 0 — choose the mode (do this first)
 
 One tool, two front-ends. Everything after the front-end — verify, citation
@@ -853,6 +868,8 @@ not a framework — they're scaffolding to keep the LLM judgment work fast.
 10. Phase 8: report to user.
 11. Phase 4 (PDF download) is OPTIONAL. Only run if the user explicitly
     asks for PDFs.
+12. If you changed any tool/phase/command, update the matching docs/ page
+    (see "Documentation site — keep it in sync" above).
 ```
 
 For a topic with ~40 search-added + ~30 xref-added papers, the default
