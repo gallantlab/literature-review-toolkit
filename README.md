@@ -1,10 +1,11 @@
 # literature-review-toolkit
 
 Scaffolding to drive a Claude (or other LLM) agent through a structured
-literature review — search, verify, rebuild every reference into canonical form,
-count citations, cross-reference, and assemble a single annotated `.xlsx`
-bibliography, then (optionally) group it into theoretical families with an
-interactive lineage figure. PDF acquisition is opt-in.
+literature review — search, search the topic's antecedents, verify, rebuild every
+reference into canonical form, count citations, cross-reference, and assemble a
+single annotated `.xlsx` bibliography, then (optionally) group it into theoretical
+families with an interactive lineage figure and write it up as an AI-authored
+narrative review article. PDF acquisition is opt-in.
 
 The agent does the judgment work; these scripts handle the API calls,
 verification, and bookkeeping that keep the agent honest.
@@ -31,24 +32,39 @@ steps have a ground truth.
 | 2 | **Families** *(optional)* — you approve/edit the agent's proposed grouping *before* it labels every paper | 6b |
 | 3 | **Figure** *(optional)* — you iterate on a lineage/taxonomy figure with the agent (bespoke, not auto-generated) | — |
 
-In between, the mechanical steps are guarded, not reviewed: **every citation is
-verified** against PMC/PubMed/CrossRef/arXiv (search agents fabricate roughly 1
-in 4 — wrong first authors, inverted findings, invented DOIs), **every reference
-is rebuilt** from its verified DOI into canonical APA-7 with a hard audit gate
-(no agent-typed or OpenAlex-typed reference text is trusted), **citation counts**
-are fetched and schema-checked, dedup and cross-citation mining run, and the
-spreadsheet is rebuilt from JSON each time.
+In between, the mechanical steps are guarded, not reviewed: a required
+**antecedents pass** searches the topic's methodological, empirical, and
+theoretical roots (the forward search is recency-biased and misses them);
+**every citation is verified** against PMC/PubMed/CrossRef/arXiv (search agents
+fabricate roughly 1 in 4 — wrong first authors, inverted findings, invented or
+mis-copied DOIs, and occasionally an entirely wrong author list for a real
+paper); **every reference is rebuilt** from its verified DOI into canonical APA-7
+with a hard audit gate (no agent-typed or OpenAlex-typed reference text is
+trusted; the journal DOI is preferred over an arXiv preprint as the version of
+record); **citation counts** are fetched, reconciled against a second database,
+and schema-checked; dedup and cross-citation mining run; and the spreadsheet is
+rebuilt from JSON each time.
 
-**Phases at a glance:** 1 scope · 2 search · 3 verify *(critical)* · 3f
-canonicalize refs · 4 PDFs *(opt-in)* · 5 spreadsheet · 5b citation counts · 6
-cross-citation · 6b families *(opt)* · 7 hand-off. **Lab mode** swaps phases 1–2
-for ingest-corpus → derive-themes, then converges on this same pipeline. Full
-detail in [`PLAYBOOK.md`](./PLAYBOOK.md).
+If you opt into the **narrative review article** (Phase 7), the agent authors the
+prose itself — the one judgment step the toolkit does not mechanize — but it runs
+a mandatory **priority audit** first: an independent pass that checks every
+origin claim cites the *earliest* paper that earned priority, not whichever
+reference fits the sentence. The reference list is pulled canonically from the
+verified bibliography, so it cannot drift from the citations.
+
+**Phases at a glance:** 1 scope · 2 search · **2b antecedents** *(required)* · 3
+verify *(critical)* · 3f canonicalize refs · 4 PDFs *(opt-in)* · 5 spreadsheet ·
+5b citation counts · 6 cross-citation · 6b families *(opt)* · 7 review article
+*(opt)* · 8 hand-off. **Lab mode** swaps phases 1–2 for ingest-corpus →
+derive-themes, then converges on this same pipeline. Full detail in
+[`PLAYBOOK.md`](./PLAYBOOK.md).
 
 ## What you get out
 
-**The deliverable is one `.xlsx` file.** Everything else is scaffolding
-and an audit trail you can ignore.
+**The core deliverable is one `.xlsx` file.** Two optional deliverables sit on
+top of it: an interactive **families figure** (Phase 6b) and an AI-authored
+**narrative review `.docx`** (Phase 7), both rendered from the same verified
+`rows.json`. Everything else is scaffolding and an audit trail you can ignore.
 
 For each review you run, results land in **a named subdirectory** — one
 per topic — under whatever bibliography root you keep. The subdirectory
@@ -62,25 +78,27 @@ the source of truth and the `.xlsx` is the rendered output.
 ├── visual_cerebellum/                 <- one review topic, one subdir
 │   ├── visual_cerebellum_bibliography.xlsx   <-- THE DELIVERABLE
 │   ├── topic_definition.md            (scope you & the agent agreed on)
-│   ├── agent_out.json                 (raw search-agent output)
-│   ├── verified.json                  (after Phase 3 corrections)
-│   ├── verify_report.json             (per-citation OK / MISMATCH / NOT-FOUND)
-│   ├── rows.json                      (everything the spreadsheet renders from)
+│   ├── rows.json                      (the LIVE table — everything renders from it)
+│   ├── verify_report.json             (Phase 3: per-citation OK / MISMATCH / NOT-FOUND)
 │   ├── citation_counts.json           (Phase 5b: OpenAlex + S2 counts, cached)
+│   ├── xref_visual_cerebellum.json    (Phase 6: cross-citation frequency table)
+│   ├── internal_citations.json        (within-corpus in-degree; feeds figure landmarks)
 │   ├── families.json / families.md    (Phase 6b: theoretical grouping, if run)
+│   ├── families_input.json            (Phase 6b: the approved spec + assignments)
 │   ├── visual_cerebellum_families.html (Phase 6b: interactive figure; + .svg/.png/.pdf)
-│   ├── xref_visual_cerebellum.json    (cross-citation frequency table)
-│   ├── xref_picks.json                (the green-tier picks from xref)
-│   └── xref_meta.json                 (CrossRef metadata for xref picks)
+│   ├── content.json                   (Phase 7: the authored review prose, if run)
+│   └── Visual_Cerebellum_review.docx  (Phase 7: AI-authored narrative review, if run)
 ├── attention/                         <- a different topic, separate subdir
 │   └── attention_bibliography.xlsx
 └── language_learning/
     └── bibliography.xlsx
 ```
 
-If you want to share the result with someone, send the `.xlsx`. If you
-want to extend or re-run the review later, the JSON files in the
-subdirectory are what the toolkit reads from.
+After Phase 3f, **`rows.json` is the live table** — edit it directly for any
+later change; re-running an upstream row-emitter is destructive (it wipes the
+canonical references and citation counts). If you want to share the result, send
+the `.xlsx` (or the `.docx` review). If you want to extend or re-run the review
+later, the JSON files in the subdirectory are what the toolkit reads from.
 
 The spreadsheet has columns
 `Topic | Ref# | APA reference | Link | Summary | Tag | Family | Cite (OpenAlex) | Cite (S2) | PDF (local) | Xref`,
@@ -135,6 +153,9 @@ of prompts that work:
 
 > now group the world_models bibliography into a few theoretical families,
   and let's iterate on a lineage figure.
+
+> turn the world_models bibliography into a written review article — author it,
+  run the priority audit, and render the .docx.
 ```
 
 The agent will pick a slug for the subdirectory (`visual_cerebellum/`,
@@ -153,10 +174,12 @@ mkdir my_topic && cd my_topic
 
 # Phase 2: spawn a literature-search agent (or do the search yourself)
 #          with the prompt at ../tools/search_prompt_template.md filled in.
-#          Save the returned list as agent_out.json. Links MUST be DOI URLs.
+#          Save the returned list as rows.json. Links MUST be DOI URLs.
+# Phase 2b: REQUIRED antecedents pass — reuse the same template but flip the tier
+#          to favour foundational/classic roots, then fold the results into rows.json.
 
 # Phase 3: verify everything before trusting any of it.
-python3 ../tools/verify.py --citations agent_out.json --out verify_report.json
+python3 ../tools/verify.py --citations rows.json --out verify_report.json
 
 # Phase 3f: rebuild every reference into canonical APA-7 from the verified DOI,
 #           then gate (exit 1 on any imperfect ref). Both modes.
@@ -182,6 +205,11 @@ python3 ../tools/xref.py --papers verified.json \
 python3 ../tools/families.py --rows rows.json --assign families_input.json --out families.json
 python3 ../tools/families_figure.py --rows rows.json --families families.json \
                                     --out-prefix my_topic_families --title "My topic — families"
+
+# Phase 7 (optional): AI-authored narrative review .docx. Author the prose into
+#   content.json (run a priority audit first), then render — refs come from rows.json.
+python3 ../tools/review_paper.py --rows rows.json --content content.json \
+                                 --figure my_topic_families.png --out My_Topic_review.docx
 
 # --- OPTIONAL: Phase 4 (PDF download) ---
 # Only run if you've decided to grab PDFs. Default workflow skips this.
@@ -236,8 +264,9 @@ Earlier project, same workflow:
 | [`tools/xref.py`](./tools/xref.py) | Cross-citation frequency table from CrossRef reference lists. |
 | [`tools/lab_corpus.py`](./tools/lab_corpus.py) | **Lab mode (L1).** Ingest a lab's full publication corpus from OpenAlex by author id. Enrich abstracts before classifying — OpenAlex metadata alone is insufficient. |
 | [`tools/families.py`](./tools/families.py) | **Phase 6b.** Validate/stamp/render a theoretical-family grouping (agent proposes, you approve the definitions). |
-| [`tools/families_figure.py`](./tools/families_figure.py) | **Phase 6b.** Interactive HTML lineage figure (+ svg/png/pdf) from rows + families. Replaces the old static figure. |
+| [`tools/families_figure.py`](./tools/families_figure.py) | **Phase 6b.** Interactive HTML lineage figure (+ svg/png/pdf) from rows + families; landmark dots auto-selected by citation count and within-corpus in-degree. Replaces the old static figure. |
 | [`tools/family_prompt_template.md`](./tools/family_prompt_template.md) | Two-step propose → assign prompt for the families pass. |
+| [`tools/review_paper.py`](./tools/review_paper.py) | **Phase 7 *(opt)*.** Render an AI-authored narrative review `.docx` from `content.json` (prose) + `rows.json` (the APA-7 reference list is pulled canonically from the verified corpus). The tool owns only the mechanics — the prose is authored separately, after a mandatory priority audit. |
 | [`tools/spreadsheet.py`](./tools/spreadsheet.py) | Build/rebuild the `.xlsx` from accumulated JSON rows; auto-adds `Cite` / `Family` columns when present. |
 | [`tools/search_prompt_template.md`](./tools/search_prompt_template.md) | Prompt template for the literature-search subagent. |
 | [`tools/download.py`](./tools/download.py) | **Opt-in (Phase 4).** Multi-source PDF downloader (arxiv → Unpaywall → EuropePMC). |
