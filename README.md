@@ -1,6 +1,6 @@
 # literature-review-toolkit
 
-📖 **Full documentation site: <https://gallantlab.github.io/literature-review-toolkit/>**
+📖 **Full documentation site: <https://gallantlab.org/literature-review-toolkit/>**
 (step-by-step phases, worked examples, and a gallery of lineage figures). Build it
 locally with `pip install -r docs/requirements.txt && mkdocs serve`.
 

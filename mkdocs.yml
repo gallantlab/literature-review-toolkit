@@ -4,7 +4,7 @@ site_description: >-
   review — search, verify, canonicalize, count, cross-reference, and assemble a
   single annotated spreadsheet, then optionally a lineage figure and an
   AI-authored narrative review.
-site_url: https://gallantlab.github.io/literature-review-toolkit/
+site_url: https://gallantlab.org/literature-review-toolkit/
 repo_url: https://github.com/gallantlab/literature-review-toolkit
 repo_name: gallantlab/literature-review-toolkit
 edit_uri: edit/main/docs/
