@@ -1,5 +1,9 @@
 # literature-review-toolkit
 
+📖 **Full documentation site: <https://gallantlab.github.io/literature-review-toolkit/>**
+(step-by-step phases, worked examples, and a gallery of lineage figures). Build it
+locally with `pip install -r docs/requirements.txt && mkdocs serve`.
+
 Scaffolding to drive a Claude (or other LLM) agent through a structured
 literature review — search, search the topic's antecedents, verify, rebuild every
 reference into canonical form, count citations, cross-reference, and assemble a

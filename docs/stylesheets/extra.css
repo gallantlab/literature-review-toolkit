@@ -1,0 +1,83 @@
+/* ---- Bibliography preview table (mirrors the real .xlsx colour coding) ---- */
+.bib-preview {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  width: 100%;
+  display: table;
+}
+.bib-preview th {
+  background: var(--md-default-fg-color--lightest);
+  font-weight: 700;
+  text-align: left;
+  vertical-align: bottom;
+}
+.bib-preview td,
+.bib-preview th {
+  padding: 0.35em 0.5em;
+  border: 1px solid var(--md-default-fg-color--lighter);
+  vertical-align: top;
+}
+.bib-preview td.apa { min-width: 16em; }
+.bib-preview td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Row-origin colours: white = source doc, cream = agent search, green = cross-citation */
+.bib-preview tr.row-source td { background: #ffffff; color: #1a1a1a; }
+.bib-preview tr.row-search td { background: #fdf6e3; color: #1a1a1a; }
+.bib-preview tr.row-xref   td { background: #e8f5e9; color: #1a1a1a; }
+
+/* Small legend swatches reused in prose */
+.swatch {
+  display: inline-block;
+  width: 0.85em; height: 0.85em;
+  border: 1px solid rgba(0,0,0,.25);
+  border-radius: 2px;
+  vertical-align: -1px;
+  margin-right: 0.3em;
+}
+.swatch.source { background: #ffffff; }
+.swatch.search { background: #fdf6e3; }
+.swatch.xref   { background: #e8f5e9; }
+
+/* ---- Decision-point / callout cards on the home + pipeline pages ---- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 1.2rem 0;
+}
+.card {
+  border: 1px solid var(--md-default-fg-color--lighter);
+  border-radius: 0.6rem;
+  padding: 1rem 1.1rem;
+  background: var(--md-default-fg-color--lightest);
+}
+.card h3 { margin-top: 0; }
+.card .big {
+  font-size: 1.8rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--md-primary-fg-color);
+}
+
+/* ---- Figure captions for image galleries ---- */
+figure.fig { margin: 1.4rem 0; text-align: center; }
+figure.fig img {
+  border: 1px solid var(--md-default-fg-color--lighter);
+  border-radius: 0.4rem;
+  max-width: 100%;
+}
+figure.fig figcaption {
+  font-size: 0.78rem;
+  color: var(--md-default-fg-color--light);
+  margin-top: 0.5rem;
+}
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.2rem;
+  margin: 1.4rem 0;
+}
+.gallery figure.fig { margin: 0; }
+
+/* Tighten the hero image on the landing page */
+.hero img { border-radius: 0.5rem; }

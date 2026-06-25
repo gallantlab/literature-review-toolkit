@@ -1,0 +1,95 @@
+site_name: literature-review-toolkit
+site_description: >-
+  Scaffolding to drive an LLM agent through a structured, verifiable literature
+  review — search, verify, canonicalize, count, cross-reference, and assemble a
+  single annotated spreadsheet, then optionally a lineage figure and an
+  AI-authored narrative review.
+site_url: https://gallantlab.github.io/literature-review-toolkit/
+repo_url: https://github.com/gallantlab/literature-review-toolkit
+repo_name: gallantlab/literature-review-toolkit
+edit_uri: edit/main/docs/
+copyright: MIT-licensed. Built in the Gallant Lab, UC Berkeley.
+
+theme:
+  name: material
+  icon:
+    repo: fontawesome/brands/github
+    logo: material/book-search-outline
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - glightbox:
+      touchNavigation: true
+      loop: false
+      zoomable: true
+      draggable: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.keys
+  - attr_list
+  - md_in_html
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+
+# Snippet partials live under docs/_includes and are pulled in via pymdownx.snippets;
+# keep them from being published as standalone pages/assets.
+exclude_docs: |
+  _includes/
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/gallantlab/literature-review-toolkit
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - The pipeline: pipeline.md
+  - Phases in detail: phases.md
+  - Topic mode vs lab mode: modes.md
+  - Tools reference: tools.md
+  - Examples: examples.md

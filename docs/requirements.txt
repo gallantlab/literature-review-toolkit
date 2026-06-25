@@ -1,0 +1,6 @@
+# Build dependencies for the documentation site.
+#   pip install -r docs/requirements.txt
+#   mkdocs serve        # local preview at http://127.0.0.1:8000
+#   mkdocs build         # render the static site into ./site
+mkdocs-material>=9.5
+mkdocs-glightbox>=0.4
