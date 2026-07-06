@@ -203,6 +203,16 @@ In a previous run, the search agent fabricated 5 author lists, reversed
 one paper's conclusion, and invented a bioRxiv DOI that didn't exist.
 About 1 in 4 citations had errors. **Always verify before adding.**
 
+`verify.py` returns one verdict per citation: **OK**, **MISMATCH** (author/year),
+**NOT-FOUND**, or **ERROR**. NOT-FOUND and ERROR are NOT the same and must be
+handled differently: NOT-FOUND means every lookup completed and none matched
+(chase it down — likely fabricated); ERROR means a lookup could not complete
+(rate-limit / network), so **re-run those** rather than treating them as missing.
+On a big run this matters — arXiv rate-limits hard, so the tool prefetches all
+arXiv ids in batches (many per `id_list` call); a genuinely real preprint that
+would otherwise 429 into a false NOT-FOUND now comes back OK (or, if the batch
+still fails, ERROR to re-run).
+
 For each paper the agent returned:
 
 **3a. If a PMCID was given:** call NCBI esummary
@@ -637,9 +647,11 @@ theme:
    two-tier criteria (foundational vs recent), a capped target (~30–40), multiple
    query angles. One agent per theme.
 2. **Verify EVERY citation (Phase 3)** with `tools/verify.py`.
-   It now resolves arXiv/conference papers against the arXiv API — so a NOT-FOUND
-   is a real failure to investigate, never "an arXiv paper, skip it." Expect ~1
-   in 4 to need a fix (fabricated author lists, wrong arXiv ids, garbage DOIs).
+   It resolves arXiv/conference papers against the arXiv API (batched) — so a
+   NOT-FOUND is a real failure to investigate, never "an arXiv paper, skip it."
+   Re-run any ERROR verdicts (transient rate-limit/network — distinct from
+   NOT-FOUND). Expect ~1 in 4 to need a fix (fabricated author lists, wrong arXiv
+   ids, garbage DOIs).
 3. **Citation counts (Phase 5b)** with `tools/citations.py` for every field
    paper — bibliographies always carry counts.
 4. **Consolidate with two guarded steps (fail loud):**
@@ -682,6 +694,28 @@ that with the priority audit (contract rule 5; Phase 7).
   attention paper was actually Foster et al.; two Jain & Huth arXiv ids pointed
   at unrelated papers — all caught only because every citation, preprint
   included, was verified.)
+- **NOT-FOUND ≠ ERROR — a transient failure must never read as "missing."** On a
+  ~90-paper world_models run, 8 real preprints came back NOT-FOUND purely because
+  arXiv rate-limited (429) a per-paper loop into a temporary ban; trusting that
+  verdict would have dropped real papers. `verify.py` now (a) prefetches arXiv ids
+  in **batches** (many per `id_list` call, ~3s apart) so the ban doesn't happen,
+  and (b) reports a distinct **ERROR** verdict when a lookup can't complete, kept
+  separate from NOT-FOUND. Re-run ERRORs; only NOT-FOUND means "does not exist."
+  Pass `expect_year` as a string OR int — either is accepted (a JSON int no longer
+  crashes the run), and one malformed row degrades to ERROR instead of aborting.
+- **Reference titles are strict APA-7 sentence case; DOIs are the ground truth
+  for *location*, the APA string is just the bibliography display.** CrossRef and
+  arXiv return titles in inconsistent casing (arXiv and many publishers use Title
+  Case; Nature deposits sentence case), so `references.py` normalizes ALL-CAPS
+  titles but deliberately does NOT auto-transform Title Case → sentence case:
+  correct sentence-casing needs the proper-noun judgment APA bakes in (`Bayesian`,
+  `Atari`, `Weber`, `Tolman-Eichenbaum` stay capitalized; `Active`, `World`,
+  `Model` lowercase), and a mechanical caser silently mis-cases proper nouns —
+  which the audit can't catch. So after canon, **sentence-case new preprint titles
+  in a reviewed pass** (auto-protect all-caps acronyms, camelCase/digit model
+  names, and hyphen parts; keep a small proper-noun allowlist; eyeball every
+  changed title, e.g. a product name like `Matrix-Game`). This is a post-canon
+  hand-fix like the mojibake and compound-surname fixes below.
 
 ### On contextualizing a lab review (lab mode L4c)
 - **The outward search is a FULL topic-mode review, not a "context" add-on.**
@@ -824,7 +858,7 @@ outputs JSON/files. Run `python3 tools/<script>.py --help` for flags.
 
 | Script | Purpose |
 |--------|---------|
-| `tools/verify.py` | Verify a list of citations via PMC/PubMed/CrossRef + arXiv. Reports mismatches. |
+| `tools/verify.py` | Verify a list of citations via PMC/PubMed/CrossRef + arXiv (arXiv ids batched). Verdicts OK / MISMATCH / NOT-FOUND / ERROR — re-run ERROR, chase NOT-FOUND. |
 | `tools/references.py` | Phase 3f. Rebuild every `apa` from the verified DOI (CrossRef) or arXiv id into canonical APA-7; `--audit` gates the build (exit 1 on any defect). Both modes. |
 | `tools/citations.py` | Phase 5b. Fetch per-paper citation counts from OpenAlex (primary) + Semantic Scholar (secondary) by DOI. Google Scholar is not usable (no API / CAPTCHA). |
 | `tools/families.py` | Phase 6b. Validate an (agent-proposed, human-approved) family taxonomy, stamp `family` onto rows, emit `families.json` + `families.md`. `--digest` prints a corpus digest for the proposal step. |

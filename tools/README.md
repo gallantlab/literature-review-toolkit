@@ -17,11 +17,17 @@ python3 tools/verify.py --citations cits.json --out report.json --email you@inst
 ```
 
 `cits.json` per item: `{label, pmcid?, pmid?, doi?, arxiv?, title?,
-expect_first_author?, expect_year?}`. arXiv papers (an `arxiv` id or a
-`10.48550/arXiv.<id>` DOI) route to the arXiv API first; otherwise looks up via
-PMC, then PubMed, then CrossRef, then title-search. Verdict per item: `OK`,
-`MISMATCH`, `NOT-FOUND`. **A NOT-FOUND is a real failure to chase down — never
-wave through an arXiv/conference paper as unverifiable.**
+expect_first_author?, expect_year?}` (`expect_year` may be a string or int).
+arXiv papers (an `arxiv` id or a `10.48550/arXiv.<id>` DOI) route to the arXiv
+API first; otherwise looks up via PMC, then PubMed, then CrossRef, then
+title-search. arXiv ids are **prefetched in batches** (`id_list`, many per call)
+because the API rate-limits a per-paper loop into a temporary ban. Verdict per
+item: `OK`, `MISMATCH`, `NOT-FOUND`, or `ERROR`. **`NOT-FOUND` and `ERROR` are
+different and must be handled differently:** NOT-FOUND = every lookup completed,
+none matched (chase it down — likely fabricated); ERROR = a lookup could not
+complete (rate-limit / network), so **re-run those** — never treat a throttled
+fetch as "does not exist." One malformed row degrades to ERROR rather than
+aborting the whole batch.
 
 ## `references.py` — canonical reference builder (Phase 3f)
 
@@ -128,7 +134,10 @@ python3 tools/families.py --rows rows.json --assign families_input.json --out fa
 ```
 
 `families_input.json`: `{principle, families:[{key,name,claim,lineage}],
-assignments:{ref:key}}`.
+assignments:{ref:key}}`. Assignment values are accepted case-insensitively and
+by display **name** as well as `key`, so you can re-run straight off the `family`
+field `spreadsheet.py` stamped into `rows.json` (which holds the display name,
+e.g. `"Infer"`) without first lowercasing it back to the key.
 
 ## `families_figure.py` — interactive HTML lineage figure (Phase 6b)
 

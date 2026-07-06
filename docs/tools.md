@@ -10,7 +10,7 @@ JSON I/O, DOI/arXiv parsing, APA building). Run any with `--help`.
 
 | Script | Phase | Purpose |
 |---|---|---|
-| [`verify.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/verify.py) | 3 | Verify every citation via PMC/PubMed/CrossRef **+ the arXiv API** (preprints get a real verdict, not a misleading `NOT-FOUND`). Catches ~25% search-agent fabrications. |
+| [`verify.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/verify.py) | 3 | Verify every citation via PMC/PubMed/CrossRef **+ the arXiv API** (arXiv ids batched to dodge rate-limit bans). Verdicts `OK` / `MISMATCH` / `NOT-FOUND` / `ERROR` — re-run `ERROR` (transient), chase `NOT-FOUND` (likely fake). Catches ~25% search-agent fabrications. |
 | [`references.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/references.py) | 3f | Rebuild every reference from its verified DOI/arXiv id into canonical APA-7 (full authors, particles, casing, real venue incl. bioRxiv/PsyArXiv). `--audit` is a **hard gate**. Both modes. |
 | [`spreadsheet.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/spreadsheet.py) | 5 | Build/rebuild the `.xlsx` from the accumulated JSON rows; auto-adds `Cite` / `Family` columns when present. |
 | [`citations.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/citations.py) | 5b | Per-paper citation counts from OpenAlex (primary) + Semantic Scholar by DOI, with undercount reconciliation. |

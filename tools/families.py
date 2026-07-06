@@ -92,6 +92,17 @@ def main():
                  "Topic column).")
     keyset, name_of = set(keys), {f["key"]: f["name"] for f in families}
 
+    # Accept assignment values case-insensitively and by display name, not just
+    # the exact lowercase key: rows.json stores the display name ("Infer"), so
+    # re-running families straight off the stamped `family` field would otherwise
+    # fail with "unknown family keys". Anything that doesn't resolve is left as-is
+    # and caught by the badkey check below.
+    resolve = {}
+    for f in families:
+        resolve[str(f["key"]).strip().lower()] = f["key"]
+        resolve[str(f["name"]).strip().lower()] = f["key"]
+    assign = {r: resolve.get(str(v).strip().lower(), v) for r, v in assign.items()}
+
     refs = [r["ref"] for r in rows]
     refset = set(refs)
     missing = [r for r in refs if r not in assign]

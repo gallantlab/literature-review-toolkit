@@ -144,7 +144,11 @@ def audit(apa, has_source):
     # Structure is "Authors (YEAR). Title. Venue...."; drop the year-paren and the
     # title sentence (its trailing ". ") and require something non-empty to remain.
     after_year = apa.split(").", 1)[1] if ")." in apa else ""
-    venue_part = after_year.split(". ", 1)[1].strip(" .") if ". " in after_year else ""
+    # The title/venue separator is the title's terminal sentence punctuation +
+    # space — usually ". " but a title ending in a question or exclamation mark
+    # ends with "? "/"! " instead, so split on any of [.?!] followed by space.
+    title_split = re.split(r"[.?!]\s", after_year, maxsplit=1)
+    venue_part = title_split[1].strip(" .") if len(title_split) > 1 else ""
     if has_source and not venue_part:
         defects.append("empty venue")
     return defects, notes

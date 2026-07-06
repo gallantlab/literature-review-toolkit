@@ -65,8 +65,14 @@ python3 ../tools/verify.py --citations rows.json --out verify_report.json
     - inverted or misattributed findings,
     - entirely fabricated author lists for papers that genuinely exist.
 
-The report marks each citation `OK` / `MISMATCH` / `NOT-FOUND` so you (or the
-agent) can fix or drop it before anything downstream depends on it.
+The report marks each citation `OK` / `MISMATCH` / `NOT-FOUND` / `ERROR` so you
+(or the agent) can fix or drop it before anything downstream depends on it.
+`NOT-FOUND` and `ERROR` are **not** interchangeable: `NOT-FOUND` means every
+lookup completed and nothing matched (chase it — likely fabricated), while
+`ERROR` means a lookup could not complete (rate-limit / network) and must be
+**re-run**. To keep arXiv's aggressive rate-limiting from turning real preprints
+into false `NOT-FOUND`s, arXiv ids are prefetched in batches (`id_list`, many per
+call). `expect_year` may be a string or an int.
 
 ---
 
