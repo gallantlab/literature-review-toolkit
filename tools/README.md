@@ -155,7 +155,10 @@ python3 tools/families_figure.py --rows rows.json --families families.json \
 
 Landmark dots (the big labelled studies) are selected **automatically** — most-cited
 within a family, foundational within this review (high within-corpus in-degree, via
-`xref.py --internal-out`), or a home-lab paper (starred). Pass `--min-year` and
+`xref.py --internal-out`), or a home-lab paper (starred). Home-lab favouring is **off by
+default** (lab-neutral); opt in with `--lab-author Surname` (repeatable) or the
+`LITREVIEW_LAB_AUTHOR` env var (comma-separated), the flag winning over the env var. Pass
+`--min-year` and
 `--time-warp 0–1` for recency-heavy corpora that span many decades (an antecedents
 pass usually makes one), so old foundations stay legible. The editorial layer (which
 papers to *force*-label, cross-family convergence arrows, notes) is judgment — pass

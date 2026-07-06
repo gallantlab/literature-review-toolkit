@@ -17,8 +17,9 @@ A paper is a landmark if ANY of:
   (2) it is foundational *within this review* — cited by >= --motif-min of the corpus's
       own papers (needs --internal internal_citations.json from `xref.py --internal-out`;
       silently skipped if not supplied),
-  (3) it is a home-lab paper (an author surname in --lab-author, default "Gallant", or a
-      row with source == "lab") — these are starred (★) and gold-ringed.
+  (3) it is a home-lab paper — an author surname listed in --lab-author or the
+      LITREVIEW_LAB_AUTHOR env var (home-lab favouring is OFF by default), or a row
+      with source == "lab" — these are starred (★) and gold-ringed.
 Total labels are capped at --max-labels (lab + internal-motif papers are always kept).
 Pass --spec with a "labels" map to override auto-selection entirely (manual curation wins);
 --no-auto-landmarks turns labelling off.
@@ -115,7 +116,9 @@ def main():
                     "`xref.py --internal-out` — enables criterion (2), within-review centrality")
     ap.add_argument("--lab-author", action="append", default=[],
                     help="auto-landmarks: home-lab author surname(s) to star as landmarks "
-                         "(repeatable; default 'Gallant'). Rows with source=='lab' are also starred.")
+                         "(repeatable). OFF by default; also settable via the "
+                         "LITREVIEW_LAB_AUTHOR env var (comma-separated), which this flag "
+                         "overrides. Rows with source=='lab' are always starred.")
     args = ap.parse_args()
 
     def load(path):
@@ -150,7 +153,12 @@ def main():
 
     # ---- landmark (big, labelled) selection --------------------------------
     # Home-lab detection (criterion 3): author surname match or source=="lab".
-    lab_surnames = [s for s in args.lab_author if s.strip()] or ["Gallant"]
+    # OFF by default so this shared tool is lab-neutral. Opt in per project with
+    # --lab-author SURNAME (repeatable) or the LITREVIEW_LAB_AUTHOR env var
+    # (comma-separated surnames); the CLI flag wins over the env var.
+    lab_surnames = ([s for s in args.lab_author if s.strip()]
+                    or [s.strip() for s in os.environ.get("LITREVIEW_LAB_AUTHOR", "").split(",")
+                        if s.strip()])
 
     def _is_lab(p):
         if p.get("source") == "lab":

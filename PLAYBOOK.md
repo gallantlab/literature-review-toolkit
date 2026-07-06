@@ -493,9 +493,17 @@ family** (top `--per-family`, default 4, by max(OpenAlex, S2)); (2) it is **foun
 within this review** — cited by ≥ `--motif-min` (default 3) of the corpus's own papers
 (this is criterion (2) and needs `internal_citations.json` from `xref.py --internal-out`;
 silently skipped if absent — so always pass `--internal`); or (3) it is a **home-lab
-paper** (an author surname in `--lab-author`, default `Gallant`, or a row with
-`source=="lab"`) — these are **starred (★) and gold-ringed** so the lab's own work stands
-out. Total labels are capped at `--max-labels` (lab + internal-motif papers always kept).
+paper** — an author surname listed in `--lab-author` or the `LITREVIEW_LAB_AUTHOR` env
+var, or a row with `source=="lab"` — these are **starred (★) and gold-ringed** so the
+lab's own work stands out. Total labels are capped at `--max-labels` (lab + internal-motif
+papers always kept).
+
+> **Home-lab favouring is OFF by default** — this is a shared, lab-neutral toolkit, so
+> criterion (3) does nothing until you opt in. Turn it on per project by passing
+> `--lab-author Surname` (repeatable), or set it once for your environment with
+> `export LITREVIEW_LAB_AUTHOR=Surname` (comma-separated for several surnames). The CLI
+> flag overrides the env var. Rows tagged `source=="lab"` (from Lab mode) are always
+> starred regardless of the switch.
 
 **Time axis.** `--min-year` clamps the axis start (older papers pin to the left edge).
 When the corpus spans many decades but is recency-heavy — the usual shape after a

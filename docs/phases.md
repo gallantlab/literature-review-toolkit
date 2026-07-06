@@ -188,6 +188,13 @@ SVG/PNG/PDF): families as horizontal lanes on a citation-weighted timeline, with
 **landmark dots auto-selected** by citation count, within-corpus citation
 in-degree, and lab authorship — no hand-built label map.
 
+!!! note "Home-lab favouring is off by default"
+    The lab-authorship criterion — starring your own group's papers as
+    landmarks — is **disabled** unless you opt in, so the toolkit is neutral for
+    anyone who clones it. Enable it per project with `--lab-author Surname`
+    (repeatable), or once for your shell with `export LITREVIEW_LAB_AUTHOR=Surname`
+    (comma-separated for several surnames); the flag overrides the env var.
+
 <figure class="fig" markdown>
 ![Lineage figure with six families on a warped timeline](assets/figures/lineage_complexity.png){ loading=lazy }
 <figcaption>
