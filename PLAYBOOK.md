@@ -800,6 +800,28 @@ be an HTML challenge page).
   hand-clear an `arxiv` field to stop a published paper from being cited as its
   preprint — just keep both ids and let canon pick the journal version. (Agents
   routinely return a journal DOI *and* the preprint id for the same paper.)
+- **BUT: not every "published" DOI is the version of record — check the count
+  before you swap.** Curran/Proceedings.com registers DOIs (`10.52202/*`) for the
+  *printed* NeurIPS volumes. They resolve, and a CrossRef title search happily
+  returns them, but they are shadow records of the paper the community actually
+  cites: on a 2026 gallant_lab pass, moving 6 rows to their `10.52202` DOIs would
+  have cut OpenAlex counts by ~3-4× (MindEye 40 → 11, Toneva-style rows 34 → 10)
+  while adding nothing. ACL Anthology (`10.18653/*`), IEEE/CVF (`10.1109/*`) and
+  real journal DOIs are the opposite — genuine upgrades (MindBridge 2 → 41). Rule:
+  before promoting a preprint row to a "published" DOI, query the candidate DOI's
+  OpenAlex count; if it is much LOWER than the arXiv record's, keep arXiv and note
+  the venue in prose. Preprint-heavy CS/AI reviews are where this bites.
+- **The same paper can enter a review twice, and per-row canon will never notice.**
+  One agent finds the arXiv preprint, another finds the journal version; two
+  different DOIs, so the one-row-per-DOI rule passes and *both* rows canonicalize
+  perfectly. Three such pairs sat undetected in a 362-row corpus for six weeks.
+  `references.py --audit` now runs a corpus-level `duplicate_scan()` and prints
+  `⚠ A ~ B: possible duplicate` for near-identical titles (labelling the
+  preprint-vs-published case explicitly). It is a **warning, not a defect** — real
+  distinct papers do collide (a 2014 toolbox paper and its 2026 successor;
+  successive years of the same challenge), so every pair needs a human verdict.
+  Keep the version of record, drop the preprint, and re-check any in-text citation
+  whose YEAR moves as a result (a preprint→journal promotion can shift 2025 → 2026).
 
 ### On cross-citation analysis
 - CrossRef coverage varies by publisher. Nature, Cell, OUP, JNeurosci have

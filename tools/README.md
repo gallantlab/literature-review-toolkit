@@ -57,6 +57,16 @@ to check by hand. `--audit` does **not** catch `U+FFFD` mojibake from CrossRef �
 scan `rows.json` for it after the final canon and hand-fix, since re-canon
 reintroduces it.
 
+`--audit` also runs a corpus-level **near-duplicate scan** and prints
+`⚠ A ~ B: possible duplicate` for rows whose titles nearly match. This catches the
+one defect per-row canon structurally cannot see: the same paper entering the
+review twice — usually an arXiv preprint found by one search agent and the
+published version found by another, which have different DOIs and so both pass
+the one-row-per-DOI rule and both canonicalize perfectly. It is a **warning, not
+a defect** (exit status is unaffected): genuinely distinct papers do share
+near-identical titles, so each pair needs a human verdict. Keep the version of
+record, drop the preprint — and re-check any in-text citation whose year moves.
+
 ## `download.py` — multi-source PDF downloader **(opt-in, Phase 4)**
 
 PDF acquisition is **not** part of the default workflow. Run only when the

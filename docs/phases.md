@@ -151,6 +151,15 @@ max per DOI and re-queries the canonical single-work endpoint when OpenAlex look
 implausibly low next to S2. No-DOI items stay blank. Set `S2_API_KEY` to avoid
 429s on large corpora.
 
+!!! warning "A published DOI is not automatically the version of record"
+    Before promoting a preprint row to a journal/proceedings DOI, query the
+    candidate DOI's OpenAlex count. Curran/Proceedings.com DOIs for the printed
+    NeurIPS volumes (`10.52202/*`) resolve and show up in a CrossRef title
+    search, but they are shadow records — swapping to them cut counts ~3-4× on a
+    real corpus while adding nothing. ACL Anthology (`10.18653/*`), IEEE/CVF
+    (`10.1109/*`) and true journal DOIs are genuine upgrades. If the candidate's
+    count is much lower than the arXiv record's, keep arXiv.
+
 ---
 
 ## Phase 6 — Cross-citation pass

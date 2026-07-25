@@ -154,6 +154,44 @@ def audit(apa, has_source):
     return defects, notes
 
 
+def duplicate_scan(rows, keyf, threshold=0.88):
+    """Corpus-level near-duplicate check -> [(keyA, keyB, ratio, why)].
+
+    The per-row audit cannot see this: the same paper can enter a review TWICE as
+    two legitimate-looking rows — typically an arXiv preprint found by one search
+    agent and the published version found by another (different DOIs, so the
+    one-row-per-DOI rule does not catch it, and each row canonicalizes perfectly).
+    Compare normalized title sentences and report close pairs as WARNINGS, not
+    defects: distinct papers do share near-identical titles (a 2014 toolbox paper
+    and its 2026 successor; successive years of the same challenge), so this needs
+    a human verdict — keep the version of record, drop the preprint.
+    """
+    import difflib
+
+    def title_of(apa):
+        t = re.sub(r"^.*?\(\d{4}[a-z]?\)\.\s*", "", apa)      # drop authors + year
+        t = re.split(r"(?<=[.?!])\s", t)[0]                   # first sentence = title
+        return re.sub(r"[^a-z0-9 ]", "", t.lower()).strip()
+
+    items = [(r.get(keyf, "?"), title_of(r.get("apa", "")), (r.get("link") or "").lower())
+             for r in rows]
+    pairs = []
+    for i, (ka, ta, la) in enumerate(items):
+        for kb, tb, lb in items[i + 1:]:
+            if la and la == lb:
+                pairs.append((ka, kb, 1.0, "same DOI"))
+                continue
+            if not ta or not tb:
+                continue
+            if abs(len(ta) - len(tb)) > 0.35 * max(len(ta), len(tb)):
+                continue                                      # cheap length prefilter
+            ratio = difflib.SequenceMatcher(None, ta, tb).ratio()
+            if ratio >= threshold:
+                why = "preprint vs published?" if ("10.48550" in la) != ("10.48550" in lb) else "near-identical title"
+                pairs.append((ka, kb, ratio, why))
+    return pairs
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rows", required=True)
@@ -191,9 +229,13 @@ def main():
     if not args.audit:
         common.dump_json(rows, args.out or args.rows)
 
-    print(f"{len(rows)} refs | rebuilt {rebuilt} | {len(defects)} defects | {len(notes)} manual (no-DOI)")
+    dups = duplicate_scan(rows, keyf)
+    print(f"{len(rows)} refs | rebuilt {rebuilt} | {len(defects)} defects | "
+          f"{len(notes)} manual (no-DOI) | {len(dups)} possible duplicates")
     for k, n in notes.items():
         print(f"  · {k}: {'; '.join(n)}")
+    for ka, kb, ratio, why in dups:
+        print(f"  ⚠ {ka} ~ {kb}: possible duplicate ({ratio:.2f}, {why}) — verify by hand")
     for k, d in defects.items():
         print(f"  ✗ {k}: {'; '.join(d)}")
     if defects:
