@@ -7,16 +7,23 @@ and only then searches outward to place them in the field. This tool fetches the
 corpus — the seed everything else hangs off.
 
 Give it an OpenAlex author id (recommended — use --search first to find it).
-"All papers from a lab" is approximated by a PI's authored works; pass several
-ids (PI + key members) with repeated --author if you want broader coverage.
+"All papers from a lab" is approximated by a PI's authored works. Pass several
+ids with repeated --author for either of two reasons: to widen coverage to key
+lab members, OR because ONE PERSON's record is split across ids, which is common
+and easy to miss. Works are deduplicated by OpenAlex id.
 
   python3 tools/lab_corpus.py --search "Jack Gallant"          # find the id
   python3 tools/lab_corpus.py --author A5056348548 --out lab_papers.json
+  python3 tools/lab_corpus.py --author A50… --author A51… --out lab_papers.json
 
 Output: lab_papers.json — one row per paper with ref / title / year / doi / link
 / apa / venue / cite_openalex / topics / abstract(summary) / coauthors / type.
-Disambiguation is the #1 correctness risk: review the list (Phase L2) and prune
-false-positives before theming.  See PLAYBOOK "Lab mode".
+
+Disambiguation is the #1 correctness risk, and it cuts BOTH ways. An id can be
+MERGED (holding several namesakes, so Phase L2 must prune) or SPLIT (one person
+across several ids, so Phase L2 must ADD — and nothing fails when a record is
+simply missing). --search prints the year span and ORCID for exactly this reason;
+read its warnings.  See PLAYBOOK "Lab mode".
 """
 import argparse, os, time, urllib.parse
 
@@ -32,12 +39,55 @@ def get(url):
 
 
 def search_authors(name, email):
-    url = f"{API}/authors?search={urllib.parse.quote(name)}&per-page=10&mailto={email}"
-    for a in get(url).get("results", []):
-        insts = a.get("last_known_institutions") or []
-        inst = insts[0]["display_name"] if insts else "?"
-        print(f"  {a['id'].split('/')[-1]}  {a['display_name']:28s}  "
-              f"{a.get('works_count'):>4} works  {a.get('cited_by_count'):>7} cites  {inst}")
+    """Print candidate author ids with the fields that actually decide the call.
+
+    This listing is the single point where disambiguation happens, and it used to
+    show name / works / cites / first institution — none of which reliably
+    identifies a person. Five real bootstraps produced four different failure
+    shapes, and the affiliation label was misleading in three of them:
+
+      * the id labeled with the right university had 3 works while the correct id
+        showed an unrelated institution and had 130;
+      * TWO candidates carried the institution being searched for and neither was
+        the right person (one was a glaciologist), while the correct id was still
+        labeled with the PI's PREVIOUS university because the lab had just moved;
+      * a search returned exactly ONE plausible id — which feels like the safe
+        case and is the worst, because the collisions had been merged INTO it: it
+        spanned 1976-2026 and held at least five different people;
+      * a search returned THREE ids that were ALL the same person, one holding a
+        single high-profile paper. Fetching only the largest silently produced an
+        incomplete corpus, and nothing fails when a record is merely absent.
+
+    So print the two signals that do discriminate — the ORCID, and the
+    publication year span — plus every last-known institution rather than the
+    first, and warn on the two shapes that are detectable from the listing alone.
+    """
+    url = (f"{API}/authors?search={urllib.parse.quote(name)}"
+           f"&per-page=10&mailto={email}")
+    results = get(url).get("results", [])
+    for a in results:
+        insts = [i["display_name"] for i in (a.get("last_known_institutions") or [])]
+        years = sorted(c["year"] for c in (a.get("counts_by_year") or []))
+        span = f"{years[0]}-{years[-1]}" if years else "?"
+        orcid = (a.get("orcid") or "").replace("https://orcid.org/", "") or "no ORCID"
+        disp = a["display_name"]
+        disp = disp if len(disp) <= 28 else disp[:27] + "…"
+        print(f"  {a['id'].split('/')[-1]}  {disp:28s}  "
+              f"{a.get('works_count'):>4} works  {a.get('cited_by_count'):>7} cites")
+        print(f"      {span:12s}  {orcid:21s}  {'; '.join(insts) or '?'}")
+        if years and years[-1] - years[0] > 45:
+            print(f"      !! {years[-1] - years[0]} years of output — almost "
+                  "certainly a MERGED id holding several people")
+    if len(results) == 1:
+        print("\n! Only one candidate. That is NOT the safe case: when namesakes\n"
+              "  collide, OpenAlex often merges them INTO a single id rather than\n"
+              "  splitting them. Check the year span and the works list.")
+    print("\nCross-check against ORCID before trusting any of these. ORCID CONFIRMS\n"
+          "authorship; it does not refute it — profiles are often years out of\n"
+          "date, and one real PI's listed 18 works against OpenAlex's 39. Absence\n"
+          "from ORCID is not evidence that a paper is someone else's.\n"
+          "If several ids turn out to be the SAME person, pass them all with\n"
+          "repeated --author; works are deduplicated by OpenAlex id.")
 
 
 def unabstract(inv):

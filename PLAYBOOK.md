@@ -612,7 +612,11 @@ Everything downstream (verify, count, families, figure) is the same machinery.
 
 **Phase L1 — ingest the corpus.** `tools/lab_corpus.py` pulls the lab's full
 publication list from OpenAlex by author id (use `--search` to find it; pass
-several `--author` ids for PI + key lab members). Output `lab_papers.json`.
+several `--author` ids for PI + key lab members, **or for one person whose record
+is split across ids**). Output `lab_papers.json`. `--search` prints each
+candidate's ORCID and publication year span and warns on the failure shapes that
+are visible from the listing alone — read those rather than picking by
+institution, which is wrong more often than it is right (see L2).
 
 **Phase L1b — enrich abstracts (REQUIRED).** OpenAlex metadata is not enough:
 its abstracts are missing for a sizable minority of papers and its `topics` tags
@@ -631,6 +635,42 @@ work** (the macaque physiology, the pre-tool methods papers): those are the lab'
 own antecedents and should re-enter as `source=lab` (starred) in the Phase-2b
 pass even when the headline filter is, say, "human fMRI only." Flag them for the
 user at this checkpoint rather than silently dropping them.
+
+*Resolving the author id — five real bootstraps, four distinct failure shapes.*
+The institution label is the obvious discriminator and it was misleading in three
+of the five. Do not pick by it.
+
+| Shape | What it looked like | What decided it |
+|---|---|---|
+| **Wrong-university** | The id labeled with the right university had 3 works; the correct one showed an unrelated institution and had 130 | Works count, then reading titles |
+| **Moved lab** | *Two* candidates carried the university being searched for and neither was the person; one was a glaciologist. The correct id was still labeled with the PI's previous university | **Distinct ORCIDs** settle it instantly; otherwise the raw affiliation strings on the newest works |
+| **Merged** | A *single* candidate, spanning 1976–2026, holding at least five different people | The **year span** — `--search` warns above 45 years |
+| **Split** | *Three* candidates, all the same person, one holding a single high-profile paper | Same ORCID / same institutions / adjacent years; pass every id to `--author` |
+
+Two rules follow, and they are easy to get backwards:
+
+1. **A single candidate is the DANGEROUS case, not the safe one.** When namesakes
+   collide OpenAlex frequently merges them into one id rather than splitting them,
+   so "only one match" can mean "all the contamination is in here".
+2. **ORCID confirms authorship; it does not refute it.** Use it to establish that
+   a surprising paper *is* the PI's — one lab's 18 papers of psychiatric
+   neuroimaging looked exactly like a collision and were her own pre-PhD work, and
+   pruning on topic would have deleted a third of a real record. But profiles go
+   stale: another PI's ORCID listed 18 works against OpenAlex's 39, so **absence
+   from ORCID is not evidence a paper belongs to someone else.**
+
+**L2 is therefore a completeness check as well as a purity check.** Every
+bootstrap before the split case only ever needed records removed, and nothing
+fails when a record is merely missing — so check explicitly for a split id, and
+say in writing how many records were added as well as pruned.
+
+*Keeping papers that are genuinely the PI's but not the lab's program.* Early
+career work (a PhD in another field, a postdoc in another lab) is real authorship
+and L2 has no basis to prune it — but its vocabulary will skew any downstream step
+that reads titles. In one corpus such papers were 35% of the total and the keyword
+derivation duly proposed *schizophrenia* for a speech lab. Keep them, and record
+which groups are off-program in the notes so the next step knows to reject their
+vocabulary rather than rediscovering the problem.
 
 **Phase L3 — derive themes (HUMAN CHECKPOINT #2).** Run the families step
 (`family_prompt_template.md` → user approves the ~N themes → assign every kept
