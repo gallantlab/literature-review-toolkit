@@ -115,14 +115,27 @@ def audit(apa, has_source):
     defects, notes = [], []
     if not has_source:
         notes.append("no DOI/arxiv — manual ref (verify by hand)")
-    if not re.search(r"\(\d{4}\)", apa):
+    # A trailing letter is APA-7's disambiguator for same-author/same-year works
+    # (2025a, 2025b). Requiring a bare (YYYY) here made that impossible to express.
+    if not re.search(r"\(\d{4}[a-z]?\)", apa):
         defects.append("no-year")
-    if apa.startswith("Anon.") or re.match(r"^\(\d{4}\)", apa):
+    if apa.startswith("Anon.") or re.match(r"^\(\d{4}[a-z]?\)", apa):
         defects.append("no-authors")
     if " et al" in apa:
         defects.append("et-al (should list all authors)")
     if "&amp;" in apa or "&#x" in apa or "&lt;" in apa or "&gt;" in apa:
         defects.append("html-entity")
+    if common.MARKUP.search(apa):
+        # CrossRef deposits JATS markup inside titles (<scp>SMALL CAPS</scp>, <i>);
+        # the entity check above cannot see a literal tag.
+        defects.append("markup-tag (JATS/HTML left in the reference)")
+    if re.search(r"[?!]\.", apa):
+        defects.append("double-terminal-punctuation (a title ending in ? or ! takes no period)")
+    if "‐" in apa or "‑" in apa:
+        defects.append("unicode-hyphen (U+2010/U+2011 in a name — normalize to ASCII '-')")
+    if re.search(r"\(\.|\[\.", apa):
+        # a used name in parentheses initialized literally: 'L. (Renzo)' -> 'L. (.'
+        defects.append("malformed-initial (a bracket was initialized as a name)")
     if "�" in apa:
         # U+FFFD replacement char = mojibake the source (often CrossRef) stored with
         # broken encoding; the original glyph is unrecoverable, so flag for a hand fix.
@@ -140,6 +153,11 @@ def audit(apa, has_source):
         mx = max(mx, run)
     if mx >= 3:
         defects.append(f"uppercase-title run ({mx} consecutive caps words)")
+    for fam in common.suspect_surnames(apa):
+        # Cannot be decided automatically: 'Lambon Ralph' is a real compound surname,
+        # 'Thomas Yeo' is CrossRef folding given names into the family field. Both
+        # need a human verdict, and re-running the formatter reintroduces the error.
+        notes.append(f"multi-word surname '{fam}' — confirm it is not a mis-split given name")
     # a DOI-backed ref should name a venue: real text after the title sentence.
     # Structure is "Authors (YEAR). Title. Venue...."; drop the year-paren and the
     # title sentence (its trailing ". ") and require something non-empty to remain.
@@ -152,6 +170,31 @@ def audit(apa, has_source):
     if has_source and not venue_part:
         defects.append("empty venue")
     return defects, notes
+
+
+def repair(apa):
+    """Deterministic, offline repair of the defect classes that are pure string
+    damage. Returns (fixed_apa, [what changed]).
+
+    This exists to retrofit the gate onto an OLD corpus. Re-running the full
+    canon would fix these too, but canon re-fetches from CrossRef and so wipes
+    every post-canon hand fix the corpus depends on — the reviewed sentence
+    casing, the mojibake repairs, the corrected compound surnames. Those are the
+    fixes the PLAYBOOK says must come LAST, and a blanket re-canon undoes all of
+    them. This touches only the damage, and never the network.
+    """
+    out, changed = apa, []
+    if common.MARKUP.search(out):
+        out = common.MARKUP.sub("", out)
+        changed.append("stripped markup tag")
+    if "‐" in out or "‑" in out:
+        out = out.translate(common.UNI_HYPHEN)
+        changed.append("normalized Unicode hyphen")
+    if re.search(r"[?!]\.", out):
+        out = re.sub(r"([?!])\.(\s|$)", r"\1\2", out)
+        changed.append("removed period after ? or !")
+    out = re.sub(r"\s{2,}", " ", out).strip()
+    return out, changed
 
 
 def duplicate_scan(rows, keyf, threshold=0.88):
@@ -198,9 +241,15 @@ def main():
     ap.add_argument("--out", help="write rebuilt rows here (default: in place unless --audit)")
     ap.add_argument("--key", default=None, help="row key field (default: ref, else label)")
     ap.add_argument("--audit", action="store_true", help="report only; exit 1 if any ref is imperfect")
+    ap.add_argument("--repair", action="store_true",
+                    help="offline: fix markup / Unicode-hyphen / '?.' damage in place "
+                         "WITHOUT re-fetching, so post-canon hand fixes survive. Use to "
+                         "retrofit the gate onto an existing corpus.")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"))
     ap.add_argument("--sleep", type=float, default=0.25)
     args = ap.parse_args()
+    if args.repair and args.audit:
+        ap.error("--repair writes; --audit reports. Run --repair, then --audit to confirm.")
     if not args.email:
         ap.error("--email or LITREVIEW_EMAIL required (CrossRef/arXiv polite pool)")
     set_email(args.email)
@@ -208,9 +257,15 @@ def main():
     rows = common.load_json(args.rows)
     keyf = args.key or ("ref" if rows and "ref" in rows[0] else "label")
     defects, notes, rebuilt = {}, {}, 0
+    repaired = {}
     for r in rows:
         k = r.get(keyf, "?")
-        if not args.audit:
+        if args.repair:
+            fixed, what = repair(r.get("apa", ""))
+            if what:
+                r["apa"] = fixed
+                repaired[k] = what
+        elif not args.audit:
             res = canonical(r)
             if res and res.get("apa"):
                 r["apa"] = res["apa"]
@@ -230,10 +285,23 @@ def main():
         common.dump_json(rows, args.out or args.rows)
 
     dups = duplicate_scan(rows, keyf)
-    print(f"{len(rows)} refs | rebuilt {rebuilt} | {len(defects)} defects | "
-          f"{len(notes)} manual (no-DOI) | {len(dups)} possible duplicates")
-    for k, n in notes.items():
-        print(f"  · {k}: {'; '.join(n)}")
+    # Two kinds of note, counted separately: a DOI-less item is an expected,
+    # permanent state (a book), whereas a surname warning is a one-off thing to
+    # eyeball. Lumping them made a corpus of 8 manual refs report 367.
+    manual = {k: n for k, n in notes.items() if any(x.startswith("no DOI") for x in n)}
+    warned = {k: [x for x in n if not x.startswith("no DOI")] for k, n in notes.items()}
+    warned = {k: v for k, v in warned.items() if v}
+    print(f"{len(rows)} refs | rebuilt {rebuilt} | "
+          + (f"repaired {len(repaired)} | " if args.repair else "")
+          + f"{len(defects)} defects | "
+          f"{len(manual)} manual (no-DOI) | {len(warned)} warnings | "
+          f"{len(dups)} possible duplicates")
+    for k, what in repaired.items():
+        print(f"  ✎ {k}: {'; '.join(what)}")
+    for k, n in manual.items():
+        print(f"  · {k}: {'; '.join(x for x in n if x.startswith('no DOI'))}")
+    for k, n in warned.items():
+        print(f"  ⚠ {k}: {'; '.join(n)}")
     for ka, kb, ratio, why in dups:
         print(f"  ⚠ {ka} ~ {kb}: possible duplicate ({ratio:.2f}, {why}) — verify by hand")
     for k, d in defects.items():

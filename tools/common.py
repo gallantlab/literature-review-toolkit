@@ -19,6 +19,14 @@ ARXIV_NS = "{http://arxiv.org/schemas/atom}"
 PARTICLES = {"van", "von", "der", "den", "de", "del", "della", "di", "da", "du",
              "la", "le", "el", "al", "bin", "ibn", "dos", "das", "ten", "ter", "st"}
 
+# JATS/HTML markup CrossRef deposits inside titles (<scp>, <i>, <sub>, <mml:*>).
+# The audit's entity check (&amp;) does not see these, so strip them at the source.
+MARKUP = re.compile(r"</?[A-Za-z][A-Za-z0-9:._-]*(?:\s[^>]*)?/?>")
+# U+2010 HYPHEN and U+2011 NON-BREAKING HYPHEN look identical to an ASCII hyphen
+# but break string matching in surnames (Andrews‐Hanna, Kabat‐Zinn). U+2013/U+2014
+# are deliberately left alone: en/em dashes are legitimate in titles and page ranges.
+UNI_HYPHEN = str.maketrans({"‐": "-", "‑": "-"})
+
 HDRS = {"User-Agent": "litreview-toolkit/1.0"}
 
 
@@ -93,20 +101,54 @@ def arxiv_id_of(row):
 
 # ---- APA name + reference formatting --------------------------------------
 def initials(given):
-    """'Jean-Rémi' -> 'J.-R.'; 'Jack L' -> 'J. L.'"""
+    """'Jean-Rémi' -> 'J.-R.'; 'Jack L' -> 'J. L.'; 'L. (Renzo)' -> 'L. R.'
+
+    Parentheses are dropped rather than initialized: sources record a used name
+    that way ('L. (Renzo) Huber'), and taking the first character literally
+    yields the nonsense initial '(.'
+    """
     out = []
-    for tok in (given or "").replace(".", " ").split():
+    for tok in re.sub(r"[()\[\]]", " ", given or "").replace(".", " ").split():
         out.append("-".join(s[0].upper() + "." for s in tok.split("-") if s))
     return " ".join(out)
 
 
 def fix_fam(fam):
-    """'ANDERSON' -> 'Anderson'; 'zhang' -> 'Zhang'; leave 'de Heer', 'McDermott'."""
+    """'ANDERSON' -> 'Anderson'; 'zhang' -> 'Zhang'; leave 'de Heer', 'McDermott'.
+
+    Also drops a parenthetical nickname the source folded into the family name
+    ('(Bud) Craig' -> 'Craig'), which CrossRef does for authors who publish under
+    a familiar name; left in place it produces '(Bud) Craig, A. D.'
+    """
+    fam = re.sub(r"\s*\([^)]*\)\s*", " ", fam).strip()
     if fam.isupper():
         return " ".join(w.capitalize() for w in fam.split())
     if fam.islower() and " " not in fam:
         return fam.capitalize()
     return fam
+
+
+def suspect_surnames(apa):
+    """Family names in `apa` that may be a mis-split given name — a WARNING, not
+    a defect, because it cannot be decided automatically.
+
+    CrossRef routinely folds given-name tokens into the family field ('Thomas Yeo'
+    for B. T. T. Yeo) and equally routinely records genuine compound surnames the
+    same way ('Lambon Ralph'). Both look like 'Word Word'. Nobiliary particles are
+    excluded because split_name already handles them. Everything returned needs a
+    human verdict; re-running the formatter reintroduces whatever was wrong.
+    """
+    m = re.match(r"^(.*?)\s\(\d{4}[a-z]?\)", apa or "")
+    if not m:
+        return []
+    out = []
+    for fam in re.findall(r"(?:^|,\s|…\s)([^,]+?),\s+(?:[A-ZÀ-Ý]\.)", m.group(1)):
+        # the last author is joined with "& ", which is not part of the surname
+        fam = re.sub(r"^[&…]\s*", "", fam).strip()
+        toks = fam.split()
+        if len(toks) > 1 and not any(t.lower().strip(".") in PARTICLES for t in toks):
+            out.append(fam)
+    return sorted(set(out))
 
 
 def split_name(display):
@@ -122,7 +164,20 @@ def split_name(display):
 
 
 def person(family, given):
-    return f"{fix_fam(family.strip())}, {initials(given)}".rstrip(", ").strip()
+    """'Bradford' + 'A. Moffat' -> 'Moffat, B. A.'
+
+    Sources sometimes fold a middle initial into the family field (CrossRef
+    deposits given='Bradford', family='A. Moffat'). A surname never begins with
+    an initial, so moving leading initials into the given name is unambiguous —
+    unlike a mis-split full name ('Thomas Yeo'), which only suspect_surnames()
+    can flag for a human.
+    """
+    family = family.strip()
+    m = re.match(r"^((?:[A-ZÀ-Ý]\.\s*)+)(\S.*)$", family)
+    if m:
+        given = f"{given} {m.group(1)}".strip()
+        family = m.group(2).strip()
+    return f"{fix_fam(family)}, {initials(given)}".rstrip(", ").strip()
 
 
 def join_authors(people):
@@ -143,24 +198,28 @@ def clean_venue(v):
 
 
 def norm_title(title):
-    """HTML-unescape; sentence-case a title only if it is ENTIRELY uppercase
-    (acronyms inside a mixed-case title are left alone)."""
+    """HTML-unescape, strip JATS/HTML markup, and sentence-case a title only if it
+    is ENTIRELY uppercase (acronyms inside a mixed-case title are left alone)."""
     import html
-    t = html.unescape((title or "").strip())
+    t = MARKUP.sub("", html.unescape((title or "").strip()))
     alpha = [c for c in t if c.isalpha()]
     if alpha and all(c.isupper() for c in alpha):
         t = re.sub(r"(^|[.:]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), t.lower())
-    return t
+    return re.sub(r"\s+", " ", t).strip()
 
 
 def build_apa(people, year, title, journal, vol=None, issue=None, pages=None):
     """Assemble one APA-7 reference from already-formatted `people` strings."""
     import html
-    s = f"{join_authors(people)} ({year}). {norm_title(title).rstrip('.')}."
+    t = norm_title(title).rstrip(".")
+    # APA-7: a title already ending in ? or ! keeps that mark and takes no period.
+    # Appending one unconditionally produced "...a unified brain theory?."
+    s = f"{join_authors(people)} ({year}). {t}" + ("" if t.endswith(("?", "!")) else ".")
     journal = clean_venue(journal)
     if journal:
         tail = journal
         if vol:
             tail += f", {vol}" + (f"({issue})" if issue else "") + (f", {pages}" if pages else "")
         s += f" {tail}."
-    return html.unescape(re.sub(r"\s+", " ", s).strip())
+    s = html.unescape(re.sub(r"\s+", " ", s).strip())
+    return MARKUP.sub("", s).translate(UNI_HYPHEN)

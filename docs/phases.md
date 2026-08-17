@@ -81,6 +81,9 @@ call). `expect_year` may be a string or an int.
 ```bash
 python3 ../tools/references.py --rows rows.json --out rows.json
 python3 ../tools/references.py --rows rows.json --audit   # exits non-zero on any defect
+# then, in a reviewed pass, sentence-case the titles:
+python3 ../tools/sentence_case.py --rows rows.json --proper proper_nouns.json --vocab
+python3 ../tools/sentence_case.py --rows rows.json --proper proper_nouns.json --apply
 ```
 
 Rebuilds every reference from its **verified** DOI/arXiv id into canonical APA-7:
@@ -221,18 +224,24 @@ See the [Examples gallery](examples.md) for more finished figures.
 ## Phase 7 — Write the review article *(optional)*
 
 ```bash
-# author the prose into content.json (run a PRIORITY AUDIT first), then render:
+# author the prose into content.json (run a PRIORITY AUDIT first), then:
+python3 ../tools/cite_check.py --rows rows.json --content content.json   # gate
 python3 ../tools/review_paper.py --rows rows.json --content content.json \
         --figure my_topic_families.png --out My_Topic_review.docx
 ```
 
 **Human-adjacent decision #3.** The agent authors the prose — the one step the
-toolkit does not mechanize. But two things *are* enforced:
+toolkit does not mechanize. But three things *are* enforced:
 
 - **A mandatory priority audit** runs first: an independent pass that checks every
   origin claim cites the **earliest** paper that earned priority, not whichever
   reference happens to fit the sentence. (A recurring LLM failure is crediting a
-  later review for an earlier primary paper's finding.)
+  later review for an earlier primary paper's finding.) On one 396-paper review the
+  audit returned five priority inversions and four factual errors, including a
+  mechanistic claim attributed to two papers that had not run the experiment.
+- **`cite_check.py` gates the render**: every in-text citation must name a row in
+  `rows.json`, and an author-year matching two references is flagged for APA-7 §8.19
+  disambiguation. The renderer cannot catch either on its own.
 - **The reference list is pulled canonically from `rows.json`**, so it cannot
   drift from the verified bibliography.
 

@@ -272,10 +272,28 @@ initials and nobiliary particles (`de Heer`, `Dupré la Tour`), fixed name casin
 all-caps titles, and a real venue — including preprint servers CrossRef leaves
 bare (`bioRxiv`, `PsyArXiv`, `arXiv`). The `--audit` gate fails the build on any
 defect (missing author/year, `et al.`, HTML entity, `U+FFFD` replacement-char
-mojibake, truncated/empty venue, uppercase title). The ONLY allowed non-fatal
+mojibake, truncated/empty venue, uppercase title, **JATS/HTML markup left in a
+title** (`<scp>`, `<i>`), **a `?.` or `!.` double terminal punctuation**, and **a
+U+2010/U+2011 Unicode hyphen in a name**). The ONLY allowed non-fatal
 case is a DOI-less item (book, report, old proceedings) — it keeps its
 hand-written `apa` and is reported as a
 manual ref; verify those by hand. **Run the gate before every deliverable.**
+
+Two things the gate reports as **warnings**, because neither can be decided
+automatically: a near-duplicate row pair, and a **multi-word surname** that may be
+a mis-split given name. `Lambon Ralph` is a real compound surname and `Thomas Yeo`
+is CrossRef folding B. T. T. Yeo's given names into the family field; they are
+indistinguishable to a machine, so each needs a human verdict. (A *leading initial*
+in a family field — CrossRef's `family="A. Moffat"` — IS unambiguous and is now
+repaired automatically, since no surname begins with an initial.)
+
+**Sentence-case titles after canon with `tools/sentence_case.py`.** Strict APA-7
+wants sentence case, and canon deliberately does not impose it (see Lessons). The
+tool proposes, you review, then `--apply`. Keep the corpus's proper nouns in a
+per-project `--proper` allowlist file so a generic word lowercases while a named
+entity does not (`yoga practitioners` but `Sahaja Yoga`). On a large corpus use
+`--vocab` to review the ~N distinct token changes rather than 150 title diffs — a
+mis-cased proper noun is obvious there and invisible in a long diff.
 
 ### Phase 4 (OPTIONAL) — Download PDFs
 
@@ -495,8 +513,17 @@ within this review** — cited by ≥ `--motif-min` (default 3) of the corpus's 
 silently skipped if absent — so always pass `--internal`); or (3) it is a **home-lab
 paper** — an author surname listed in `--lab-author` or the `LITREVIEW_LAB_AUTHOR` env
 var, or a row with `source=="lab"` — these are **starred (★) and gold-ringed** so the
-lab's own work stands out. Total labels are capped at `--max-labels` (lab + internal-motif
-papers always kept).
+lab's own work stands out. Total labels are capped at `--max-labels` (default 28); what
+survives the cap is the home-lab papers plus the top-2 most-cited per family, with the
+rest of the budget filled by within-review in-degree.
+
+**`--motif-min` does not scale with corpus size, so watch the drop count.** The default
+of 3 is tuned for a ~50-paper review. On a 396-paper corpus whose papers cite each other
+heavily, 175 papers cleared it and the cap silently discarded 147 of them — a figure
+that reads as "here are the landmarks" when it is really "here are 28 of 175". The tool
+now **prints how many qualified and how many were dropped** on every run. If that number
+is large, raise `--motif-min` (25 was right for 396 papers) rather than letting the cap
+choose for you.
 
 > **Home-lab favouring is OFF by default** — this is a shared, lab-neutral toolkit, so
 > criterion (3) does nothing until you opt in. Turn it on per project by passing
@@ -581,9 +608,19 @@ abstract + sections. Keep the prose in a small per-project emitter that dumps `c
 
 ```bash
 python3 write_review.py            # project file: authors prose -> content.json
+python3 tools/cite_check.py --rows rows.json --content content.json   # GATE: exits 1
 python3 tools/review_paper.py --rows rows.json --content content.json \
         --figure <topic>_families.png --out <Topic>_review.docx
 ```
+
+**`cite_check.py` is a gate, not a nicety.** The renderer prints whatever prose it
+is given, so a citation naming no row in `rows.json` ships silently and the reader
+cannot follow it. The tool also warns when one author-year matches TWO references —
+on a 396-row corpus that happened five times (two Hölzel 2011s, two Kral 2022s, two
+Yang 2025s, two Haudry 2025s, two Gusnard 2001s). Fix those with **APA-7 §8.19**:
+name enough subsequent authors to distinguish them, `(Kral, Davis, et al., 2022)`.
+The other APA disambiguator, a `2025a`/`2025b` year suffix, is accepted by the audit
+gate but means editing the canonical `apa` strings, so it usually costs more.
 
 The reference list comes from `rows.json`, so it is automatically canonical and complete; verify
 by opening the `.docx` and confirming the figure renders and the section/citation structure reads
@@ -827,7 +864,26 @@ be an HTML challenge page).
   `Ralph, M. A. L.`; `de Heer` → `Heer, W. A. D.`). The shared formatter handles
   the common particles, but novel ones slip through and re-canon reintroduces the
   bad split — so correct these in `rows.json` after the last canon, same as
-  mojibake.
+  mojibake. `--audit` now *warns* on every multi-word surname so they get looked at;
+  expect a handful of legitimate ones (Spanish, Vietnamese and Italian double
+  surnames) alongside the real errors.
+- **What CrossRef deposits is sometimes simply wrong, not just mis-parsed.** Seen in
+  one 396-row corpus: `family="A. Moffat"` with `given="Bradford"` (a middle initial
+  folded into the surname — now auto-repaired, since no surname starts with an
+  initial); `family="(Bud) Craig"` for A. D. Craig (parenthetical nickname — now
+  stripped); and `Sprby` for Terje Sparby, a plain misspelling of a living author's
+  name, verifiable only by finding the same author spelled correctly on a sibling
+  paper. The first two are handled; the third can only be caught by reading.
+- **Four formatter defects that shipped in five delivered bibliographies before the
+  gate caught them**, all now hard defects: JATS markup left inside a title
+  (`<i>Generalization and Differentiation</i>`), a `?.` where a question-mark title
+  got an extra period, and U+2010/U+2011 Unicode hyphens in surnames
+  (`Fischer‐Baum`, `Kabat‐Zinn`, `low‐frequency`) that look identical to ASCII but
+  break every string match. Re-run `--audit` over old projects after a formatter
+  change; these had been sitting in finished work for months.
+- **The audit's `no-year` check used to reject APA year suffixes.** `\(\d{4}\)`
+  fails on `(2025a)`, so the standard way to disambiguate two same-author/same-year
+  works could not be expressed. It now accepts `\(\d{4}[a-z]?\)`.
 - **`rows.json` is the live table; the row-emitter script is destructive once you
   pass Phase 3f.** A per-project `build_data.py` (or equivalent) only knows the
   original search rows — re-running it after canon/xref/families drops the xref
@@ -929,7 +985,9 @@ outputs JSON/files. Run `python3 tools/<script>.py --help` for flags.
 | Script | Purpose |
 |--------|---------|
 | `tools/verify.py` | Verify a list of citations via PMC/PubMed/CrossRef + arXiv (arXiv ids batched). Verdicts OK / MISMATCH / NOT-FOUND / ERROR — re-run ERROR, chase NOT-FOUND. |
-| `tools/references.py` | Phase 3f. Rebuild every `apa` from the verified DOI (CrossRef) or arXiv id into canonical APA-7; `--audit` gates the build (exit 1 on any defect). Both modes. |
+| `tools/references.py` | Phase 3f. Rebuild every `apa` from the verified DOI (CrossRef) or arXiv id into canonical APA-7; `--audit` gates the build (exit 1 on any defect) and warns on near-duplicates + suspect surnames. Both modes. |
+| `tools/sentence_case.py` | Phase 3f, after canon. Propose strict APA-7 sentence case for titles; human reviews, then `--apply`. `--proper` takes the project's proper-noun allowlist, `--vocab` reviews by distinct token change. |
+| `tools/cite_check.py` | Phase 7 gate. Every in-text citation in `content.json` must name a row in `rows.json`; exits 1 on unresolved, warns on ambiguous author-year pairs. |
 | `tools/citations.py` | Phase 5b. Fetch per-paper citation counts from OpenAlex (primary) + Semantic Scholar (secondary) by DOI. Google Scholar is not usable (no API / CAPTCHA). |
 | `tools/families.py` | Phase 6b. Validate an (agent-proposed, human-approved) family taxonomy, stamp `family` onto rows, emit `families.json` + `families.md`. `--digest` prints a corpus digest for the proposal step. |
 | `tools/families_figure.py` | Phase 6b. Interactive HTML lineage figure from `rows.json` + `families.json` (+ standalone svg/png/pdf). Optional `--spec` for editorial labels/arrows/notes. Replaces the old static figure. |
@@ -958,6 +1016,8 @@ not a framework — they're scaffolding to keep the LLM judgment work fast.
 4. Phase 1: collect baseline (source-doc citations).
 5. Phase 2: spawn search agent using tools/search_prompt_template.md.
 6. Phase 3: verify EVERY citation (tools/verify.py).
+6b. Phase 3f: canonicalize (tools/references.py), pass --audit, then
+    sentence-case titles in a reviewed pass (tools/sentence_case.py --proper).
 7. Phase 5: update spreadsheet (tools/spreadsheet.py) with DOI URLs as Link.
 8. Phase 5b: citation counts (tools/citations.py); attach to rows, rebuild.
 9. Phase 6: cross-citation pass (tools/xref.py); verify and append xref
@@ -965,10 +1025,10 @@ not a framework — they're scaffolding to keep the LLM judgment work fast.
 9b. Phase 6b (OPTIONAL): thematic families — propose → confirm with user →
     assign → tools/families.py validates/stamps/renders. Figure is bespoke.
 9c. Phase 7 (OPTIONAL): review article — author prose into content.json,
-    render with tools/review_paper.py (APA-7 refs from rows.json). If
-    AI-authored, state the AI author + a verification disclosure. REQUIRED
-    before delivery: run the priority audit (origin claims must cite the
-    EARLIEST paper, oldest-first) — see Phase 7.
+    gate it with tools/cite_check.py, then render with tools/review_paper.py
+    (APA-7 refs from rows.json). If AI-authored, state the AI author + a
+    verification disclosure. REQUIRED before delivery: run the priority audit
+    (origin claims must cite the EARLIEST paper, oldest-first) — see Phase 7.
 10. Phase 8: report to user.
 11. Phase 4 (PDF download) is OPTIONAL. Only run if the user explicitly
     asks for PDFs.

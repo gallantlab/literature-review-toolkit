@@ -67,6 +67,51 @@ a defect** (exit status is unaffected): genuinely distinct papers do share
 near-identical titles, so each pair needs a human verdict. Keep the version of
 record, drop the preprint — and re-check any in-text citation whose year moves.
 
+The gate's second warning is a **multi-word surname**, which may be a real compound
+name (`Lambon Ralph`, `Sanz Perl`) or CrossRef folding given names into the family
+field (`Thomas Yeo` for B. T. T. Yeo). A machine cannot tell them apart, so each
+needs a human verdict; a *leading initial* in the family field (`A. Moffat`) is
+unambiguous and gets repaired automatically.
+
+## `sentence_case.py` — strict APA-7 sentence case (Phase 3f, after canon)
+
+APA-7 wants sentence-case titles, and `references.py` deliberately does not impose
+it: correct sentence-casing needs proper-noun judgment, and a mechanical caser
+mis-cases proper nouns silently — which the audit gate cannot catch. So this tool
+**proposes and you review**.
+
+```
+python3 tools/sentence_case.py --rows rows.json --proper proper_nouns.json --vocab
+python3 tools/sentence_case.py --rows rows.json --proper proper_nouns.json --apply
+```
+
+Protected with no configuration: ALL-CAPS acronyms, any token with a digit,
+camelCase, a lone capital inside a compound (`ACAM-J`), each hyphen part judged
+separately (so `Resting-State` is not read as camelCase), and the first word of the
+title and of any subtitle. Everything domain-specific goes in `--proper`
+(`{"words": [...], "phrases": [...]}`); phrases are what let a generic word
+lowercase while a named entity containing it does not (`yoga practitioners`, but
+`Sahaja Yoga`). On a large corpus review with `--vocab`, which collapses ~150 title
+diffs into the ~400 distinct token changes they amount to — a mis-cased proper noun
+is obvious there and easy to miss in a long diff.
+
+## `cite_check.py` — in-text citations must resolve (Phase 7 gate)
+
+```
+python3 tools/cite_check.py --rows rows.json --content content.json
+```
+
+`review_paper.py` prints whatever prose it is given, so a citation naming no row in
+`rows.json` ships silently and the reader cannot follow it. This parses both APA
+forms — parenthetical `(Farb et al., 2007)` and narrative `Farb et al. (2007)` —
+folds accents so `Millière` matches `Milliere`, and checks each against author-year
+keys built from the canonical `apa` strings. **Exits 1 on an unresolved citation.**
+
+It also warns when one author-year matches **two** references, which is invisible to
+every other check and common on a large corpus. Fix with APA-7 §8.19 by naming more
+authors, `(Kral, Davis, et al., 2022)` — the tool accepts that form, and the
+`2025a`/`2025b` year-suffix form too.
+
 ## `download.py` — multi-source PDF downloader **(opt-in, Phase 4)**
 
 PDF acquisition is **not** part of the default workflow. Run only when the
@@ -291,7 +336,8 @@ python3 tools/families_figure.py --rows accumulated_rows.json --families familie
                                  --out-prefix ${TOPIC}_families --title "$TOPIC — families"
 
 # Phase 7 (optional): AI-authored narrative review .docx (author content.json first,
-#   run the priority audit, then render — refs are pulled from rows.json)
+#   run the priority audit, gate the citations, then render — refs come from rows.json)
+python3 tools/cite_check.py --rows accumulated_rows.json --content content.json
 python3 tools/review_paper.py --rows accumulated_rows.json --content content.json \
                               --figure ${TOPIC}_families.png --out ${TOPIC}_review.docx
 

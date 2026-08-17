@@ -20,7 +20,12 @@ A paper is a landmark if ANY of:
   (3) it is a home-lab paper — an author surname listed in --lab-author or the
       LITREVIEW_LAB_AUTHOR env var (home-lab favouring is OFF by default), or a row
       with source == "lab" — these are starred (★) and gold-ringed.
-Total labels are capped at --max-labels (lab + internal-motif papers are always kept).
+Total labels are capped at --max-labels for legibility. When the cap bites, what is
+guaranteed to survive is the home-lab papers plus the top-2 most-cited per family;
+the rest of the budget is filled by within-review in-degree. Internal-motif papers
+are NOT all kept — on a large, densely inter-citing corpus hundreds of papers can
+clear --motif-min, so the cap is what keeps the figure readable. The number dropped
+is reported on every run; raise --max-labels or --motif-min if it is large.
 Pass --spec with a "labels" map to override auto-selection entirely (manual curation wins);
 --no-auto-landmarks turns labelling off.
 
@@ -198,7 +203,14 @@ def main():
                 keep |= set(_fam_by_cites(name)[:2])
             pool = sorted(chosen - keep,
                           key=lambda r: (internal.get(r, 0), _cites(papers[r])), reverse=True)
+            qualified = len(chosen)
             chosen = keep | set(pool[:max(0, args.max_labels - len(keep))])
+            # Never truncate silently: a capped figure otherwise reads as "these are
+            # all the landmarks" when it is really "these are the first N of many".
+            print(f"  landmarks: {qualified} papers qualified, {len(chosen)} labelled "
+                  f"({qualified - len(chosen)} dropped by --max-labels {args.max_labels}). "
+                  f"Raise --max-labels or --motif-min (currently {args.motif_min}) to change this.",
+                  file=sys.stderr)
         labelled = {ref: f'{lead(papers[ref]["apa"]).strip()} {papers[ref]["year"]}' for ref in chosen}
 
     # star home-lab papers in their label (auto or manual), so they read as the lab's own
