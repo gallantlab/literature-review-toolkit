@@ -33,65 +33,59 @@ Input format (JSON list of dicts):
 
 Run:  python3 verify.py < input.json > report.json
 Or:   python3 verify.py --citations input.json --out report.json
+Or:   python3 verify.py --rows rows.json --out report.json    # straight from the live table
+
+With --rows the citation list is derived from rows.json (rows_to_citations):
+label = the row key, doi from `doi`/`link`, and the expected first author, year
+and title from the canonical `apa` — so a project needs no converter script.
 """
-import argparse, json, os, re, socket, sys, time, urllib.error, urllib.parse
-import xml.etree.ElementTree as ET
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.parse
 
 import common
-from common import ATOM, arxiv_id_of, http, http_json, set_user_agent
+from common import arxiv_id_of, http_json, set_user_agent
 
-# NCBI/CrossRef expect a contact email in the User-Agent; backoff on 429/503.
-http_get_json = http_json
+PHASE = "3"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
-# HTTP status codes that mean "try again later" rather than "does not exist".
-_TRANSIENT_HTTP = {429, 500, 502, 503, 504}
+# The transient-vs-miss split is shared with common.http()'s backoff, so an
+# exhausted-backoff failure is reported as ERROR, never mistaken for a NOT-FOUND
+# (which the workflow treats as 'chase down / likely fake').
+_TRANSIENT_HTTP = common.TRANSIENT_HTTP
+_is_transient = common.is_transient
+_norm_arxiv = common.norm_arxiv
 
-
-def _is_transient(exc):
-    """True if `exc` is a rate-limit / server / network failure (the lookup
-    could not complete), as opposed to a clean 'no such record' (e.g. 404).
-    Used so an exhausted-backoff failure is reported as ERROR, never mistaken
-    for a NOT-FOUND (which the workflow treats as 'chase down / likely fake')."""
-    if isinstance(exc, urllib.error.HTTPError):
-        return exc.code in _TRANSIENT_HTTP
-    return isinstance(exc, (urllib.error.URLError, TimeoutError, socket.timeout))
+_EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
 
-def _norm_arxiv(aid):
-    """Normalize an arXiv id for matching: strip whitespace and a version suffix."""
-    return re.sub(r"v\d+$", "", (aid or "").strip())
+def _esummary(db, uid):
+    """One NCBI esummary record (PMC or PubMed) as a found-record, or None."""
+    d = http_json(f"{_EUTILS}/esummary.fcgi?db={db}&id={uid}&retmode=json")
+    r = (d.get("result") or {}).get(uid)
+    if not r or "uid" not in r:
+        return None
+    return {
+        "title": r.get("title", ""),
+        "year": (r.get("pubdate", "") or "")[:4],
+        "first_author": (r.get("authors") or [{"name": ""}])[0].get("name", ""),
+        "journal": r.get("source", ""),
+    }
 
 
 def lookup_pmc(pmcid):
-    n = pmcid.replace("PMC", "")
-    d = http_get_json(f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pmc&id={n}&retmode=json")
-    if "result" in d and n in d["result"] and "uid" in d["result"][n]:
-        r = d["result"][n]
-        return {
-            "title": r.get("title", ""),
-            "year": (r.get("pubdate", "") or "")[:4],
-            "first_author": (r.get("authors") or [{"name": ""}])[0].get("name", ""),
-            "journal": r.get("source", ""),
-        }
-    return None
+    return _esummary("pmc", pmcid.replace("PMC", ""))
 
 
 def lookup_pubmed_id(pmid):
-    d = http_get_json(f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id={pmid}&retmode=json")
-    if "result" in d and pmid in d["result"]:
-        r = d["result"][pmid]
-        return {
-            "title": r.get("title", ""),
-            "year": (r.get("pubdate", "") or "")[:4],
-            "first_author": (r.get("authors") or [{"name": ""}])[0].get("name", ""),
-            "journal": r.get("source", ""),
-        }
-    return None
+    return _esummary("pubmed", pmid)
 
 
 def lookup_pubmed_title(title):
     q = urllib.parse.quote_plus(title)
-    d = http_get_json(f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={q}&retmode=json&retmax=2")
+    d = http_json(f"{_EUTILS}/esearch.fcgi?db=pubmed&term={q}&retmode=json&retmax=2")
     ids = d.get("esearchresult", {}).get("idlist", [])
     if not ids:
         return None
@@ -103,43 +97,20 @@ def lookup_crossref(doi):
     # miss (404 / unknown DOI) returns None. Swallowing everything to None — as
     # this once did — hides rate-limiting as a false "not in CrossRef".
     try:
-        d = http_get_json(f"https://api.crossref.org/works/{urllib.parse.quote(doi)}")
+        r = common.crossref_work(doi)
     except Exception as e:
         if _is_transient(e):
             raise
         return None
-    m = d["message"]
-    au = (m.get("author") or [{}])[0]
-    first = f"{au.get('family','')} {au.get('given','')[:1]}".strip()
-    year = ""
-    for k in ("published-print", "published-online", "issued"):
-        if k in m and m[k].get("date-parts", [[]])[0]:
-            year = str(m[k]["date-parts"][0][0])
-            break
-    return {
-        "title": (m.get("title") or [""])[0],
-        "year": year,
-        "first_author": first,
-        "journal": (m.get("container-title") or [""])[0],
-    }
-
-
-def _parse_arxiv_entry(e):
-    """Build a found-record from one arXiv Atom <entry>, or None if it is the
-    API's synthetic 'Error' entry (an unknown id) or has no title."""
-    title = (e.findtext(f"{ATOM}title") or "").strip()
-    if not title or title == "Error":
+    if not r:
         return None
-    authors = [a.findtext(f"{ATOM}name") for a in e.findall(f"{ATOM}author")]
-    return {
-        "title": " ".join(title.split()),
-        # arXiv 'published' is the submission date, which can precede the venue
-        # publication year by a year or two — the ±1 year tolerance below absorbs
-        # the common case; a larger gap is surfaced as a (reviewable) MISMATCH.
-        "year": (e.findtext(f"{ATOM}published") or "")[:4],
-        "first_author": authors[0] if authors else "",
-        "journal": "arXiv",
-    }
+    return {k: r[k] for k in ("title", "year", "first_author", "journal")}
+
+
+def _found_record(entry):
+    """arXiv entry (from common.arxiv_entries) -> the found-record shape."""
+    return {"title": entry["title"], "year": entry["year"],
+            "first_author": entry["first_author"], "journal": "arXiv"}
 
 
 def lookup_arxiv_batch(aids, chunk=50, sleep=3.0):
@@ -150,30 +121,36 @@ def lookup_arxiv_batch(aids, chunk=50, sleep=3.0):
 
     Returns (results, errored): `results[norm_id]` is the found-record or None
     (a genuine miss), and `errored` is the set of ids whose chunk failed
-    transiently (reported as ERROR, not NOT-FOUND, so they get re-run)."""
+    (reported as ERROR, not NOT-FOUND, so they get re-run)."""
     results, errored = {}, set()
     uniq = list(dict.fromkeys(_norm_arxiv(a) for a in aids if a))
     for i in range(0, len(uniq), chunk):
         batch = uniq[i:i + chunk]
-        url = ("http://export.arxiv.org/api/query?max_results="
-               f"{len(batch)}&id_list={urllib.parse.quote(','.join(batch))}")
         try:
-            root = ET.fromstring(http(url))
+            got = common.arxiv_fetch(batch)
         except Exception:
-            errored.update(batch)          # transient: don't mistake for missing
+            errored.update(batch)          # could not complete: don't mistake for missing
             continue
-        got = {}
-        for e in root.findall(f"{ATOM}entry"):
-            idtext = e.findtext(f"{ATOM}id") or ""
-            m = re.search(r"abs/(.+?)(?:v\d+)?$", idtext)
-            rec = _parse_arxiv_entry(e)
-            if m and rec:
-                got[_norm_arxiv(m.group(1))] = rec
         for a in batch:
-            results[a] = got.get(a)          # None = arXiv returned no entry = miss
+            results[a] = _found_record(got[a]) if a in got else None   # None = a genuine miss
         if i + chunk < len(uniq):
             time.sleep(sleep)
     return results, errored
+
+
+def rows_to_citations(rows, keyf=None):
+    """rows.json -> the citation list this tool verifies. One place derives the
+    expectations from the canonical `apa` (via common.parse_apa), instead of a
+    per-project regex in every emitter."""
+    keyf = keyf or common.key_field(rows)
+    out = []
+    for r in rows:
+        p = common.parse_apa(r.get("apa", ""))
+        out.append({"label": r.get(keyf, "?"), "doi": common.doi_of(r),
+                    "arxiv": r.get("arxiv"), "title": p["title"] if p else "",
+                    "expect_first_author": common.lead_surname(r.get("apa", "")),
+                    "expect_year": str(p["year"]) if p else ""})
+    return out
 
 
 def verify_one(c, arxiv_results=None, arxiv_errored=None):
@@ -243,8 +220,10 @@ def verify_one(c, arxiv_results=None, arxiv_errored=None):
     # Fuzzy surname containment (handles "Tang" vs "Tang J"). It can over-accept
     # a short surname that is a substring of another ("Lee" in "Leeson") — a
     # deliberate trade to avoid false MISMATCH spam; verdicts are human-reviewed.
-    if expect_au and actual_au and expect_au.split()[0] not in actual_au and actual_au.split()[0] not in expect_au:
-        issues.append(f"first-author mismatch: expected '{c.get('expect_first_author')}', got '{found['first_author']}'")
+    if (expect_au and actual_au and expect_au.split()[0] not in actual_au
+            and actual_au.split()[0] not in expect_au):
+        issues.append(f"first-author mismatch: expected '{c.get('expect_first_author')}', "
+                      f"got '{found['first_author']}'")
     expect_year = str(c.get("expect_year") or "").strip()
     actual_year = (found.get("year") or "").strip()
     # Guard the int() — a human-typed "in press"/"2023a" must not crash the run;
@@ -262,7 +241,10 @@ def verify_one(c, arxiv_results=None, arxiv_errored=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--citations", help="JSON file (else read stdin)")
+    ap.add_argument("--citations", help="JSON citation list (else --rows, else stdin)")
+    ap.add_argument("--rows", help="verify a rows.json directly (label = row key; "
+                    "expectations derived from the canonical apa)")
+    ap.add_argument("--key", default=None, help="row key field for --rows (default: ref, else label)")
     ap.add_argument("--out", help="JSON output file (else stdout)")
     ap.add_argument("--sleep", type=float, default=0.4)
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"),
@@ -277,6 +259,9 @@ def main():
 
     if args.citations:
         cits = common.load_json(args.citations)
+    elif args.rows:
+        rows = common.load_json(args.rows)
+        cits = rows_to_citations(rows, common.key_field(rows, args.key))
     else:
         cits = json.loads(sys.stdin.read())
 

@@ -41,7 +41,7 @@ roots, which is what Phase 2b is for.
     2. **Foundational empirical results** — older neurophysiology, psychophysics, etc.
     3. **Theory / computational framework** — the ideas the field is built on.
 
-Reuse the search template with the tier flipped to favour classic/foundational
+Reuse the search template with the tier flipped to favor classic/foundational
 work, then fold the results into the existing themes (no new lanes unless you ask
 for them). Pre-2000 classics, books, and chapters often have **no DOI** — they're
 kept as hand-written canonical APA and excluded from citation counting.
@@ -51,7 +51,7 @@ kept as hand-written canonical APA and excluded from citation counting.
 ## Phase 3 — Verify EVERY citation *(critical)*
 
 ```bash
-python3 ../tools/verify.py --citations rows.json --out verify_report.json
+python3 ../tools/verify.py --rows rows.json --out verify_report.json
 ```
 
 !!! danger "This is the step that earns the toolkit's trust"
@@ -120,13 +120,15 @@ python3 ../tools/spreadsheet.py --rows rows.json --out my_topic_bibliography.xls
 
 The core deliverable. Columns:
 `Topic · Ref# · APA reference · Link · Summary · Tag · Family · Cite (OpenAlex) ·
-Cite (S2) · PDF (local) · Xref`. Rows are **colour-coded by origin**, and the
+Cite (S2) · PDF (local) · Xref`. Rows are **color-coded by origin**, and the
 `Cite` / `Family` columns appear automatically once their passes have run.
 
 <p>
 <span class="swatch source"></span> cited in your source doc (if any) &nbsp;·&nbsp;
-<span class="swatch search"></span> agent forward/antecedents search &nbsp;·&nbsp;
-<span class="swatch xref"></span> cross-citation pass
+<span class="swatch search"></span> agent search &nbsp;·&nbsp;
+<span class="swatch anteced"></span> antecedents pass &nbsp;·&nbsp;
+<span class="swatch xref"></span> cross-citation pass &nbsp;·&nbsp;
+<span class="swatch lab"></span> the lab's own papers (lab mode)
 </p>
 
 A live slice of a real bibliography (`complexity_representation`, 190 rows):
@@ -168,7 +170,7 @@ implausibly low next to S2. No-DOI items stay blank. Set `S2_API_KEY` to avoid
 ## Phase 6 — Cross-citation pass
 
 ```bash
-python3 ../tools/xref.py --papers verified.json --exclude existing_dois.json \
+python3 ../tools/xref.py --rows rows.json --exclude existing_dois.json \
                          --out xref_my_topic.json --min-cites 4 --resolve-unknown
 ```
 
@@ -200,7 +202,7 @@ SVG/PNG/PDF): families as horizontal lanes on a citation-weighted timeline, with
 **landmark dots auto-selected** by citation count, within-corpus citation
 in-degree, and lab authorship — no hand-built label map.
 
-!!! note "Home-lab favouring is off by default"
+!!! note "Home-lab favoring is off by default"
     The lab-authorship criterion — starring your own group's papers as
     landmarks — is **disabled** unless you opt in, so the toolkit is neutral for
     anyone who clones it. Enable it per project with `--lab-author Surname`

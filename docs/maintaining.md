@@ -9,8 +9,21 @@ Notes for whoever edits the docs next — human or agent.
     same change.** The pages that drift fastest:
 
     - `docs/phases.md` — phase commands and guardrails
-    - `docs/tools.md` — the tool tables (one row per script in `tools/`)
     - `docs/pipeline.md` — the Mermaid flow and the phases-at-a-glance line
+
+    The tool index in `docs/tools.md` (and its copies in `tools/README.md` and
+    `PLAYBOOK.md`) is **generated** from the modules — script, phase, docstring
+    sentence, flags — by `python3 tools/gen_docs.py`. After adding a tool or a
+    flag, run it; `python3 tools/gen_docs.py --check` is what CI runs, and it
+    fails on a stale copy. Only the notes around the index are hand-written.
+
+## Tests and lint
+
+`.github/workflows/tests.yml` runs on every push and pull request:
+`ruff check .` (config in `pyproject.toml`: one import per line, 110 columns),
+`python3 tools/tests/test_formatting.py` (the regression suite — every case is a
+defect that once reached a delivered bibliography), and `tools/gen_docs.py
+--check`. Run all three locally before pushing.
 
 ## How it's built and deployed
 
@@ -51,10 +64,10 @@ Markdown, so keep them stable.
 
 ## The spreadsheet preview table
 
-The colour-coded bibliography table on the [Phases](phases.md#phase-5-build-the-spreadsheet)
+The color-coded bibliography table on the [Phases](phases.md#phase-5-build-the-spreadsheet)
 page is **not** a screenshot — it's HTML generated from a real `rows.json` and
 pulled in as a snippet (`--8<-- "docs/_includes/bib_table.html"`). To regenerate
 it from a different review, build an HTML `<table class="bib-preview">` with rows
-classed `row-search` / `row-xref` / `row-source` (the colour classes live in
+classed `row-search` / `row-xref` / `row-source` (the color classes live in
 `docs/stylesheets/extra.css`) and overwrite `docs/_includes/bib_table.html`. That
 partial is excluded from the published site via `exclude_docs` in `mkdocs.yml`.

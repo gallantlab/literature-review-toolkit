@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Phase 6b — thematic families. Validate an LLM-proposed family taxonomy against
-the bibliography, stamp `family` onto rows.json, and emit families.json (the
-reproducible cache) + families.md (grouped tables + a family x topic cross-tab).
+"""Phase 6b — validate an LLM-proposed family taxonomy against the bibliography,
+stamp `family` onto rows.json, and emit families.json (the reproducible cache) +
+families.md (grouped tables + a family x topic cross-tab).
 
 WHAT THIS TOOL DOES (the deterministic half). The *carving* — proposing a few
 families and assigning every paper — is judgment, done by the agent with a human
@@ -23,18 +23,25 @@ INPUT (--assign FILE): JSON the agent produced and the user approved:
   python3 tools/families.py --rows rows.json --assign families_input.json \
           --out families.json
 """
-import argparse, datetime, re, sys
+import argparse
+import datetime
+import re
+import sys
 from collections import Counter, defaultdict
 
 import common
+
+PHASE = "6b"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 MIN_FAMILIES, MAX_FAMILIES = 2, 9
 DOMINANT_WARN = 0.60   # warn if one family holds > this fraction of papers
 
 
 def lead_year(apa):
-    yr = re.search(r"\((\d{4})\)", apa)
-    return apa.split(",")[0], int(yr.group(1)) if yr else 0
+    """(lead surname, year) for the digest and the per-family tables; year 0 if
+    the reference has no parseable year. Uses the shared APA grammar so a
+    2025a-suffixed row is not misread as year 0."""
+    return common.lead_surname(apa), common.year_of(apa) or 0
 
 
 def topic_codes(topics):
@@ -144,7 +151,7 @@ def main():
     for r in rows:
         xt[assign[r["ref"]]][r.get("topic", "")] += 1
 
-    with open(args.md, "w") as f:
+    with open(args.md, "w", encoding="utf-8") as f:
         f.write("# Theoretical families\n\n")
         if principle:
             f.write(f"**Organizing principle.** {principle}\n\n")

@@ -10,7 +10,12 @@ reads+writes UTF-8 (ensure_ascii=False) through a context manager.
 Tools are run as `python3 tools/<tool>.py`, so `tools/` is on sys.path[0] and a
 plain `import common` resolves.
 """
-import json, re, socket, time, urllib.error, urllib.request
+import json
+import re
+import socket
+import time
+import urllib.error
+import urllib.request
 
 ARXIV_DOI = re.compile(r"10\.48550/arxiv\.(.+)$", re.I)
 ATOM = "{http://www.w3.org/2005/Atom}"
@@ -28,6 +33,11 @@ MARKUP = re.compile(r"</?[A-Za-z][A-Za-z0-9:._-]*(?:\s[^>]*)?/?>")
 UNI_HYPHEN = str.maketrans({"‐": "-", "‑": "-"})
 
 HDRS = {"User-Agent": "litreview-toolkit/1.0"}
+
+# HTTP statuses that mean "try again later", not "does not exist". ONE set, used
+# by http()'s backoff and by verify.py's ERROR-vs-NOT-FOUND split, so a 502 from
+# CrossRef is never retried in one tool and reported as a clean miss in another.
+TRANSIENT_HTTP = {429, 500, 502, 503, 504}
 
 
 def set_user_agent(email):
@@ -47,7 +57,7 @@ def http(url, retries=5, timeout=30, data=None, headers=None):
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
-            if e.code in (429, 503) and attempt < retries - 1:
+            if e.code in TRANSIENT_HTTP and attempt < retries - 1:
                 time.sleep(3 * 2 ** attempt)          # 3, 6, 12, 24s
                 continue
             raise
@@ -63,6 +73,14 @@ def http_json(url, retries=5, timeout=30, data=None, headers=None):
     return json.loads(http(url, retries=retries, timeout=timeout, data=data, headers=headers))
 
 
+def is_transient(exc):
+    """True if `exc` is a rate-limit / server / network failure (the lookup
+    could not complete), as opposed to a clean 'no such record' (e.g. 404)."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in TRANSIENT_HTTP
+    return isinstance(exc, (urllib.error.URLError, TimeoutError, socket.timeout))
+
+
 # ---- JSON I/O (always UTF-8, human-readable) ------------------------------
 def load_json(path):
     with open(path, encoding="utf-8") as f:
@@ -74,6 +92,79 @@ def dump_json(obj, path, indent=2):
     stay legible on disk and a hand grep for U+FFFD mojibake still works."""
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=indent, ensure_ascii=False)
+
+
+def fold(s):
+    """Fold accents and curly apostrophes for matching/sorting: 'Millière' ->
+    'milliere'. Used by cite_check (so a citation typed without the accent still
+    resolves) and by the reference-list sort (so Millière sorts after Miller,
+    not before it because the accented letter was dropped)."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s or "")
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return s.lower().replace("’", "'").translate(UNI_HYPHEN).strip()
+
+
+def key_field(rows, override=None):
+    """The row-key field every tool reports by: an explicit --key, else `ref`
+    if the first row has one, else `label`. One rule, so two tools never label
+    the same row differently."""
+    if override:
+        return override
+    return "ref" if rows and "ref" in rows[0] else "label"
+
+
+# ---- the live table -------------------------------------------------------
+class CanonicalTableError(RuntimeError):
+    """Raised by write_rows() when the file on disk is a canonical rows.json
+    (rows stamped `canonical_at` by references.py) and force=False."""
+
+
+def write_rows(path, rows, force=False):
+    """Write rows.json — refusing to overwrite a CANONICAL table.
+
+    After Phase 3f the file carries canonical references, reviewed sentence
+    casing and hand fixes; re-running an upstream row-emitter over it is
+    destructive. That used to be a sentence in the README. Now it is a check:
+    if the existing file has any row stamped `canonical_at`, raise unless the
+    caller passes force=True. The canonical-preserving tools (references.py,
+    families.py, sentence_case.py) write through dump_json and are unaffected.
+    """
+    import os
+    if not force and os.path.exists(path):
+        try:
+            old = load_json(path)
+        except Exception:
+            old = []
+        if isinstance(old, list) and any(isinstance(r, dict) and r.get("canonical_at") for r in old):
+            raise CanonicalTableError(
+                f"{path} is a canonical table (rows stamped canonical_at by references.py); "
+                "refusing to overwrite it from an upstream emitter. Edit rows.json directly, "
+                "or pass force=True if you really mean to rebuild it.")
+    dump_json(rows, path)
+
+
+def attach_counts(rows, counts, keyf=None):
+    """Attach citations.py output to rows in place: counts[key]['openalex'/'s2']
+    -> row['cite_openalex'/'cite_s2'] — the exact keys spreadsheet.py reads.
+    Returns the number of rows updated. Raises KeyError if `counts` does not
+    have citations.py's schema (every project once carried its own copy of this
+    with a comment saying 'keep these in lockstep')."""
+    keyf = keyf or key_field(rows)
+    n = 0
+    for r in rows:
+        c = counts.get(r.get(keyf))
+        if c is None:
+            continue
+        if "openalex" not in c and "s2" not in c:
+            raise KeyError(f"counts for {r.get(keyf)!r} have keys {sorted(c)}; expected "
+                           "citations.py's 'openalex' / 's2' — re-run tools/citations.py")
+        if c.get("openalex") is not None:
+            r["cite_openalex"] = c["openalex"]
+        if c.get("s2") is not None:
+            r["cite_s2"] = c["s2"]
+        n += 1
+    return n
 
 
 # ---- DOI parsing ----------------------------------------------------------
@@ -97,6 +188,54 @@ def arxiv_id_of(row):
         return row["arxiv"].strip()
     m = ARXIV_DOI.match((row.get("doi") or "").strip())
     return m.group(1) if m else None
+
+
+# ---- APA reference parsing (the ONE grammar for reading an `apa` back) ------
+# "Authors (YEAR[a]). Title[.?!] Rest" — the shape build_apa() emits. Every tool
+# that reads a reference back (the audit gate, the figure, the family digest,
+# cite_check, sentence_case, the duplicate scan) must agree on where the year,
+# title and venue are, or they diverge: three of them once required a bare
+# (YYYY) while the gate had moved on to accept APA-7's 2025a/2025b suffix, so a
+# suffixed row passed the gate and then silently vanished from the figure.
+_APA_HEAD = re.compile(r"^(?P<authors>.*?)\s?\((?P<year>\d{4})(?P<suffix>[a-z]?)\)\.?\s*")
+
+
+def parse_apa(apa):
+    """Split a canonical reference into its parts, or None if it has no (YEAR).
+
+    Returns {authors, year (int), suffix, head, title, terminal, rest} where
+    `head` is the original text through the year sentence and its whitespace,
+    `title` excludes its terminal mark (kept separately in `terminal`, one of
+    '.', '?', '!' or ''), and `rest` is everything after — so that
+    head + title + terminal + rest == apa. A title ending in ? or ! keeps that
+    mark and takes no period (APA-7), which is why the terminal is not always '.'.
+    """
+    m = _APA_HEAD.match(apa or "")
+    if not m:
+        return None
+    tail = apa[m.end():]
+    t = re.search(r"([.?!])(?=\s|$)", tail)
+    if t:
+        title, terminal, rest = tail[:t.start()], t.group(1), tail[t.end():]
+    else:
+        title, terminal, rest = tail, "", ""
+    return {"authors": m.group("authors"), "year": int(m.group("year")),
+            "suffix": m.group("suffix"), "head": apa[:m.end()],
+            "title": title, "terminal": terminal, "rest": rest}
+
+
+def year_of(apa):
+    """Publication year of a canonical reference as an int, else None."""
+    p = parse_apa(apa)
+    return p["year"] if p else None
+
+
+def lead_surname(apa):
+    """First author's family name — the text before the first comma of the
+    author list ('van den Heuvel, M. P., & ...' -> 'van den Heuvel')."""
+    p = parse_apa(apa)
+    authors = p["authors"] if p else (apa or "")
+    return authors.split(",")[0].strip()
 
 
 # ---- APA name + reference formatting --------------------------------------
@@ -138,11 +277,11 @@ def suspect_surnames(apa):
     excluded because split_name already handles them. Everything returned needs a
     human verdict; re-running the formatter reintroduces whatever was wrong.
     """
-    m = re.match(r"^(.*?)\s\(\d{4}[a-z]?\)", apa or "")
-    if not m:
+    p = parse_apa(apa)
+    if not p:
         return []
     out = []
-    for fam in re.findall(r"(?:^|,\s|…\s)([^,]+?),\s+(?:[A-ZÀ-Ý]\.)", m.group(1)):
+    for fam in re.findall(r"(?:^|,\s|…\s)([^,]+?),\s+(?:[A-ZÀ-Ý]\.)", p["authors"]):
         # the last author is joined with "& ", which is not part of the surname
         fam = re.sub(r"^[&…]\s*", "", fam).strip()
         toks = fam.split()
@@ -223,3 +362,94 @@ def build_apa(people, year, title, journal, vol=None, issue=None, pages=None):
         s += f" {tail}."
     s = html.unescape(re.sub(r"\s+", " ", s).strip())
     return MARKUP.sub("", s).translate(UNI_HYPHEN)
+
+
+# ---- authoritative-source records -------------------------------------------
+# references.py (canon), verify.py (existence check) and xref.py (resolve a cited
+# DOI) each read the same CrossRef message / arXiv Atom entry. One reading here,
+# so the date-field preference and the author handling cannot drift again.
+CROSSREF_API = "https://api.crossref.org/works/"
+ARXIV_API = "http://export.arxiv.org/api/query"
+
+
+def crossref_record(msg, fallback_venue=""):
+    """Normalize a CrossRef `message` dict.
+
+    -> {title, year (str), authors [(family, given)], people [APA-formatted],
+        first_author ('Family I'), journal, volume, issue, pages}. `journal`
+    falls back to the preprint server (institution / group-title) and then to
+    the caller's venue, cleaned — CrossRef leaves posted-content bare. An
+    author-less work still yields a record (people == []); canon rejects it,
+    the existence check does not.
+    """
+    authors = [(a.get("family", ""), a.get("given", "") or "")
+               for a in (msg.get("author") or []) if a.get("family")]
+    year = ""
+    for k in ("published-print", "published-online", "issued"):
+        dp = (msg.get(k) or {}).get("date-parts", [[None]])[0]
+        if dp and dp[0]:
+            year = str(dp[0])
+            break
+    journal = (msg.get("container-title") or [""])[0]
+    if not journal:                          # preprints (posted-content): name the server
+        inst = msg.get("institution")
+        if isinstance(inst, dict):
+            inst = [inst]
+        if isinstance(inst, list) and inst:
+            journal = inst[0].get("name", "") if isinstance(inst[0], dict) else str(inst[0])
+        if not journal:
+            gt = msg.get("group-title")
+            journal = gt[0] if isinstance(gt, list) and gt else gt if isinstance(gt, str) else ""
+        journal = (journal or "").strip() or clean_venue(fallback_venue)
+    fam, giv = authors[0] if authors else ("", "")
+    return {"title": norm_title((msg.get("title") or [""])[0]), "year": year,
+            "authors": authors, "people": [person(f, g) for f, g in authors],
+            "first_author": f"{fam} {giv[:1]}".strip(), "journal": journal,
+            "volume": msg.get("volume"), "issue": msg.get("issue"), "pages": msg.get("page")}
+
+
+def crossref_work(doi, fallback_venue=""):
+    """Fetch one DOI from CrossRef -> crossref_record(). Raises on a transient
+    failure (so callers can tell ERROR from NOT-FOUND); a 404 propagates too —
+    callers that want None on a clean miss check is_transient()."""
+    import urllib.parse
+    msg = http_json(f"{CROSSREF_API}{urllib.parse.quote(doi)}")["message"]
+    return crossref_record(msg, fallback_venue)
+
+
+def norm_arxiv(aid):
+    """Normalize an arXiv id for matching: strip whitespace and a version suffix."""
+    return re.sub(r"v\d+$", "", (aid or "").strip())
+
+
+def arxiv_entries(xml_bytes):
+    """Parse an arXiv API Atom feed -> [{id, title, year, authors, first_author,
+    journal_ref}], skipping the API's synthetic 'Error' entry (an unknown id)."""
+    import xml.etree.ElementTree as ET
+    out = []
+    for e in ET.fromstring(xml_bytes).findall(f"{ATOM}entry"):
+        title = (e.findtext(f"{ATOM}title") or "").strip()
+        if not title or title == "Error":
+            continue
+        idtext = e.findtext(f"{ATOM}id") or ""
+        m = re.search(r"abs/(.+?)(?:v\d+)?$", idtext)
+        authors = [(a.findtext(f"{ATOM}name") or "").strip() for a in e.findall(f"{ATOM}author")]
+        out.append({"id": norm_arxiv(m.group(1)) if m else "",
+                    "title": " ".join(title.split()),
+                    # arXiv 'published' is the submission date, which can precede
+                    # the venue year by a year or two — callers tolerate ±1.
+                    "year": (e.findtext(f"{ATOM}published") or "")[:4],
+                    "authors": authors, "first_author": authors[0] if authors else "",
+                    "journal_ref": (e.findtext(f"{ARXIV_NS}journal_ref") or "").strip()})
+    return out
+
+
+def arxiv_fetch(ids):
+    """One arXiv API call for many ids (`id_list`) -> {norm_id: entry}. Raises
+    on failure; the caller decides whether that is transient."""
+    import urllib.parse
+    ids = list(dict.fromkeys(norm_arxiv(a) for a in ids if a))
+    if not ids:
+        return {}
+    url = f"{ARXIV_API}?max_results={len(ids)}&id_list={urllib.parse.quote(','.join(ids))}"
+    return {e["id"]: e for e in arxiv_entries(http(url))}

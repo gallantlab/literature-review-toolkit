@@ -20,8 +20,9 @@ PLAYBOOK.md.
 are not used as the primary link. `PDF (local)` is empty unless Phase 4 was
 opted into.
 
-Color codes by `source`:
+Color codes by `source` (see COLORS; an unknown value renders white + a warning):
   source-doc -> white | search -> cream (#FFF7E0) | xref -> green (#E2F0D9)
+  lab -> blue (#DDEBF7) | anteced / anteced-nosrc -> lilac (#F3E6F5)
 
 Input format (JSON list):
 [
@@ -36,9 +37,13 @@ Input format (JSON list):
 Run:  python3 spreadsheet.py --rows rows.json --out bibliography.xlsx
 """
 import argparse
+import sys
+
 import xlsxwriter
 
 import common
+
+PHASE = "5"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 COLORS = {"source-doc": None, "search": "#FFF7E0", "xref": "#E2F0D9", "lab": "#DDEBF7",
           # Phase 2b antecedents (foundations pass): a distinct band. DOI'd classics
@@ -53,23 +58,23 @@ def cite_val(row, key):
     return v if isinstance(v, int) and not isinstance(v, bool) else None
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--rows", required=True)
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--sheet-name", default="References")
-    args = ap.parse_args()
+def unknown_sources(rows):
+    """`source` values with no color rule — a warning, not a crash: corpora
+    already disagree on the tag vocabulary, and a new value must never abort a
+    build. They render with the default (white) format."""
+    return sorted({r.get("source", "source-doc") for r in rows} - set(COLORS))
 
-    rows = common.load_json(args.rows)
 
+def build(rows, out, sheet_name="References"):
+    """Write the xlsx. Returns (n_rows, has_cite)."""
     # Auto-detect citation counts on any row -> add the two columns.
     has_cite = any(
         cite_val(r, "cite_openalex") is not None or cite_val(r, "cite_s2") is not None
         for r in rows
     )
 
-    wb = xlsxwriter.Workbook(args.out)
-    ws = wb.add_worksheet(args.sheet_name)
+    wb = xlsxwriter.Workbook(out)
+    ws = wb.add_worksheet(sheet_name)
 
     header_fmt = wb.add_format({"bold": True, "bg_color": "#D9E1F2", "border": 1,
                                 "valign": "top", "text_wrap": True})
@@ -115,6 +120,8 @@ def main():
 
     for i, r in enumerate(rows, start=1):
         src = r.get("source", "source-doc")
+        if src not in COLORS:
+            src = "source-doc"           # unknown tag -> default format (see unknown_sources)
         cf, lf, nf = fmts[src], fmts[("link", src)], fmts[("num", src)]
         for c, (_h, key, _w, kind) in enumerate(cols):
             if kind == "link":
@@ -131,9 +138,24 @@ def main():
         ws.set_row(i, 110)
 
     wb.close()
+    return len(rows), has_cite
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rows", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--sheet-name", default="References")
+    args = ap.parse_args()
+
+    rows = common.load_json(args.rows)
+    for src in unknown_sources(rows):
+        print(f"  ⚠ source={src!r} has no color rule (known: {', '.join(COLORS)}); "
+              "rendered white", file=sys.stderr)
+    n, has_cite = build(rows, args.out, args.sheet_name)
     n_pdf = sum(1 for r in rows if r.get("pdf"))
     extra = " + citation columns" if has_cite else ""
-    print(f"Wrote {len(rows)} rows ({n_pdf} with PDFs){extra} to {args.out}")
+    print(f"Wrote {n} rows ({n_pdf} with PDFs){extra} to {args.out}")
 
 
 if __name__ == "__main__":

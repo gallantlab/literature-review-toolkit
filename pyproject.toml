@@ -1,0 +1,19 @@
+# Lint/style configuration for the toolkit (there is no package to build).
+#   pip install ruff && ruff check .        # what CI runs (.github/workflows/tests.yml)
+# One import per line, sorted; 110-column lines; pyflakes + pycodestyle errors.
+[tool.ruff]
+line-length = 110
+target-version = "py39"
+src = ["tools"]
+extend-exclude = ["site"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# the embedded HTML/CSS/JS shell and long test fixtures are read as text, not code
+"tools/families_figure.py" = ["E501"]
+"tools/tests/*.py" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["common"]

@@ -23,15 +23,19 @@ OUTPUT: {key: {"openalex": int|None, "s2": int|None, "s2_influential": int|None,
 
 Counts are a snapshot at run time; re-run to refresh. See PLAYBOOK Phase 5b.
 """
-import argparse, datetime, json, os, sys, time, urllib.parse, urllib.error
+import argparse
+import datetime
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.parse
 
 import common
 from common import ARXIV_DOI, doi_of, http_json
 
-
-def parse_doi(row):
-    """Return a bare lowercase DOI from row['doi'] or a doi.org link, else None."""
-    return doi_of(row, lower=True)
+PHASE = "5b"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 
 def s2_id(doi):
@@ -131,11 +135,11 @@ def main():
         ap.error("--email or LITREVIEW_EMAIL required (OpenAlex polite pool)")
 
     rows = common.load_json(args.rows)
-    keyf = args.key or ("ref" if rows and "ref" in rows[0] else "label")
+    keyf = common.key_field(rows, args.key)
     items, no_doi = [], []
     for r in rows:
         k = r.get(keyf)
-        doi = parse_doi(r)
+        doi = doi_of(r, lower=True)   # OpenAlex/S2 match lowercase DOIs
         (items if doi else no_doi).append((k, doi) if doi else k)
 
     counts = {k: {"openalex": None, "s2": None, "s2_influential": None, "asof": args.asof}

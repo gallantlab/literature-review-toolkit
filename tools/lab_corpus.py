@@ -25,10 +25,15 @@ across several ids, so Phase L2 must ADD — and nothing fails when a record is
 simply missing). --search prints the year span and ORCID for exactly this reason;
 read its warnings.  See PLAYBOOK "Lab mode".
 """
-import argparse, os, time, urllib.parse
+import argparse
+import os
+import time
+import urllib.parse
 
 import common
 from common import build_apa, http_json, person, split_name
+
+PHASE = "L1"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 API = "https://api.openalex.org"
 

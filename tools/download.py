@@ -21,10 +21,17 @@ Input format (JSON list):
 Run:  python3 download.py --papers list.json --out-dir papers/topic_X/ \
                           --email you@example.edu
 """
-import argparse, json, os, sys, time
-import urllib.request, urllib.parse
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.parse
+import urllib.request
 
 import common
+
+PHASE = "4 (opt-in)"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 HDRS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Chrome/120.0.0.0",
@@ -138,7 +145,7 @@ def main():
 
     fails = [r for r in results if r["status"] == "FAIL"]
     if fails and args.manual_list:
-        with open(args.manual_list, "a") as f:
+        with open(args.manual_list, "a", encoding="utf-8") as f:
             f.write("\n# Papers needing manual download (paywall / Cloudflare):\n")
             for r in fails:
                 f.write(f"\n  {r['slug']}\n")

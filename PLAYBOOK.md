@@ -5,7 +5,7 @@ optionally render it as a figure and a written review. This is ONE tool with two
 front-ends — **topic mode** (start from a query) and **lab mode** (start from a
 lab's corpus) — that share the entire downstream pipeline; only the front-end
 differs. Per topic, aim for ~50-70 high-impact and recent papers, classified and
-summarised. Decide the mode first (Phase 0), then gather that mode's inputs.
+summarized. Decide the mode first (Phase 0), then gather that mode's inputs.
 
 ## Operating contract — the rules that don't bend
 
@@ -54,7 +54,10 @@ live at **https://gallantlab.org/literature-review-toolkit/**. It is a *superset
 of this PLAYBOOK and the README, not a fork. **When you change the toolkit — a
 tool, a phase, a command/flag, a guardrail or lesson — update the matching page
 under `docs/` in the same change** (fastest to drift: `docs/phases.md`,
-`docs/tools.md`, `docs/pipeline.md`). It auto-deploys via
+`docs/pipeline.md`). The tool index in `docs/tools.md`, `tools/README.md` and
+this file is **generated** — run `python3 tools/gen_docs.py` after adding a tool
+or a flag; `.github/workflows/tests.yml` fails on a stale copy, and also runs
+`ruff check .` and `tools/tests/test_formatting.py`. The site auto-deploys via
 `.github/workflows/docs.yml` on push to `main` (build runs `mkdocs build
 --strict`). Full editing/figure/snippet details live in `docs/maintaining.md`.
 The repo is **public** (that's what enables free Pages); `site_url` uses the org's
@@ -213,6 +216,11 @@ arXiv ids in batches (many per `id_list` call); a genuinely real preprint that
 would otherwise 429 into a false NOT-FOUND now comes back OK (or, if the batch
 still fails, ERROR to re-run).
 
+Feed it the live table directly — `python3 tools/verify.py --rows rows.json --out
+verify_report.json` derives the label, DOI and the expected first author / year /
+title from each row's `apa`; do not write a per-project converter script (fourteen
+projects did, each with its own first-author regex).
+
 For each paper the agent returned:
 
 **3a. If a PMCID was given:** call NCBI esummary
@@ -358,16 +366,19 @@ described in step 5 — don't keep retrying programmatically.
 Use `xlsxwriter` (no install if already present; if not, write CSV instead
 and tell the user). Schema:
 
-| Topic | Ref # | APA reference | Link | Summary | Tag | Cite (OpenAlex) | Cite (S2) | PDF (local) | Xref |
-|-------|-------|---------------|------|---------|-----|-----------------|-----------|-------------|------|
+| Topic | Ref # | APA reference | Link | Summary | Tag | Family | Cite (OpenAlex) | Cite (S2) | PDF (local) | Xref |
+|-------|-------|---------------|------|---------|-----|--------|-----------------|-----------|-------------|------|
 
-(The two `Cite` columns appear only when Phase 5b has populated them.)
+(`Family` appears only after Phase 6b, and the two `Cite` columns only when
+Phase 5b has populated them.)
 
 - `Topic`: one of the project's topic categories (e.g. "Multimodal networks").
 - `Ref #`: numeric for source-document refs; use `<topic-letter><n>` for
   added refs (e.g. `M1`-`M40` for first multimodal batch, `M41`-`M70` for xref
   batch). Keep numbering monotonically increasing across batches.
-- `APA reference`: full APA, list authors up to 6 then `et al.`.
+- `APA reference`: the canonical `apa` from Phase 3f — full author list (APA-7:
+  up to 20; 19 + ellipsis + last beyond that). Never `et al.`; the audit gate
+  fails on it.
 - `Link`: DOI URL in `https://doi.org/<doi>` form — verified to resolve.
   PubMed/PMC URLs are NOT used as the primary link. If a paper has only a
   PMID/PMCID, look up its DOI before adding the row.
@@ -377,15 +388,18 @@ and tell the user). Schema:
 - `PDF (local)`: relative path if downloaded, else empty.
 - `Xref`: citation count from cross-reference analysis (Phase 6), else empty.
 
-**Color-code rows** so origin is visible:
-- White: refs from the source paper.
-- Cream `#FFF7E0`: refs added in initial search (Phase 2).
-- Green `#E2F0D9`: refs added via cross-citation analysis (Phase 6).
+**Color-code rows** so origin is visible (`source` field; the rules live in
+`spreadsheet.py`'s `COLORS`, and an unknown value renders white with a warning):
+- White: refs from the source paper (`source-doc`).
+- Cream `#FFF7E0`: refs added in the search passes (`search`).
+- Green `#E2F0D9`: refs added via cross-citation analysis, Phase 6 (`xref`).
+- Blue `#DDEBF7`: the lab's own papers in lab mode (`lab`).
+- Lilac `#F3E6F5`: Phase-2b antecedents (`anteced`; `anteced-nosrc` for
+  hand-cited classics with no DOI).
 
-Freeze the header row. Set column widths (~22, 8, 60, 50, 90, 14, 50, 8) and
-row heights (~110pt) for readability with wrapped text.
-
-`tools/spreadsheet.py` does the rebuild from a JSON of rows.
+`tools/spreadsheet.py` does the rebuild from a JSON of rows: it freezes the
+header, sets the column widths and 110-pt row heights, and adds the `Family` and
+`Cite` columns when the rows carry them.
 
 ### Phase 5b — Citation counts (standard; do this on every review)
 
@@ -492,7 +506,7 @@ rest is mechanical, owned by `tools/families.py`:
 
 ```bash
 # first emit the within-review citation graph (criterion 2 below); reuses the xref pass:
-python3 tools/xref.py --papers xref_papers.json --out xref_<topic>.json \
+python3 tools/xref.py --rows rows.json --out xref_<topic>.json \
         --exclude xref_exclude.json --internal-out internal_citations.json --email you@inst.edu
 python3 tools/families_figure.py --rows rows.json --families families.json \
         --internal internal_citations.json \
@@ -500,13 +514,13 @@ python3 tools/families_figure.py --rows rows.json --families families.json \
 ```
 
 It writes a self-contained `.html` (family lanes with their defining sentences,
-every paper as a dot beeswarm-packed by year, landmark studies as big labelled dots;
+every paper as a dot beeswarm-packed by year, landmark studies as big labeled dots;
 hover any node for its full reference, click for citation + DOI, hover a family name
 to spotlight its lineage) plus a standalone `.svg` and — if `rsvg-convert`/`inkscape`
 is present — `.png` + `.pdf` for slides/papers. This replaces the old static figure.
 
-**Landmark labelling is AUTOMATIC — do not hand-build a labels overlay.** A paper is
-labelled as a landmark (big dot) if ANY of: (1) it is among the **most-cited in its
+**Landmark labeling is AUTOMATIC — do not hand-build a labels overlay.** A paper is
+labeled as a landmark (big dot) if ANY of: (1) it is among the **most-cited in its
 family** (top `--per-family`, default 4, by max(OpenAlex, S2)); (2) it is **foundational
 within this review** — cited by ≥ `--motif-min` (default 3) of the corpus's own papers
 (this is criterion (2) and needs `internal_citations.json` from `xref.py --internal-out`;
@@ -525,7 +539,7 @@ now **prints how many qualified and how many were dropped** on every run. If tha
 is large, raise `--motif-min` (25 was right for 396 papers) rather than letting the cap
 choose for you.
 
-> **Home-lab favouring is OFF by default** — this is a shared, lab-neutral toolkit, so
+> **Home-lab favoring is OFF by default** — this is a shared, lab-neutral toolkit, so
 > criterion (3) does nothing until you opt in. Turn it on per project by passing
 > `--lab-author Surname` (repeatable), or set it once for your environment with
 > `export LITREVIEW_LAB_AUTHOR=Surname` (comma-separated for several surnames). The CLI
@@ -538,7 +552,7 @@ When the corpus spans many decades but is recency-heavy — the usual shape afte
 the empirical CDF of all paper years, GLOBALLY (not per-region): sparse early spans
 compress, dense recent spans expand. `0` = linear, `1` = full density-equalizing; **~0.85**
 keeps old foundations legible while decluttering the modern clump. Faint gridlines mark the
-labelled years so the nonlinear scale stays readable. Always note the nonlinear axis in the
+labeled years so the nonlinear scale stays readable. Always note the nonlinear axis in the
 figure caption (independence principle).
 
 **Only the editorial *arrows/notes* remain a human checkpoint** (cross-family convergence
@@ -579,7 +593,7 @@ citations oldest-first. Four recurring inversions to watch for (each example is 
 2026-06-13):
 - crediting a later **review** for a finding an earlier **primary paper** made (e.g. Tanaka 1996
   review vs. Desimone et al. 1984 for object/face selectivity in IT);
-- crediting a later **model/normalisation/synthesis** for a phenomenon earlier **empirical** work
+- crediting a later **model/normalization/synthesis** for a phenomenon earlier **empirical** work
   established (e.g. Reynolds & Heeger 2009 model vs. McAdams & Maunsell 1999 for attention changing
   gain/tuning);
 - crediting a later, narrower paper while ignoring an earlier, **more general** one from the same
@@ -601,7 +615,7 @@ This pass catches what self-review misses because the drafting model is biased t
 
 **Mechanics — `tools/review_paper.py`.** The tool owns only the mechanical render; it does not
 write prose. It reads `rows.json` and builds the **APA-7 reference list straight from the
-canonical `apa` strings** (deduped, alphabetised, hanging indent, with DOI links), embeds the
+canonical `apa` strings** (deduped, alphabetized, hanging indent, with DOI links), embeds the
 families figure with a standalone caption, and lays out the title/author/disclosure block + the
 abstract + sections. Keep the prose in a small per-project emitter that dumps `content.json`
 (see the schema in `review_paper.py`); render with the shared tool:
@@ -716,7 +730,7 @@ validates/stamps and emits `families.json` + `families.md`.
 
 **Phase L4 — render the lab's trajectory.**
 - **Trajectory figure:** `tools/families_figure.py` — themes × year, the lab's
-  papers as the spine (milestones labelled, the rest dots). This *is* "the lab's
+  papers as the spine (milestones labeled, the rest dots). This *is* "the lab's
   topics and how they changed over time."
 - **Bibliography:** `tools/spreadsheet.py` (lab papers get the `lab` row color).
 
@@ -748,7 +762,7 @@ theme:
    collisions and zero cross-theme duplicate DOIs before merging.
 5. **Merge** into the context corpus (lab rows `source=lab`, field rows
    `source=search`) and re-run families + figure (`--emphasize-source lab` to
-   keep the lab papers as the labelled spine over the field dots).
+   keep the lab papers as the labeled spine over the field dots).
 
 The three human checkpoints mirror topic mode: **(1) the corpus** (not a topic),
 **(2) the themes**, **(3) the figure**.
@@ -844,13 +858,11 @@ be an HTML challenge page).
 - Keep summaries to 3-5 sentences. Long ones become unreadable in a row.
 - Don't try to read existing xlsx with xlsxwriter — it's write-only. If
   appending, regenerate the whole file from a JSON of accumulated rows.
-- **If you keep batch data inside per-version Python scripts that
-  import each other, guard the xlsx-writing block under
-  `if __name__ == "__main__":`.** Otherwise importing such a script
-  for its data structures (e.g. `from build_bibliography import ROWS`)
-  rewrites the spreadsheet as a side effect of import. The simpler
-  alternative is to keep all rows in a single JSON and rebuild via
-  `tools/spreadsheet.py`.
+- **Keep all rows in `rows.json` and rebuild the xlsx via `tools/spreadsheet.py`.**
+  A project's row emitter (start from `templates/build_rows_template.py`) runs
+  ONCE, guards its writing block under `if __name__ == "__main__":`, imports the
+  toolkit's `common`, and writes through `common.write_rows` — which refuses to
+  overwrite a canonical table, so re-running it later cannot wipe Phase 3f.
 
 ### On canonicalization & the live table
 - **When `--audit` flags `U+FFFD` mojibake, hand-fix it LAST.** CrossRef stores a
@@ -912,7 +924,7 @@ be an HTML challenge page).
   different DOIs, so the one-row-per-DOI rule passes and *both* rows canonicalize
   perfectly. Three such pairs sat undetected in a 362-row corpus for six weeks.
   `references.py --audit` now runs a corpus-level `duplicate_scan()` and prints
-  `⚠ A ~ B: possible duplicate` for near-identical titles (labelling the
+  `⚠ A ~ B: possible duplicate` for near-identical titles (labeling the
   preprint-vs-published case explicitly). It is a **warning, not a defect** — real
   distinct papers do collide (a 2014 toolbox paper and its 2026 successor;
   successive years of the same challenge), so every pair needs a human verdict.
@@ -980,27 +992,43 @@ Always include a `User-Agent` header with your email for these APIs.
 ## Reusable helper scripts
 
 All in `<project>/tools/`. Each is standalone, takes input via JSON/CLI,
-outputs JSON/files. Run `python3 tools/<script>.py --help` for flags.
+outputs JSON/files. Run `python3 tools/<script>.py --help` for flags. The index
+below is generated from the modules by `python3 tools/gen_docs.py` (CI fails if
+it is stale); the per-tool detail is in `tools/README.md` and `docs/tools.md`.
 
-| Script | Purpose |
-|--------|---------|
-| `tools/verify.py` | Verify a list of citations via PMC/PubMed/CrossRef + arXiv (arXiv ids batched). Verdicts OK / MISMATCH / NOT-FOUND / ERROR — re-run ERROR, chase NOT-FOUND. |
-| `tools/references.py` | Phase 3f. Rebuild every `apa` from the verified DOI (CrossRef) or arXiv id into canonical APA-7; `--audit` gates the build (exit 1 on any defect) and warns on near-duplicates + suspect surnames. Both modes. |
-| `tools/sentence_case.py` | Phase 3f, after canon. Propose strict APA-7 sentence case for titles; human reviews, then `--apply`. `--proper` takes the project's proper-noun allowlist, `--vocab` reviews by distinct token change. |
-| `tools/cite_check.py` | Phase 7 gate. Every in-text citation in `content.json` must name a row in `rows.json`; exits 1 on unresolved, warns on ambiguous author-year pairs. |
-| `tools/citations.py` | Phase 5b. Fetch per-paper citation counts from OpenAlex (primary) + Semantic Scholar (secondary) by DOI. Google Scholar is not usable (no API / CAPTCHA). |
-| `tools/families.py` | Phase 6b. Validate an (agent-proposed, human-approved) family taxonomy, stamp `family` onto rows, emit `families.json` + `families.md`. `--digest` prints a corpus digest for the proposal step. |
-| `tools/families_figure.py` | Phase 6b. Interactive HTML lineage figure from `rows.json` + `families.json` (+ standalone svg/png/pdf). Optional `--spec` for editorial labels/arrows/notes. Replaces the old static figure. |
-| `tools/lab_corpus.py` | **Lab mode** Phase L1. Ingest a lab's full publication corpus from OpenAlex by author id (`--search` to resolve). Enrich abstracts before classifying — OpenAlex alone is insufficient. |
-| `tools/xref.py` | Build cross-citation index from a list of (slug, doi) tuples via CrossRef. |
-| `tools/spreadsheet.py` | Build/rebuild xlsx from a JSON of accumulated rows (DOI URLs as Link). |
-| `tools/review_paper.py` | **Phase 7 (optional).** Render a review-article `.docx` from `content.json` (prose) + `rows.json`. Builds the title/author/disclosure block, abstract, sections, embedded figure, and an APA-7 reference list pulled from the canonical `apa`. Prose is authored separately (scientific-writing skill); the tool owns only the mechanics. |
-| `tools/search_prompt_template.md` | Prompt template for the literature-search subagent. |
-| `tools/download.py` | **Opt-in (Phase 4).** Multi-source PDF downloader. Not run by default. |
-| `tools/reconcile_downloads.py` | **Opt-in (Phase 4).** After the user manually downloads PDFs via the browser-helper page, this reads each PDF's first-page title via `pdftotext`, fuzzy-matches it against a manifest of slug+title pairs, and moves the PDF into the per-topic dir with the correct slug filename. |
+<!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
+| Script | Phase | Purpose | Flags |
+|---|---|---|---|
+| `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / arXiv. | `--citations` `--email` `--key` `--out` `--rows` `--sleep` |
+| `references.py` | 3f | Canonical reference builder — make EVERY reference perfect, in both modes. | `--asof` `--audit` `--email` `--key` `--out` `--repair` `--rows` `--sleep` |
+| `sentence_case.py` | 3f | Post-canon pass — propose strict APA-7 sentence case for reference titles. | `--apply` `--out` `--proper` `--rows` `--vocab` |
+| `download.py` | 4 (opt-in) | Multi-source PDF downloader (Phase 4 — OPT-IN, not run by default). | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
+| `reconcile_downloads.py` | 4 (opt-in) | Reconcile manually-downloaded PDFs against a slug+title+doi manifest. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
+| `spreadsheet.py` | 5 | Build/rebuild the bibliography xlsx from a JSON of accumulated rows. | `--out` `--rows` `--sheet-name` |
+| `citations.py` | 5b | Fetch citation counts for a bibliography from OpenAlex + Semantic Scholar. | `--asof` `--email` `--key` `--out` `--rows` `--sources` |
+| `xref.py` | 6 | Build a cross-citation index from a list of papers. | `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--rows` `--sleep` |
+| `families.py` | 6b | Phase 6b — validate an LLM-proposed family taxonomy against the bibliography, stamp `family` onto rows.json, and emit families.json (the reproducible cache) + families.md (grouped tables + a family x topic cross-tab). | `--asof` `--assign` `--digest` `--md` `--out` `--rows` |
+| `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--spec` `--time-warp` `--title` `--xlsx` |
+| `cite_check.py` | 7 | Phase 7 gate — every in-text citation must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
+| `review_paper.py` | 7 | Phase 7 — build a review ARTICLE (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
+| `lab_corpus.py` | L1 | Lab mode — Phase L1: ingest a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
+| `common.py` | — | Shared helpers for the literature-review toolkit. | — |
+<!-- END GENERATED TOOL INDEX -->
 
-Each helper is small (<200 lines) and meant to be read + adapted. They are
-not a framework — they're scaffolding to keep the LLM judgment work fast.
+Notes the index cannot carry:
+- `verify.py` and `xref.py` accept `--rows rows.json` directly, so a project needs
+  no converter script to feed them.
+- `references.py --repair` retrofits an old corpus offline (no re-fetch, so
+  post-canon hand fixes survive); canon and repair stamp rows `canonical_at`.
+- `reconcile_downloads.py` matches by filename ↔ DOI substring first, then by
+  first-author + year + title overlap on the first page (`pdftotext`), and refuses
+  to move a PDF it is unsure about.
+- Project scripts should `import common` (see tools/README.md, "Using the toolkit
+  from a project script") and write `rows.json` through `common.write_rows`, which
+  refuses to overwrite a canonical table.
+
+Each helper is small and meant to be read + adapted. They are not a framework —
+they're scaffolding to keep the LLM judgment work fast.
 
 ---
 
@@ -1008,9 +1036,8 @@ not a framework — they're scaffolding to keep the LLM judgment work fast.
 
 ```
 1. Read this playbook.
-2. Read the existing spreadsheet (xlsxwriter is write-only; convert to CSV
-   first via `python3 -c "import openpyxl; ..."` or load via pandas if
-   available, or just have the user paste the topic list).
+2. Read the existing `rows.json` — after Phase 3f it is the live table and
+   the xlsx is only a rendering of it (xlsxwriter is write-only).
 3. Confirm topic + criteria with the user. Do NOT ask whether to download
    PDFs — the default is no (Phase 4 is opt-in only).
 4. Phase 1: collect baseline (source-doc citations).
@@ -1023,7 +1050,8 @@ not a framework — they're scaffolding to keep the LLM judgment work fast.
 9. Phase 6: cross-citation pass (tools/xref.py); verify and append xref
    batch via Phases 3 + 5 again.
 9b. Phase 6b (OPTIONAL): thematic families — propose → confirm with user →
-    assign → tools/families.py validates/stamps/renders. Figure is bespoke.
+    assign → tools/families.py validates/stamps/renders; tools/families_figure.py
+    draws the figure and auto-labels landmarks (only arrows/notes are editorial).
 9c. Phase 7 (OPTIONAL): review article — author prose into content.json,
     gate it with tools/cite_check.py, then render with tools/review_paper.py
     (APA-7 refs from rows.json). If AI-authored, state the AI author + a

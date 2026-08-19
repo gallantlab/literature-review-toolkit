@@ -4,48 +4,84 @@ Every script lives in
 [`tools/`](https://github.com/gallantlab/literature-review-toolkit/tree/main/tools).
 Each is small, standalone, and meant to be **read and adapted** — scaffolding,
 not a framework. They share one helper module (`common.py`: HTTP with backoff,
-JSON I/O, DOI/arXiv parsing, APA building). Run any with `--help`.
+JSON I/O, DOI/arXiv parsing, the APA builder **and the APA parser** every tool
+reads references back with, the CrossRef/arXiv record readers). Run any with
+`--help`.
 
-## Core pipeline
+## Index
 
-| Script | Phase | Purpose |
-|---|---|---|
-| [`verify.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/verify.py) | 3 | Verify every citation via PMC/PubMed/CrossRef **+ the arXiv API** (arXiv ids batched to dodge rate-limit bans). Verdicts `OK` / `MISMATCH` / `NOT-FOUND` / `ERROR` — re-run `ERROR` (transient), chase `NOT-FOUND` (likely fake). Catches ~25% search-agent fabrications. |
-| [`references.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/references.py) | 3f | Rebuild every reference from its verified DOI/arXiv id into canonical APA-7 (full authors, particles, casing, real venue incl. bioRxiv/PsyArXiv). `--audit` is a **hard gate**, and also warns on near-duplicate rows (same paper entering twice as preprint + published) and on multi-word surnames that may be a mis-split given name. Both modes. |
-| [`sentence_case.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/sentence_case.py) | 3f | *After* canon: propose strict APA-7 sentence case for titles, for human review. Protects acronyms, digits, camelCase and hyphen parts automatically; per-project proper nouns go in a `--proper` allowlist. `--vocab` reviews a large corpus by distinct token change rather than by title. |
-| [`spreadsheet.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/spreadsheet.py) | 5 | Build/rebuild the `.xlsx` from the accumulated JSON rows; auto-adds `Cite` / `Family` columns when present. |
-| [`citations.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/citations.py) | 5b | Per-paper citation counts from OpenAlex (primary) + Semantic Scholar by DOI, with undercount reconciliation. |
-| [`xref.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/xref.py) | 6 | Cross-citation frequency table from the corpus's own CrossRef reference lists. |
+The table below is **generated** from the modules themselves — each script's
+docstring, its `PHASE` constant, and the flags its own `--help` reports — by
+`python3 tools/gen_docs.py`, and CI fails if it is stale. The same block appears
+in `tools/README.md` and `PLAYBOOK.md`, so the three cannot disagree.
 
-## Families, figure & review
+<!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
+| Script | Phase | Purpose | Flags |
+|---|---|---|---|
+| `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / arXiv. | `--citations` `--email` `--key` `--out` `--rows` `--sleep` |
+| `references.py` | 3f | Canonical reference builder — make EVERY reference perfect, in both modes. | `--asof` `--audit` `--email` `--key` `--out` `--repair` `--rows` `--sleep` |
+| `sentence_case.py` | 3f | Post-canon pass — propose strict APA-7 sentence case for reference titles. | `--apply` `--out` `--proper` `--rows` `--vocab` |
+| `download.py` | 4 (opt-in) | Multi-source PDF downloader (Phase 4 — OPT-IN, not run by default). | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
+| `reconcile_downloads.py` | 4 (opt-in) | Reconcile manually-downloaded PDFs against a slug+title+doi manifest. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
+| `spreadsheet.py` | 5 | Build/rebuild the bibliography xlsx from a JSON of accumulated rows. | `--out` `--rows` `--sheet-name` |
+| `citations.py` | 5b | Fetch citation counts for a bibliography from OpenAlex + Semantic Scholar. | `--asof` `--email` `--key` `--out` `--rows` `--sources` |
+| `xref.py` | 6 | Build a cross-citation index from a list of papers. | `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--rows` `--sleep` |
+| `families.py` | 6b | Phase 6b — validate an LLM-proposed family taxonomy against the bibliography, stamp `family` onto rows.json, and emit families.json (the reproducible cache) + families.md (grouped tables + a family x topic cross-tab). | `--asof` `--assign` `--digest` `--md` `--out` `--rows` |
+| `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--spec` `--time-warp` `--title` `--xlsx` |
+| `cite_check.py` | 7 | Phase 7 gate — every in-text citation must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
+| `review_paper.py` | 7 | Phase 7 — build a review ARTICLE (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
+| `lab_corpus.py` | L1 | Lab mode — Phase L1: ingest a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
+| `common.py` | — | Shared helpers for the literature-review toolkit. | — |
+<!-- END GENERATED TOOL INDEX -->
 
-| Script | Phase | Purpose |
-|---|---|---|
-| [`families.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/families.py) | 6b | Validate / stamp / render a theoretical-family grouping (agent proposes, you approve the definitions). |
-| [`families_figure.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/families_figure.py) | 6b | Interactive HTML lineage figure (+ svg/png/pdf); landmark dots auto-selected by citation count, within-corpus in-degree, and lab authorship. |
-| [`family_prompt_template.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/family_prompt_template.md) | 6b | Two-step *propose → assign* prompt for the families pass. |
-| [`review_paper.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/review_paper.py) | 7 | Render an AI-authored narrative review `.docx` from `content.json` (prose) + `rows.json` (canonical references). Mechanics only — prose is authored separately, after the priority audit. |
-| [`cite_check.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/cite_check.py) | 7 | **Gate before rendering.** Every in-text citation must name a row in `rows.json`. Exits 1 on an unresolved citation; warns on an author-year that matches two references, which APA-7 §8.19 fixes by naming more authors. Parses parenthetical and narrative forms. |
+## What each tool decides — the part that is judgment
 
-## Lab mode
+The index says what a tool *is*; these notes say what it *refuses to guess*.
 
-| Script | Phase | Purpose |
-|---|---|---|
-| [`lab_corpus.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/lab_corpus.py) | L1 | Ingest a lab's full publication corpus from OpenAlex by author id (`--search` to resolve the id). Enrich abstracts before classifying — OpenAlex metadata alone is insufficient. |
-
-## Search prompt & PDFs (opt-in)
-
-| Script | Phase | Purpose |
-|---|---|---|
-| [`search_prompt_template.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/search_prompt_template.md) | 2 / 2b | Prompt template for the literature-search subagent (forward search + antecedents). |
-| [`download.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/download.py) | 4 *(opt-in)* | Multi-source PDF downloader (arXiv → Unpaywall → EuropePMC). |
-| [`reconcile_downloads.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/reconcile_downloads.py) | 4 *(opt-in)* | File manually-downloaded PDFs from `~/Downloads` into the per-topic dir with the right slug. |
-
-## Shared helper
-
-| Script | Purpose |
-|---|---|
-| [`common.py`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/common.py) | HTTP with exponential backoff, JSON read/write, DOI/arXiv id parsing, author-name splitting, and the canonical APA builder shared by the other tools. |
+- **`verify.py`** returns `OK` / `MISMATCH` / `NOT-FOUND` / `ERROR`, and the
+  last two are different verdicts: `ERROR` means a lookup could not complete
+  (re-run it), `NOT-FOUND` means every lookup completed and nothing matched
+  (chase it — likely fabricated). arXiv ids are prefetched in batches so the
+  API's rate limit cannot turn real papers into false NOT-FOUNDs. It accepts a
+  hand-built citations list **or `rows.json` directly (`--rows`)**.
+- **`references.py`** rebuilds every `apa` from its verified DOI/arXiv id;
+  `--audit` is a **hard gate** (exit 1 on any defect) that also *warns* on
+  near-duplicate rows and on multi-word surnames that may be a mis-split given
+  name — both need a human verdict. `--repair` fixes pure string damage
+  (markup, Unicode hyphens, `?.`) **offline**, so a retrofit never re-fetches and
+  never wipes post-canon hand fixes. Canon and repair stamp each row with
+  `canonical_at`, which the write guard in `common.write_rows` honors.
+- **`sentence_case.py`** proposes strict APA-7 sentence case and a human
+  reviews; per-project proper nouns go in `--proper`, and `--vocab` reviews a
+  large corpus by distinct token change rather than by title.
+- **`spreadsheet.py`** auto-adds the `Cite` and `Family` columns when rows carry
+  them; an unknown `source` value renders white with a warning rather than
+  aborting the build.
+- **`citations.py`** uses OpenAlex (primary) + Semantic Scholar (secondary),
+  reconciles OpenAlex undercounts against S2, and never touches Google Scholar
+  (no API, CAPTCHA).
+- **`xref.py`** builds the cross-citation table from the corpus's own CrossRef
+  reference lists; `--internal-out` emits within-corpus in-degree for the
+  figure's landmark selection. Accepts `rows.json` directly (`--rows`).
+- **`families.py`** validates an agent-proposed, human-approved family
+  taxonomy (exhaustive / exclusive; hard limit 2–9 families, 3–8 recommended)
+  and stamps `family` onto rows. Do not cluster embeddings to make families.
+- **`families_figure.py`** selects and labels landmark dots **automatically**
+  (most-cited per family, within-corpus in-degree, home-lab papers when opted
+  in) and prints how many the label cap dropped. Arrows and notes stay editorial
+  (`--spec`).
+- **`cite_check.py`** is the Phase-7 gate: every in-text citation must name a
+  row (exit 1 otherwise); an author-year matching two rows is warned, and APA-7
+  §8.19 (name more authors) is the fix.
+- **`review_paper.py`** renders the `.docx` mechanics only; its reference list
+  is `reference_list(rows)` — the one implementation any HTML page should reuse.
+- **`lab_corpus.py`** ingests a lab's corpus from OpenAlex; author-id
+  disambiguation is the #1 correctness risk and cuts both ways (merged and
+  split ids). Enrich abstracts before classifying.
+- **`download.py` / `reconcile_downloads.py`** are opt-in (Phase 4). The
+  reconciler's primary strategy is filename ↔ DOI substring, then author + year
+  + title overlap on the first page; it refuses to move when uncertain.
+- **`gen_docs.py`** regenerates the index above; `--check` is what CI runs.
 
 !!! tip "Read the PLAYBOOK alongside the tools"
     The

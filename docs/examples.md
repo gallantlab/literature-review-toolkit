@@ -76,7 +76,7 @@ references, embedded figure, explicit disclosure.
 ## Lineage figure gallery
 
 Each figure groups a verified corpus into theoretical families on a
-citation-weighted timeline, with landmark papers auto-labelled. Click any to
+citation-weighted timeline, with landmark papers auto-labeled. Click any to
 zoom.
 
 <div class="gallery" markdown>

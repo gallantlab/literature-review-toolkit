@@ -34,7 +34,7 @@ steps have a ground truth.
 |---|---|---|
 | 1 | **Scope** — the topic and span of the search | 1 |
 | 2 | **Families** *(optional)* — you approve/edit the agent's proposed grouping *before* it labels every paper | 6b |
-| 3 | **Figure** *(optional)* — you iterate on a lineage/taxonomy figure with the agent (bespoke, not auto-generated) | — |
+| 3 | **Figure** *(optional)* — the lineage figure is generated and its landmarks auto-labeled; you curate only the editorial arrows and notes | 6b |
 
 In between, the mechanical steps are guarded, not reviewed: a required
 **antecedents pass** searches the topic's methodological, empirical, and
@@ -107,7 +107,8 @@ later, the JSON files in the subdirectory are what the toolkit reads from.
 The spreadsheet has columns
 `Topic | Ref# | APA reference | Link | Summary | Tag | Family | Cite (OpenAlex) | Cite (S2) | PDF (local) | Xref`,
 color-coded by origin (white = cited in your source doc if any, cream =
-initial agent search, green = cross-citation pass). The `Link` column is
+agent search, green = cross-citation pass, blue = the lab's own papers in lab
+mode, lilac = antecedents). The `Link` column is
 always the DOI URL (`https://doi.org/<doi>`). Two columns appear only once their
 pass has run: the **`Cite`** columns are per-paper citation counts from
 `tools/citations.py` (Phase 5b) — Google Scholar has no API, so OpenAlex +
@@ -125,8 +126,8 @@ A dedicated PDF-fetch tool will replace this path eventually.
 git clone https://github.com/gallantlab/literature-review-toolkit.git
 cd literature-review-toolkit
 
-# Python deps
-pip install xlsxwriter
+# Python deps (xlsxwriter for the spreadsheet, python-docx for the review .docx)
+pip install -r requirements.txt
 # pdftotext (only needed for the opt-in PDF reconciliation in Phase 4)
 brew install poppler        # macOS; or: apt-get install poppler-utils
 
@@ -178,12 +179,13 @@ mkdir my_topic && cd my_topic
 
 # Phase 2: spawn a literature-search agent (or do the search yourself)
 #          with the prompt at ../tools/search_prompt_template.md filled in.
-#          Save the returned list as rows.json. Links MUST be DOI URLs.
+#          Save the returned list as rows.json (start from
+#          ../templates/build_rows_template.py). Links MUST be DOI URLs.
 # Phase 2b: REQUIRED antecedents pass — reuse the same template but flip the tier
-#          to favour foundational/classic roots, then fold the results into rows.json.
+#          to favor foundational/classic roots, then fold the results into rows.json.
 
-# Phase 3: verify everything before trusting any of it.
-python3 ../tools/verify.py --citations rows.json --out verify_report.json
+# Phase 3: verify everything before trusting any of it (reads rows.json directly).
+python3 ../tools/verify.py --rows rows.json --out verify_report.json
 
 # Phase 3f: rebuild every reference into canonical APA-7 from the verified DOI,
 #           then gate (exit 1 on any imperfect ref). Both modes.
@@ -196,8 +198,8 @@ python3 ../tools/spreadsheet.py --rows rows.json --out my_topic_bibliography.xls
 # Phase 5b: citation counts; attach to rows (cite_openalex/cite_s2), rerun spreadsheet.py.
 python3 ../tools/citations.py --rows rows.json --out citation_counts.json
 
-# Phase 6: cross-citation pass.
-python3 ../tools/xref.py --papers verified.json \
+# Phase 6: cross-citation pass (reads rows.json directly).
+python3 ../tools/xref.py --rows rows.json \
                          --exclude existing_dois.json \
                          --out xref_my_topic.json \
                          --min-cites 4 --resolve-unknown

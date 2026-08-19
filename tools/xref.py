@@ -16,16 +16,41 @@ Input format (JSON list):
 ]
 
 Run:  python3 xref.py --papers list.json --out xref.json --min-cites 3
+Or:   python3 xref.py --rows rows.json --out xref.json     # slug = row key, DOI from link
 """
-import argparse, os, re, subprocess, sys, time, urllib.parse
+import argparse
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.parse
 from collections import defaultdict
 
 import common
 from common import http_json, set_user_agent
 
+PHASE = "6"   # pipeline phase, read by tools/gen_docs.py for the tool index
+
+
+def rows_to_papers(rows, keyf=None):
+    """rows.json -> the {slug, doi[, pdf]} list this tool reads; rows with
+    neither a DOI nor a pdf are skipped (nothing to fetch references from)."""
+    keyf = keyf or common.key_field(rows)
+    out = []
+    for r in rows:
+        doi = common.doi_of(r)
+        if not doi and not r.get("pdf"):
+            continue
+        p = {"slug": r.get(keyf, "?"), "doi": doi}
+        if r.get("pdf"):
+            p["pdf"] = r["pdf"]
+        out.append(p)
+    return out
+
 
 def crossref_refs(doi):
-    url = f"https://api.crossref.org/works/{urllib.parse.quote(doi)}"
+    url = f"{common.CROSSREF_API}{urllib.parse.quote(doi)}"
     try:
         d = http_json(url)
         refs = d["message"].get("reference", [])
@@ -64,35 +89,26 @@ def pdf_refs(pdf_path):
 
 
 def resolve_doi(doi):
-    """Get title/author/year/journal for a DOI via CrossRef."""
+    """Get title/first_author/year/journal for a DOI via CrossRef (best-effort:
+    None on any failure — this only decorates the ranked list)."""
     try:
-        url = f"https://api.crossref.org/works/{urllib.parse.quote(doi)}"
-        d = http_json(url)["message"]
-        au = (d.get("author") or [{}])[0]
-        first = f"{au.get('family','?')} {au.get('given','')[:1]}"
-        year = ""
-        for k in ("published-print", "published-online", "issued"):
-            if k in d and d[k].get("date-parts", [[]])[0]:
-                year = str(d[k]["date-parts"][0][0])
-                break
-        return {
-            "title": (d.get("title") or [""])[0],
-            "year": year,
-            "first_author": first,
-            "journal": (d.get("container-title") or [""])[0],
-        }
+        r = common.crossref_work(doi)
     except Exception:
         return None
+    return {k: r[k] for k in ("title", "year", "first_author", "journal")} if r else None
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--papers", required=True, help="JSON list of papers (slug + doi or pdf)")
+    ap.add_argument("--papers", help="JSON list of papers (slug + doi or pdf)")
+    ap.add_argument("--rows", help="or a rows.json: slug = row key, DOI from doi/link")
+    ap.add_argument("--key", default=None, help="row key field for --rows (default: ref, else label)")
     ap.add_argument("--out", required=True, help="JSON output path")
     ap.add_argument("--exclude", help="JSON list of DOIs to exclude (already in spreadsheet)")
     ap.add_argument("--internal-out", help="also write {slug: internal_indegree} — how many OTHER "
                     "corpus papers cite each corpus paper. Feeds families_figure.py auto-landmark "
-                    "selection (a paper cited by many of its own siblings is foundational within the review).")
+                    "selection (a paper cited by many of its own siblings is foundational within "
+                    "the review).")
     ap.add_argument("--min-cites", type=int, default=3)
     ap.add_argument("--resolve-unknown", action="store_true",
                     help="Look up titles for top-cited DOIs via CrossRef")
@@ -107,7 +123,13 @@ def main():
                  "(CrossRef polite pool expects a contact email in the User-Agent)")
     set_user_agent(args.email)
 
-    papers = common.load_json(args.papers)
+    if bool(args.papers) == bool(args.rows):
+        ap.error("give exactly one of --papers or --rows")
+    if args.rows:
+        rows = common.load_json(args.rows)
+        papers = rows_to_papers(rows, common.key_field(rows, args.key))
+    else:
+        papers = common.load_json(args.papers)
     excludes = set(d.lower() for d in (common.load_json(args.exclude) if args.exclude else []))
 
     print(f"Fetching reference lists for {len(papers)} papers...", file=sys.stderr)
@@ -162,7 +184,8 @@ def main():
 
     # Optionally resolve unknowns
     if args.resolve_unknown:
-        print(f"\nResolving titles for {sum(1 for d,_ in ranked if not meta[d].get('title'))} unknown DOIs...", file=sys.stderr)
+        n_unknown = sum(1 for d, _ in ranked if not meta[d].get("title"))
+        print(f"\nResolving titles for {n_unknown} unknown DOIs...", file=sys.stderr)
         for doi, _ in ranked:
             if not meta[doi].get("title"):
                 m = resolve_doi(doi)

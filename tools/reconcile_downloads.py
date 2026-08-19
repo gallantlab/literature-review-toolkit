@@ -26,9 +26,17 @@ Manifest format (JSON list):
 
 Run:  python3 reconcile_downloads.py --manifest list.json --out-dir papers/attention/
 """
-import argparse, os, pathlib, re, shutil, subprocess, time
+import argparse
+import os
+import pathlib
+import re
+import shutil
+import subprocess
+import time
 
 import common
+
+PHASE = "4 (opt-in)"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 
 def normalize(s: str) -> str:
@@ -203,7 +211,8 @@ def main():
         moved.append((pdf.name, slug, source))
 
     unmatched = [e["slug"] for e in manifest if e["slug"] not in used_slugs]
-    print(f"\n=== matched: {len(moved)} this run; manifest still missing {len(unmatched)} of {len(manifest)} ===")
+    print(f"\n=== matched: {len(moved)} this run; "
+          f"manifest still missing {len(unmatched)} of {len(manifest)} ===")
     if unmatched and len(unmatched) <= 60:
         print("Still missing:")
         for s in unmatched:

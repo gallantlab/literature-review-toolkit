@@ -15,7 +15,7 @@ where a single fabricated author or off-by-one DOI quietly poisons a review.
 <figcaption>
 A finished lineage figure (Phase&nbsp;6b) — 190 verified papers grouped into six
 theoretical families, plotted on a citation-weighted timeline from Shannon&nbsp;1948
-to today. Landmark papers are auto-labelled. Every dot is a verified, canonically
+to today. Landmark papers are auto-labeled. Every dot is a verified, canonically
 formatted reference in the spreadsheet.
 </figcaption>
 </figure>
@@ -86,7 +86,7 @@ from the same verified data:
 <div class="card" markdown>
 ### :material-table: Spreadsheet
 The always-on deliverable. One row per paper: canonical APA-7 reference, summary,
-tag, family, and citation counts — colour-coded by where the paper came from.
+tag, family, and citation counts — color-coded by where the paper came from.
 </div>
 
 <div class="card" markdown>

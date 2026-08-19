@@ -1,0 +1,5 @@
+# Runtime dependencies of tools/ (everything else is the standard library).
+xlsxwriter>=3.0        # spreadsheet.py
+python-docx>=1.1       # review_paper.py
+# Optional, not pip: pdftotext (poppler) for the opt-in Phase-4 PDF tools, and
+# rsvg-convert or inkscape for png/pdf exports from families_figure.py.

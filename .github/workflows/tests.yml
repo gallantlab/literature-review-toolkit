@@ -1,0 +1,28 @@
+name: tests
+
+# Lint + regression tests for tools/, on every push and pull request.
+# (docs.yml only rebuilds the site, and only when docs/ changes — before this
+# workflow existed the regression tests never ran in CI.)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt ruff
+      - name: lint (ruff, config in pyproject.toml)
+        run: ruff check .
+      - name: regression tests
+        run: python3 tools/tests/test_formatting.py
+      - name: generated docs are fresh
+        run: python3 tools/gen_docs.py --check

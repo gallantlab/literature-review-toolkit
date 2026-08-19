@@ -37,6 +37,8 @@
 .swatch.source { background: #ffffff; }
 .swatch.search { background: #fdf6e3; }
 .swatch.xref   { background: #e8f5e9; }
+.swatch.lab    { background: #ddebf7; }
+.swatch.anteced { background: #f3e6f5; }
 
 /* ---- Decision-point / callout cards on the home + pipeline pages ---- */
 .cards {

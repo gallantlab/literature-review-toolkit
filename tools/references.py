@@ -24,56 +24,39 @@ OUTPUT (default): rewrites each row's `apa` (and `link` to the DOI URL), prints 
 per-defect audit. `--audit` reports without writing and exits nonzero if any row
 is imperfect — wire it into the build so a bad ref can never ship.
 """
-import argparse, json, os, re, sys, time, urllib.parse
-import xml.etree.ElementTree as ET
+import argparse
+import datetime
+import os
+import re
+import sys
+import time
 
 import common
-from common import (ARXIV_DOI, ATOM, ARXIV_NS, build_apa, clean_venue, doi_of,
-                    http, person, split_name)
+from common import ARXIV_DOI, build_apa, clean_venue, doi_of, person, split_name
 
-set_email = common.set_user_agent
+PHASE = "3f"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 
 # ---- authoritative sources ------------------------------------------------
+# Both readers live in common (crossref_record / arxiv_entries) and are shared
+# with verify.py and xref.py; this file only turns a record into an APA string.
 def crossref(doi, fallback_venue=""):
-    m = json.loads(http(f"https://api.crossref.org/works/{urllib.parse.quote(doi)}"))["message"]
-    people = [person(a.get("family", ""), a.get("given", ""))
-              for a in (m.get("author") or []) if a.get("family")]
-    if not people:
+    r = common.crossref_work(doi, fallback_venue)
+    if not r or not r["people"]:
         return None
-    year = ""
-    for k in ("published-print", "published-online", "issued"):
-        dp = (m.get(k) or {}).get("date-parts", [[None]])[0]
-        if dp and dp[0]:
-            year = dp[0]
-            break
-    journal = (m.get("container-title") or [""])[0]
-    if not journal:                          # preprints (posted-content): name the server
-        inst = m.get("institution")
-        if isinstance(inst, dict):
-            inst = [inst]
-        if isinstance(inst, list) and inst:
-            journal = inst[0].get("name", "") if isinstance(inst[0], dict) else str(inst[0])
-        if not journal:
-            gt = m.get("group-title")
-            journal = gt[0] if isinstance(gt, list) and gt else gt if isinstance(gt, str) else ""
-        journal = (journal or "").strip() or clean_venue(fallback_venue)
-    apa = build_apa(people, year, (m.get("title") or [""])[0], journal,
-                    m.get("volume"), m.get("issue"), m.get("page"))
-    return {"apa": apa, "venue": journal, "source": "crossref"}
+    apa = build_apa(r["people"], r["year"], r["title"], r["journal"],
+                    r["volume"], r["issue"], r["pages"])
+    return {"apa": apa, "venue": r["journal"], "source": "crossref"}
 
 
 def arxiv(aid, fallback_venue=""):
-    root = ET.fromstring(http(f"http://export.arxiv.org/api/query?id_list={urllib.parse.quote(aid)}"))
-    e = root.find(f"{ATOM}entry")
-    if e is None or e.find(f"{ATOM}title") is None:
+    e = common.arxiv_fetch([aid]).get(common.norm_arxiv(aid))
+    if not e:
         return None
-    people = [person(*split_name(a.find(f"{ATOM}name").text)) for a in e.findall(f"{ATOM}author")]
-    year = (e.findtext(f"{ATOM}published") or "")[:4]
+    people = [person(*split_name(name)) for name in e["authors"]]
     # a published paper often records its venue in arXiv's journal_ref
-    jref = e.findtext(f"{ARXIV_NS}journal_ref")
-    journal = (jref or "").strip() or clean_venue(fallback_venue) or "arXiv"
-    apa = build_apa(people, year, e.findtext(f"{ATOM}title"), journal)
+    journal = e["journal_ref"] or clean_venue(fallback_venue) or "arXiv"
+    apa = build_apa(people, e["year"], e["title"], journal)
     return {"apa": apa, "venue": journal, "source": "arxiv"}
 
 
@@ -107,6 +90,12 @@ def canonical(row):
     return r
 
 
+def stamp_canonical(row, asof):
+    """Mark a row as canonical (rebuilt or repaired on `asof`). common.write_rows
+    reads this stamp to refuse an upstream emitter's overwrite of the live table."""
+    row["canonical_at"] = asof
+
+
 # ---- quality gate ---------------------------------------------------------
 def audit(apa, has_source):
     """Return (defects, notes). `defects` are real formatting errors that must
@@ -115,11 +104,12 @@ def audit(apa, has_source):
     defects, notes = [], []
     if not has_source:
         notes.append("no DOI/arxiv — manual ref (verify by hand)")
-    # A trailing letter is APA-7's disambiguator for same-author/same-year works
-    # (2025a, 2025b). Requiring a bare (YYYY) here made that impossible to express.
-    if not re.search(r"\(\d{4}[a-z]?\)", apa):
+    # One grammar for the whole toolkit (common.parse_apa): it accepts APA-7's
+    # 2025a/2025b year suffix, so same-author/same-year works can be expressed.
+    parts = common.parse_apa(apa)
+    if not parts:
         defects.append("no-year")
-    if apa.startswith("Anon.") or re.match(r"^\(\d{4}[a-z]?\)", apa):
+    if apa.startswith("Anon.") or (parts and not parts["authors"]):
         defects.append("no-authors")
     if " et al" in apa:
         defects.append("et-al (should list all authors)")
@@ -145,8 +135,7 @@ def audit(apa, has_source):
     # Catch an uppercase TITLE (norm_title misses titles that are only MOSTLY
     # caps). Scan the title sentence ONLY — author initials ("R. B. H.") and
     # venue acronyms ("PLOS ONE") legitimately have caps and must be excluded.
-    m = re.search(r"\(\d{4}\)\.\s+(.+)", apa)
-    title = m.group(1).split(". ", 1)[0] if m else ""
+    title = parts["title"] if parts else ""
     run = mx = 0
     for t in re.findall(r"[A-Za-z][A-Za-z'/-]*", title):   # no '.', so initials aren't tokens
         run = run + 1 if (t.isupper() and len(t) >= 2) else 0
@@ -158,15 +147,9 @@ def audit(apa, has_source):
         # 'Thomas Yeo' is CrossRef folding given names into the family field. Both
         # need a human verdict, and re-running the formatter reintroduces the error.
         notes.append(f"multi-word surname '{fam}' — confirm it is not a mis-split given name")
-    # a DOI-backed ref should name a venue: real text after the title sentence.
-    # Structure is "Authors (YEAR). Title. Venue...."; drop the year-paren and the
-    # title sentence (its trailing ". ") and require something non-empty to remain.
-    after_year = apa.split(").", 1)[1] if ")." in apa else ""
-    # The title/venue separator is the title's terminal sentence punctuation +
-    # space — usually ". " but a title ending in a question or exclamation mark
-    # ends with "? "/"! " instead, so split on any of [.?!] followed by space.
-    title_split = re.split(r"[.?!]\s", after_year, maxsplit=1)
-    venue_part = title_split[1].strip(" .") if len(title_split) > 1 else ""
+    # a DOI-backed ref should name a venue: real text after the title sentence
+    # (parse_apa already knows the title ends at ". ", "? " or "! ").
+    venue_part = parts["rest"].strip(" .") if parts else ""
     if has_source and not venue_part:
         defects.append("empty venue")
     return defects, notes
@@ -212,9 +195,8 @@ def duplicate_scan(rows, keyf, threshold=0.88):
     import difflib
 
     def title_of(apa):
-        t = re.sub(r"^.*?\(\d{4}[a-z]?\)\.\s*", "", apa)      # drop authors + year
-        t = re.split(r"(?<=[.?!])\s", t)[0]                   # first sentence = title
-        return re.sub(r"[^a-z0-9 ]", "", t.lower()).strip()
+        p = common.parse_apa(apa)
+        return re.sub(r"[^a-z0-9 ]", "", p["title"].lower()).strip() if p else ""
 
     items = [(r.get(keyf, "?"), title_of(r.get("apa", "")), (r.get("link") or "").lower())
              for r in rows]
@@ -230,7 +212,8 @@ def duplicate_scan(rows, keyf, threshold=0.88):
                 continue                                      # cheap length prefilter
             ratio = difflib.SequenceMatcher(None, ta, tb).ratio()
             if ratio >= threshold:
-                why = "preprint vs published?" if ("10.48550" in la) != ("10.48550" in lb) else "near-identical title"
+                preprint_pair = ("10.48550" in la) != ("10.48550" in lb)
+                why = "preprint vs published?" if preprint_pair else "near-identical title"
                 pairs.append((ka, kb, ratio, why))
     return pairs
 
@@ -247,15 +230,17 @@ def main():
                          "retrofit the gate onto an existing corpus.")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"))
     ap.add_argument("--sleep", type=float, default=0.25)
+    ap.add_argument("--asof", default=datetime.date.today().isoformat(),
+                    help="date written to each rebuilt/repaired row's canonical_at (default: today)")
     args = ap.parse_args()
     if args.repair and args.audit:
         ap.error("--repair writes; --audit reports. Run --repair, then --audit to confirm.")
     if not args.email:
         ap.error("--email or LITREVIEW_EMAIL required (CrossRef/arXiv polite pool)")
-    set_email(args.email)
+    common.set_user_agent(args.email)
 
     rows = common.load_json(args.rows)
-    keyf = args.key or ("ref" if rows and "ref" in rows[0] else "label")
+    keyf = common.key_field(rows, args.key)
     defects, notes, rebuilt = {}, {}, 0
     repaired = {}
     for r in rows:
@@ -265,12 +250,14 @@ def main():
             if what:
                 r["apa"] = fixed
                 repaired[k] = what
+            stamp_canonical(r, args.asof)      # a repaired corpus is a canonical one
         elif not args.audit:
             res = canonical(r)
             if res and res.get("apa"):
                 r["apa"] = res["apa"]
                 if res.get("link"):
                     r["link"] = res["link"]
+                stamp_canonical(r, args.asof)
                 rebuilt += 1
             elif res and res.get("error"):
                 print(f"  [fetch-fail] {k}: {res['error']}", file=sys.stderr)

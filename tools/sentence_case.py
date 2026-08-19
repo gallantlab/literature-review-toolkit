@@ -38,10 +38,11 @@ which is what lets a generic word lowercase while a named entity containing it
 does not.
 """
 import argparse
-import json
 import re
 
 import common
+
+PHASE = "3f"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 # Proper in any corpus: eponyms, peoples/places, calendar terms.
 PROPER = {
@@ -58,10 +59,12 @@ PROPER = {
 }
 
 SEPS = r"[-–—/]"
+# punctuation that can wrap a token without being part of the word
+WRAP = "()[]{}'’\"“”,;:.!?"
 
 
 def protect_part(p, words):
-    core = p.strip("()[]{}'’\"“”,;:.!?")
+    core = p.strip(WRAP)
     if not core:
         return True
     if any(c.isdigit() for c in core):          # 7T, COVID-19, 5-MeO
@@ -77,7 +80,7 @@ def case_token(tok, clause_initial, words):
     # Check the WHOLE token against the allowlist before splitting it: a hyphenated
     # entry ('Age-Well', 'Lempel-Ziv', 'Medit-Ageing') has parts that are not
     # themselves allowlisted, so a parts-only check silently lowercases it.
-    if tok.strip("()[]{}'’\"“”,;:.!?") in words:
+    if tok.strip(WRAP) in words:
         return tok
     parts = re.split(f"({SEPS})", tok)
     compound = len([p for p in parts if p and not re.fullmatch(SEPS, p)]) > 1
@@ -86,7 +89,7 @@ def case_token(tok, clause_initial, words):
         if not p or re.fullmatch(SEPS, p):
             out.append(p)
             continue
-        core = p.strip("()[]{}'’\"“”,;:.!?")
+        core = p.strip(WRAP)
         # a lone capital inside a compound is an acronym part (ACAM-J), not a word
         if protect_part(p, words) or (compound and len(core) == 1 and core.isupper()):
             out.append(p)
@@ -105,14 +108,14 @@ def case_token(tok, clause_initial, words):
 def sentence_case(title, words, phrases):
     toks = title.split(" ")
     protected = set()
-    low = [t.strip("()[]{}'’\"“”,;:.!?").lower() for t in toks]
+    low = [t.strip(WRAP).lower() for t in toks]
     for phrase in phrases:
         pt = phrase.lower().split(" ")
         for i in range(len(low) - len(pt) + 1):
             if low[i:i + len(pt)] == pt:
                 for j, want in enumerate(pt):
                     protected.add(i + j)
-                    bare = toks[i + j].strip("()[]{}'’\"“”,;:.!?")
+                    bare = toks[i + j].strip(WRAP)
                     if bare:
                         toks[i + j] = toks[i + j].replace(bare, phrase.split(" ")[j])
     out = []
@@ -126,15 +129,13 @@ def sentence_case(title, words, phrases):
 
 
 def split_apa(apa):
-    """-> (head_through_year, title_with_terminal_punct, rest) or None."""
-    m = re.search(r"\(\d{4}[a-z]?\)\.\s+", apa or "")
-    if not m:
+    """-> (head_through_year, title_with_terminal_punct, rest) or None.
+    Thin wrapper over the shared APA grammar; None when there is no year or the
+    title never terminates (nothing after it to protect the split)."""
+    p = common.parse_apa(apa)
+    if not p or not p["terminal"] or not p["rest"]:
         return None
-    head, tail = apa[:m.end()], apa[m.end():]
-    m2 = re.search(r"[.?!]\s", tail)
-    if not m2:
-        return None
-    return head, tail[:m2.start() + 1], tail[m2.start() + 1:]
+    return p["head"], p["title"] + p["terminal"], p["rest"]
 
 
 def main():
@@ -154,16 +155,17 @@ def main():
         phrases += list(extra.get("phrases", []))
 
     rows = common.load_json(args.rows)
+    keyf = common.key_field(rows)
     changes, vocab, unparsed = [], {}, []
     for r in rows:
         parts = split_apa(r.get("apa", ""))
         if not parts:
-            unparsed.append(r.get("ref") or r.get("label", "?"))
+            unparsed.append(r.get(keyf, "?"))
             continue
         head, title, rest = parts
         new = sentence_case(title[:-1], words, phrases) + title[-1]
         if new != title:
-            changes.append((r.get("ref") or r.get("label", "?"), title, new))
+            changes.append((r.get(keyf, "?"), title, new))
             for a, b in zip(title[:-1].split(" "), new[:-1].split(" ")):
                 if a != b:
                     vocab[f"{a} -> {b}"] = vocab.get(f"{a} -> {b}", 0) + 1

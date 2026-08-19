@@ -6,8 +6,8 @@
 git clone https://github.com/gallantlab/literature-review-toolkit.git
 cd literature-review-toolkit
 
-# Python deps (spreadsheet writer)
-pip install xlsxwriter
+# Python deps (xlsxwriter for the spreadsheet, python-docx for the review .docx)
+pip install -r requirements.txt
 
 # Only needed for the opt-in PDF reconciliation in Phase 4:
 brew install poppler          # macOS
@@ -94,7 +94,7 @@ have an agent or want to run a single step by hand.
     #   returned papers as rows.json — links MUST be DOI URLs.
 
     # Phase 3: verify everything before trusting any of it.
-    python3 ../tools/verify.py --citations rows.json --out verify_report.json
+    python3 ../tools/verify.py --rows rows.json --out verify_report.json
 
     # Phase 3f: rebuild every reference into canonical APA-7, then gate.
     python3 ../tools/references.py --rows rows.json --out rows.json
@@ -107,7 +107,7 @@ have an agent or want to run a single step by hand.
     python3 ../tools/citations.py --rows rows.json --out citation_counts.json
 
     # Phase 6: cross-citation pass; pick additions; repeat 3 + 5 for the batch.
-    python3 ../tools/xref.py --papers verified.json --exclude existing_dois.json \
+    python3 ../tools/xref.py --rows rows.json --exclude existing_dois.json \
                              --out xref_my_topic.json --min-cites 4 --resolve-unknown
     ```
 

@@ -24,30 +24,28 @@ canonical `apa` strings; the extra-author form usually costs less.
 import argparse
 import re
 import sys
-import unicodedata
 
 import common
+
+PHASE = "7"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 # "Family, I. N." — the unit the APA formatter emits. Family may be a compound
 # ('Lambon Ralph') or carry a particle ('de Heer', 'van den Heuvel').
 SURNAME = re.compile(
-    r"([A-ZÀ-ÝÄÖÜ][\wÀ-ÿ'’\-]*(?:\s(?:[a-zà-ÿ]+\s)*[A-ZÀ-ÝÄÖÜ][\wÀ-ÿ'’\-]*)?)"
+    r"([A-ZÀ-Ý][\wÀ-ÿ'’\-]*(?:\s(?:[a-zà-ÿ]+\s)*[A-ZÀ-Ý][\wÀ-ÿ'’\-]*)?)"
     r",\s+(?:[A-ZÀ-Ý]\.(?:\s*[-A-ZÀ-Ý]\.)*)")
 
 
-def norm(s):
-    """Fold accents and curly apostrophes so 'Millière' matches 'Milliere'."""
-    s = unicodedata.normalize("NFKD", s or "")
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    return s.lower().replace("’", "'").replace("‐", "-").replace("‑", "-").strip()
+# Fold accents and curly apostrophes so 'Millière' matches 'Milliere'.
+norm = common.fold
 
 
 def keys_for(apa):
     """Every in-text form that should legitimately resolve to this reference."""
-    m = re.match(r"^(.*?)\s\((\d{4}[a-z]?)\)", apa or "")
-    if not m:
+    p = common.parse_apa(apa)
+    if not p:
         return []
-    fams, yr = SURNAME.findall(m.group(1)), m.group(2)
+    fams, yr = SURNAME.findall(p["authors"]), f"{p['year']}{p['suffix']}"
     if not fams:
         return []
     if len(fams) == 1:
@@ -55,15 +53,15 @@ def keys_for(apa):
     if len(fams) == 2:
         return [f"{fams[0]} & {fams[1]}, {yr}", f"{fams[0]} et al., {yr}"]
     # 3+ authors: the plain form, plus APA-7 8.19's extra-author disambiguation
-    out = [f"{fams[0]} et al., {yr}", f"{fams[0]}, {fams[1]}, et al., {yr}"]
-    if len(fams) > 2:
-        out.append(f"{fams[0]}, {fams[1]}, {fams[2]}, et al., {yr}")
-    return out
+    return [f"{fams[0]} et al., {yr}",
+            f"{fams[0]}, {fams[1]}, et al., {yr}",
+            f"{fams[0]}, {fams[1]}, {fams[2]}, et al., {yr}"]
 
 
 def citations_in(text):
     """Both APA forms: parenthetical '(Farb et al., 2007)' and narrative
-    'Farb and colleagues (2007)'."""
+    'Farb et al. (2007)' / 'Farb and Segal (2007)'. ('Farb and colleagues
+    (2007)' is not an APA form and is not parsed.)"""
     found = set()
     for grp in re.findall(r"\(([^()]*\d{4}[a-z]?[^()]*)\)", text):
         for part in grp.split(";"):
@@ -73,7 +71,7 @@ def citations_in(text):
             if re.search(r",\s*\d{4}[a-z]?$", part):
                 found.add(part)
     for m in re.finditer(
-            r"([A-ZÀ-ÝÄÖÜ][\wÀ-ÿ'’\-]+(?:\s(?:&|and)\s[A-ZÀ-ÝÄÖÜ][\wÀ-ÿ'’\-]+|"
+            r"([A-ZÀ-Ý][\wÀ-ÿ'’\-]+(?:\s(?:&|and)\s[A-ZÀ-Ý][\wÀ-ÿ'’\-]+|"
             r"\s+et\s+al\.)?)\s+\((\d{4}[a-z]?)\)", text):
         who = m.group(1).replace(" and ", " & ")
         found.add(f"{who}, {m.group(2)}")
@@ -90,7 +88,7 @@ def main():
 
     rows = common.load_json(args.rows)
     content = common.load_json(args.content)
-    keyf = args.key or ("ref" if rows and "ref" in rows[0] else "label")
+    keyf = common.key_field(rows, args.key)
 
     index = {}
     for r in rows:

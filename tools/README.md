@@ -7,6 +7,31 @@ context; these are scaffolding, not a framework.
 NCBI and CrossRef expect a contact email in the User-Agent. Pass
 `--email you@inst.edu` to each tool, or export `LITREVIEW_EMAIL` once.
 
+## Index
+
+Generated from the modules (docstring, `PHASE` constant, `--help`) by
+`python3 tools/gen_docs.py`; the same block is in `docs/tools.md` and
+`PLAYBOOK.md`, and CI fails if any copy is stale. Details per tool follow.
+
+<!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
+| Script | Phase | Purpose | Flags |
+|---|---|---|---|
+| `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / arXiv. | `--citations` `--email` `--key` `--out` `--rows` `--sleep` |
+| `references.py` | 3f | Canonical reference builder — make EVERY reference perfect, in both modes. | `--asof` `--audit` `--email` `--key` `--out` `--repair` `--rows` `--sleep` |
+| `sentence_case.py` | 3f | Post-canon pass — propose strict APA-7 sentence case for reference titles. | `--apply` `--out` `--proper` `--rows` `--vocab` |
+| `download.py` | 4 (opt-in) | Multi-source PDF downloader (Phase 4 — OPT-IN, not run by default). | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
+| `reconcile_downloads.py` | 4 (opt-in) | Reconcile manually-downloaded PDFs against a slug+title+doi manifest. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
+| `spreadsheet.py` | 5 | Build/rebuild the bibliography xlsx from a JSON of accumulated rows. | `--out` `--rows` `--sheet-name` |
+| `citations.py` | 5b | Fetch citation counts for a bibliography from OpenAlex + Semantic Scholar. | `--asof` `--email` `--key` `--out` `--rows` `--sources` |
+| `xref.py` | 6 | Build a cross-citation index from a list of papers. | `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--rows` `--sleep` |
+| `families.py` | 6b | Phase 6b — validate an LLM-proposed family taxonomy against the bibliography, stamp `family` onto rows.json, and emit families.json (the reproducible cache) + families.md (grouped tables + a family x topic cross-tab). | `--asof` `--assign` `--digest` `--md` `--out` `--rows` |
+| `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--spec` `--time-warp` `--title` `--xlsx` |
+| `cite_check.py` | 7 | Phase 7 gate — every in-text citation must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
+| `review_paper.py` | 7 | Phase 7 — build a review ARTICLE (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
+| `lab_corpus.py` | L1 | Lab mode — Phase L1: ingest a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
+| `common.py` | — | Shared helpers for the literature-review toolkit. | — |
+<!-- END GENERATED TOOL INDEX -->
+
 ## `verify.py` — verify citations
 
 Catches the ~25% of search-agent citations that have wrong authors, wrong
@@ -14,10 +39,14 @@ years, or are fabricated. Run before adding anything to the spreadsheet.
 
 ```
 python3 tools/verify.py --citations cits.json --out report.json --email you@inst.edu
+python3 tools/verify.py --rows rows.json --out report.json      # straight from the live table
 ```
 
 `cits.json` per item: `{label, pmcid?, pmid?, doi?, arxiv?, title?,
 expect_first_author?, expect_year?}` (`expect_year` may be a string or int).
+With `--rows` the same fields are derived from `rows.json` itself — the key
+(`ref`), the DOI from `link`, and the expected first author / year / title from
+the canonical `apa` — so a project needs no converter script.
 arXiv papers (an `arxiv` id or a `10.48550/arXiv.<id>` DOI) route to the arXiv
 API first; otherwise looks up via PMC, then PubMed, then CrossRef, then
 title-search. arXiv ids are **prefetched in batches** (`id_list`, many per call)
@@ -50,12 +79,20 @@ APA-7: full author list (>20 → 19 + ellipsis + last), correct initials +
 nobiliary particles (`de Heer`), fixed casing (`ANDERSON`→`Anderson`),
 HTML-unescaped + sentence-cased all-caps titles, and a real venue — including
 preprint servers CrossRef leaves bare (`bioRxiv`, `PsyArXiv`, `arXiv`; arXiv's
-`journal_ref` is used when present). `--audit` fails on any defect (no
-author/year, `et al.`, HTML entity, truncated/empty venue, uppercase title); a
-DOI-less item (book/report) is the only non-fatal case — reported as a manual ref
-to check by hand. `--audit` does **not** catch `U+FFFD` mojibake from CrossRef —
-scan `rows.json` for it after the final canon and hand-fix, since re-canon
-reintroduces it.
+`journal_ref` is used when present). `--audit` fails on any defect — no
+author/year, `et al.`, HTML entity, JATS/HTML markup tag, `?.`/`!.` double
+terminal punctuation, a U+2010/U+2011 Unicode hyphen, a malformed initial
+(`L. (.`), `U+FFFD` mojibake, a truncated or empty venue, an uppercase title;
+a DOI-less item (book/report) is the only non-fatal case — reported as a manual
+ref to check by hand. Mojibake is flagged, not fixed: the glyph is
+unrecoverable, so hand-fix it LAST (re-canon reintroduces it).
+
+`--repair` is the **offline retrofit**: it fixes the pure string-damage classes
+(markup, Unicode hyphens, `?.`) in place without re-fetching, so a corpus's
+post-canon hand fixes (reviewed sentence casing, mojibake repairs, compound
+surnames) survive. Use it on an old corpus; never a blanket re-canon. Both canon
+and repair stamp each row with `canonical_at`, which `common.write_rows` uses to
+refuse to overwrite a live table from an upstream emitter.
 
 `--audit` also runs a corpus-level **near-duplicate scan** and prints
 `⚠ A ~ B: possible duplicate` for rows whose titles nearly match. This catches the
@@ -103,7 +140,8 @@ python3 tools/cite_check.py --rows rows.json --content content.json
 
 `review_paper.py` prints whatever prose it is given, so a citation naming no row in
 `rows.json` ships silently and the reader cannot follow it. This parses both APA
-forms — parenthetical `(Farb et al., 2007)` and narrative `Farb et al. (2007)` —
+forms — parenthetical `(Farb et al., 2007)` and narrative `Farb et al. (2007)` /
+`Farb and Segal (2007)` —
 folds accents so `Millière` matches `Milliere`, and checks each against author-year
 keys built from the canonical `apa` strings. **Exits 1 on an unresolved citation.**
 
@@ -141,9 +179,11 @@ python3 tools/xref.py --papers list.json --out xref.json \
                       --exclude existing_dois.json \
                       --min-cites 4 --resolve-unknown \
                       --email you@inst.edu
+python3 tools/xref.py --rows rows.json --out xref.json ...     # straight from the live table
 ```
 
-`list.json` per item: `{slug, doi?, pdf?}`. PDF fallback uses `pdftotext`
+`list.json` per item: `{slug, doi?, pdf?}`; with `--rows` the slug is the row
+key and the DOI comes from `link`. PDF fallback uses `pdftotext`
 to extract DOIs from the references section — install poppler if missing.
 
 ## `citations.py` — per-paper citation counts (Phase 5b)
@@ -176,8 +216,8 @@ family definitions** (see `family_prompt_template.md`). This tool owns only the
 deterministic half — it validates the assignment and stamps `family` onto rows,
 writing `families.json` (reproducible cache) + `families.md` (grouped tables +
 family×topic cross-tab). Validation is **hard** on exhaustiveness (every paper
-assigned), exclusivity (no unknown/extra refs), and the 3-8 family-count limit —
-any of these exits non-zero. Imbalance is only a **warning**: empty families are
+assigned), exclusivity (no unknown/extra refs), and the family count (hard limit
+2–9; 3–8 recommended) — any of these exits non-zero. Imbalance is only a **warning**: empty families are
 dropped, a single-paper family is flagged, and a family holding >60% of the
 corpus prints a "consider splitting" warning but does not fail. `spreadsheet.py`
 then auto-adds the `Family` column. Don't cluster embeddings to make families —
@@ -191,14 +231,14 @@ python3 tools/families.py --rows rows.json --assign families_input.json --out fa
 `families_input.json`: `{principle, families:[{key,name,claim,lineage}],
 assignments:{ref:key}}`. Assignment values are accepted case-insensitively and
 by display **name** as well as `key`, so you can re-run straight off the `family`
-field `spreadsheet.py` stamped into `rows.json` (which holds the display name,
+field this tool stamped into `rows.json` (which holds the display name,
 e.g. `"Infer"`) without first lowercasing it back to the key.
 
 ## `families_figure.py` — interactive HTML lineage figure (Phase 6b)
 
 Turns `rows.json` + `families.json` into a self-contained interactive `.html`
 figure (family lanes with their defining sentences; every paper a dot,
-beeswarm-packed by year; milestones labelled; hover for the full reference, click
+beeswarm-packed by year; milestones labeled; hover for the full reference, click
 for citation + DOI, hover a family name to spotlight its lineage) plus a
 standalone `.svg` and — if `rsvg-convert`/`inkscape` is present — `.png` + `.pdf`
 for slides/papers. Replaces the old static matplotlib figure.
@@ -208,9 +248,9 @@ python3 tools/families_figure.py --rows rows.json --families families.json \
         --out-prefix mytopic_families --title "My topic — theoretical families"
 ```
 
-Landmark dots (the big labelled studies) are selected **automatically** — most-cited
+Landmark dots (the big labeled studies) are selected **automatically** — most-cited
 within a family, foundational within this review (high within-corpus in-degree, via
-`xref.py --internal-out`), or a home-lab paper (starred). Home-lab favouring is **off by
+`xref.py --internal-out`), or a home-lab paper (starred). Home-lab favoring is **off by
 default** (lab-neutral); opt in with `--lab-author Surname` (repeatable) or the
 `LITREVIEW_LAB_AUTHOR` env var (comma-separated), the flag winning over the env var. Pass
 `--min-year` and
@@ -226,7 +266,7 @@ Turns the finished, verified bibliography into an AI-authored **review article**
 `.docx`. This tool owns only the *mechanics* — the title/author/disclosure block,
 the abstract, section headings + body paragraphs, an embedded figure with a
 standalone caption, and an **APA-7 reference list pulled straight from the
-canonical `apa` strings in `rows.json`** (deduped, alphabetised, hanging indent,
+canonical `apa` strings in `rows.json`** (deduped, alphabetized, hanging indent,
 DOI links). Because the references come from the verified corpus, they cannot
 drift from the in-text citations.
 
@@ -266,10 +306,11 @@ correctness risk: review and prune the list before theming. See PLAYBOOK
 ## `spreadsheet.py` — build the xlsx
 
 Reads a JSON of accumulated rows and writes the xlsx with the standard
-schema and color coding (white = source-doc, cream = search, green = xref).
-If any row carries `cite_openalex`/`cite_s2`, two `Cite` columns are added
-automatically after `Tag`. Always rebuild from the full JSON; xlsxwriter is
-write-only.
+schema and color coding (white = source-doc, cream = search, green = xref,
+blue = lab, lilac = anteced / anteced-nosrc; an unknown `source` renders white
+with a warning). If any row carries `cite_openalex`/`cite_s2`, two `Cite`
+columns are added automatically after `Tag`; `family` adds a `Family` column.
+Always rebuild from the full JSON; xlsxwriter is write-only.
 
 ```
 python3 tools/spreadsheet.py --rows rows.json --out bibliography.xlsx
@@ -303,6 +344,36 @@ Requires `pdftotext` (`brew install poppler` on macOS).
 Prompt template to fill in and pass to the search subagent (Phase 2).
 See the playbook for what to put in each `{PLACEHOLDER}`.
 
+## `gen_docs.py` — regenerate the tool index
+
+```
+python3 tools/gen_docs.py            # rewrite the generated block in docs/tools.md, tools/README.md, PLAYBOOK.md
+python3 tools/gen_docs.py --check    # exit 1 if any copy is stale (CI runs this)
+```
+
+## Using the toolkit from a project script
+
+Per-topic scripts (row emitters, family assigners, page builders) should import
+`common` rather than re-implement JSON I/O, DOI parsing, or the APA parser —
+that is how the `ensure_ascii` fix and the year-suffix fix once failed to reach
+them. Put the toolkit on the path and use `common.write_rows` for `rows.json`:
+
+```python
+import os, sys
+sys.path.insert(0, os.environ.get("LITREVIEW_TOOLS",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                             "literature-review-toolkit", "tools")))
+import common
+
+rows = common.load_json("rows.json")
+common.attach_counts(rows, common.load_json("citation_counts.json"))
+common.write_rows("rows.json", rows)      # refuses to overwrite a canonical table unless force=True
+```
+
+`write_rows` is the guard behind the rule "after Phase 3f, `rows.json` is the
+live table": if the file on disk carries `canonical_at` stamps, an upstream
+emitter cannot silently replace it.
+
 ---
 
 ## Idiomatic usage
@@ -313,8 +384,8 @@ See the playbook for what to put in each `{PLACEHOLDER}`.
 
 export LITREVIEW_EMAIL=you@inst.edu     # set once for verify.py + xref.py
 
-# Phase 3: verify what the agent gave you
-python3 tools/verify.py --citations agent_output_to_verify.json --out verify_report.json
+# Phase 3: verify what the agent gave you (a citation list, or rows.json directly)
+python3 tools/verify.py --rows accumulated_rows.json --out verify_report.json
 
 # Phase 5: build the spreadsheet
 python3 tools/spreadsheet.py --rows accumulated_rows.json --out bibliography.xlsx
@@ -322,8 +393,8 @@ python3 tools/spreadsheet.py --rows accumulated_rows.json --out bibliography.xls
 # Phase 5b: citation counts (attach to rows as cite_openalex/cite_s2, rerun spreadsheet)
 python3 tools/citations.py --rows accumulated_rows.json --out citation_counts.json
 
-# Phase 6: cross-citation analysis
-python3 tools/xref.py --papers all_papers_with_dois.json \
+# Phase 6: cross-citation analysis (rows.json directly; slug = ref, DOI from link)
+python3 tools/xref.py --rows accumulated_rows.json \
                       --exclude existing_spreadsheet_dois.json \
                       --out xref_$TOPIC.json \
                       --min-cites 4 --resolve-unknown

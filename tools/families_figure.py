@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
-"""Phase 6b figure — an INTERACTIVE HTML lineage figure of the theoretical
-families (replaces the old static matplotlib png/pdf/svg).
+"""Phase 6b — render the interactive HTML lineage figure of the theoretical families.
 
-Self-contained single .html (inline SVG + CSS + JS, no deps, no network): open
-in a browser, present fullscreen. Hover any node -> full reference (tooltip);
-click -> side panel with citation + a live DOI link; hover a family's name ->
-spotlight its lineage. Also writes a standalone .svg of the panel and, if
-rsvg-convert/inkscape is present, .png + .pdf for slides/papers.
+Self-contained single .html (inline SVG + CSS + JS, no deps, no network) plus a
+standalone .svg and, if rsvg-convert/inkscape is present, .png + .pdf. Replaces
+the old static matplotlib figure.
+
+Open in a browser, present fullscreen. Hover any node -> full reference
+(tooltip); click -> side panel with citation + a live DOI link; hover a family's
+name -> spotlight its lineage.
 
 Data-driven: family lanes come from families.json, dots from rows.json (one per
 paper, beeswarm-packed by year within its lane).
 
-LANDMARKS are auto-selected and labelled (big dots) — no hand-made overlay needed.
+LANDMARKS are auto-selected and labeled (big dots) — no hand-made overlay needed.
 A paper is a landmark if ANY of:
   (1) it is among the most-cited in its family (top --per-family by max(OpenAlex, S2)),
   (2) it is foundational *within this review* — cited by >= --motif-min of the corpus's
       own papers (needs --internal internal_citations.json from `xref.py --internal-out`;
       silently skipped if not supplied),
   (3) it is a home-lab paper — an author surname listed in --lab-author or the
-      LITREVIEW_LAB_AUTHOR env var (home-lab favouring is OFF by default), or a row
+      LITREVIEW_LAB_AUTHOR env var (home-lab favoring is OFF by default), or a row
       with source == "lab" — these are starred (★) and gold-ringed.
 Total labels are capped at --max-labels for legibility. When the cap bites, what is
 guaranteed to survive is the home-lab papers plus the top-2 most-cited per family;
@@ -27,7 +28,7 @@ are NOT all kept — on a large, densely inter-citing corpus hundreds of papers 
 clear --motif-min, so the cap is what keeps the figure readable. The number dropped
 is reported on every run; raise --max-labels or --motif-min if it is large.
 Pass --spec with a "labels" map to override auto-selection entirely (manual curation wins);
---no-auto-landmarks turns labelling off.
+--no-auto-landmarks turns labeling off.
 
   python3 tools/families_figure.py --rows rows.json --families families.json \
           --out-prefix mytopic_families --title "My topic — theoretical families" \
@@ -42,24 +43,40 @@ OPTIONAL editorial overlay (--spec figure_spec.json), all keys optional:
 The lineage arrows/notes are editorial — curate them with the user; don't expect
 a good auto-generated set. See PLAYBOOK Phase 6b.
 """
-import argparse, base64, bisect, html, json, os, re, shutil, subprocess, sys
+import argparse
+import base64
+import bisect
+import html
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+import common
+
+PHASE = "6b"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 PALETTE = ["#1b6ca8", "#2a9d8f", "#e76f51", "#8338ec", "#d4a017", "#6c757d",
            "#c1121f", "#177e89", "#7209b7", "#bc6c25"]
 
 
 def esc(s): return html.escape(str(s), quote=True)
-def year_of(apa):
-    m = re.search(r"\((\d{4})\)", apa or "")
-    return int(m.group(1)) if m else None
-def lead(apa): return (apa or "").split(",")[0]
+# The year and lead surname come from the shared APA grammar (common.parse_apa),
+# so the figure agrees with the audit gate about what a parseable year is — a
+# private regex here once required a bare (YYYY) and silently dropped every
+# 2025a-suffixed paper from the plot.
+year_of = common.year_of
+lead = common.lead_surname
 
 
 def wrap(text, n=40):
     out, cur = [], ""
     for w in text.split():
         if cur and len(cur) + 1 + len(w) > n:
-            out.append(cur); cur = w
+            out.append(cur)
+            cur = w
         else:
             cur = (cur + " " + w).strip()
     if cur:
@@ -76,7 +93,8 @@ def beeswarm(items, r=2.7, step=5.6, maxoff=52):
             if abs(off) > maxoff:
                 break
             k += 1
-        placed.append((x, off)); out.append((x, off, payload))
+        placed.append((x, off))
+        out.append((x, off, payload))
     return out
 
 
@@ -108,7 +126,7 @@ def main():
     ap.add_argument("--emphasize-source", help="render rows with this source as big circles "
                     "(e.g. 'lab' so a lab's own papers stand out from the field)")
     ap.add_argument("--no-auto-landmarks", action="store_true",
-                    help="disable automatic landmark labelling (default: on when --spec has no labels)")
+                    help="disable automatic landmark labeling (default: on when --spec has no labels)")
     ap.add_argument("--per-family", type=int, default=4,
                     help="auto-landmarks: label the top-N most-cited papers per family (default 4)")
     ap.add_argument("--max-labels", type=int, default=28,
@@ -126,9 +144,7 @@ def main():
                          "overrides. Rows with source=='lab' are always starred.")
     args = ap.parse_args()
 
-    def load(path):
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
+    load = common.load_json
     rows = load(args.rows)
     fam_spec = load(args.families)
     spec = load(args.spec) if args.spec else {}
@@ -156,7 +172,7 @@ def main():
         sys.exit("families_figure: no papers with a parseable year and a known family — "
                  "nothing to plot (check rows.json has `family` + a (YYYY) in each apa).")
 
-    # ---- landmark (big, labelled) selection --------------------------------
+    # ---- landmark (big, labeled) selection --------------------------------
     # Home-lab detection (criterion 3): author surname match or source=="lab".
     # OFF by default so this shared tool is lab-neutral. Opt in per project with
     # --lab-author SURNAME (repeatable) or the LITREVIEW_LAB_AUTHOR env var
@@ -180,11 +196,11 @@ def main():
 
     # which papers get labels: spec.labels (manual, overrides) > legacy ★-in-ref > auto-landmarks
     if spec.get("labels"):
-        labelled = {ref: lab for ref, lab in spec["labels"].items() if ref in papers}
+        labeled = {ref: lab for ref, lab in spec["labels"].items() if ref in papers}
     elif any("★" in ref for ref in papers):
-        labelled = {ref: lead(p["apa"]) for ref, p in papers.items() if "★" in ref}
+        labeled = {ref: lead(p["apa"]) for ref, p in papers.items() if "★" in ref}
     elif args.no_auto_landmarks:
-        labelled = {}
+        labeled = {}
     else:
         def _fam_by_cites(name):
             return sorted((ref for ref, p in papers.items() if p["family"] == name),
@@ -207,15 +223,15 @@ def main():
             chosen = keep | set(pool[:max(0, args.max_labels - len(keep))])
             # Never truncate silently: a capped figure otherwise reads as "these are
             # all the landmarks" when it is really "these are the first N of many".
-            print(f"  landmarks: {qualified} papers qualified, {len(chosen)} labelled "
+            print(f"  landmarks: {qualified} papers qualified, {len(chosen)} labeled "
                   f"({qualified - len(chosen)} dropped by --max-labels {args.max_labels}). "
                   f"Raise --max-labels or --motif-min (currently {args.motif_min}) to change this.",
                   file=sys.stderr)
-        labelled = {ref: f'{lead(papers[ref]["apa"]).strip()} {papers[ref]["year"]}' for ref in chosen}
+        labeled = {ref: f'{lead(papers[ref]["apa"]).strip()} {papers[ref]["year"]}' for ref in chosen}
 
     # star home-lab papers in their label (auto or manual), so they read as the lab's own
-    labelled = {ref: (("★ " + t) if (ref in lab and not t.startswith("★")) else t)
-                for ref, t in labelled.items()}
+    labeled = {ref: (("★ " + t) if (ref in lab and not t.startswith("★")) else t)
+                for ref, t in labeled.items()}
 
     # ---- geometry -----------------------------------------------------------
     W, H = 1560, max(660, 150 + 140 * len(order))
@@ -247,10 +263,10 @@ def main():
     def xf(y): return PADL + _frac(y) * plotW
     def yf(f): return PADT + (LANE[f] + 0.5) * laneH
 
-    # "big" = labelled milestones plus (optionally) every paper of an emphasized
+    # "big" = labeled milestones plus (optionally) every paper of an emphasized
     # source — those render as big circles; everything else is a small dot.
     emph = args.emphasize_source
-    big = set(labelled)
+    big = set(labeled)
     if emph:
         big |= {ref for ref, p in papers.items() if p.get("source") == emph}
 
@@ -260,7 +276,8 @@ def main():
         items = [(xf(p["year"]), ref) for ref, p in papers.items()
                  if p["family"] == name and ref not in big]
         for x, off, ref in beeswarm(items):
-            pos[ref] = (x, yf(name) + off); bg.append(ref)
+            pos[ref] = (x, yf(name) + off)
+            bg.append(ref)
     # big -> lane centre (default spine) or a wider beeswarm when emphasizing a source
     for name in order:
         bigs = [ref for ref, p in papers.items() if p["family"] == name and ref in big]
@@ -281,10 +298,10 @@ def main():
     big_dots = [pos[r] for r in big]              # (x, y) of every big circle
     loff, placed_lbl = {}, []                     # placed_lbl: label bounding boxes
     for name in order:
-        lane = sorted(((ref, pos[ref]) for ref in labelled if papers[ref]["family"] == name),
+        lane = sorted(((ref, pos[ref]) for ref in labeled if papers[ref]["family"] == name),
                       key=lambda t: t[1][0])
         for ref, (x, dy) in lane:
-            w = len(labelled[ref]) * 6.2 + 8
+            w = len(labeled[ref]) * 6.2 + 8
             pick = TIERS[-1]
             for o in TIERS:
                 ly = dy + o
@@ -349,8 +366,10 @@ def main():
     data = {}
     # background dots
     for ref in bg:
-        p = papers[ref]; x, y = pos[ref]; data[ref] = p
-        s.append(f'<g class="node bg" data-key="{ref}" tabindex="0"><title>{esc(p["apa"])}</title>'
+        p = papers[ref]
+        x, y = pos[ref]
+        data[ref] = p
+        s.append(f'<g class="node bg" data-key="{esc(ref)}" tabindex="0"><title>{esc(p["apa"])}</title>'
                  f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="9" fill="none" pointer-events="all"/>'
                  f'<circle cx="{x:.0f}" cy="{y:.0f}" r="2.4" fill="{COLOR[p["family"]]}"/></g>')
     # editorial arrows + notes (optional)
@@ -368,23 +387,25 @@ def main():
             x, y = pos[nt["at"]]
             s.append(f'<text x="{x:.0f}" y="{y-12:.0f}" text-anchor="middle" font-size="10.5" '
                      f'fill="{nt.get("color","#333")}">{esc(nt["text"])}</text>')
-    # big nodes (labelled milestones + any emphasized source) on top; labelled
+    # big nodes (labeled milestones + any emphasized source) on top; labeled
     # ones also get a leader line + text label
     for ref in sorted(big, key=lambda r: papers[r]["year"]):
-        p = papers[ref]; x, y = pos[ref]; data[ref] = p
+        p = papers[ref]
+        x, y = pos[ref]
+        data[ref] = p
         is_lab = ref in lab
-        rr = (9.5 if is_lab else 8.5) if ref in labelled else 7
+        rr = (9.5 if is_lab else 8.5) if ref in labeled else 7
         stroke, sw = ("#d4a017", 2.6) if is_lab else ("#fff", 1.2)   # home-lab -> gold ring
         leader = label = ""
-        if ref in labelled:
+        if ref in labeled:
             off = loff[ref]
             ly1, ly2 = (y - 7, y + off + 1) if off < 0 else (y + 7, y + off - 9)
             leader = (f'<line x1="{x:.0f}" y1="{ly1:.0f}" x2="{x:.0f}" y2="{ly2:.0f}" '
                       f'stroke="{COLOR[p["family"]]}" stroke-width="1" opacity="0.65"/>')
             label = (f'<text class="lbl" x="{x:.0f}" y="{y+off:.0f}" text-anchor="middle" '
                      f'font-size="11" font-weight="bold" fill="{"#9a7400" if is_lab else "#222"}">'
-                     f'{esc(labelled[ref])}</text>')
-        s.append(f'{leader}<g class="node spine" data-key="{ref}" tabindex="0">'
+                     f'{esc(labeled[ref])}</text>')
+        s.append(f'{leader}<g class="node spine" data-key="{esc(ref)}" tabindex="0">'
                  f'<title>{esc(p["apa"])}</title>'
                  f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="12" fill="none" pointer-events="all"/>'
                  f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{rr}" fill="{COLOR[p["family"]]}" '
@@ -423,7 +444,7 @@ def main():
                             f"--export-filename={base}.{fmt}"], check=True)
             made.append(fmt)
     print(f"wrote {base}.{{{','.join(made)}}}  "
-          f"({len(bg)} dots + {len(big)} big ({len(labelled)} labelled) across {len(order)} families)")
+          f"({len(bg)} dots + {len(big)} big ({len(labeled)} labeled) across {len(order)} families)")
 
 
 HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>__TITLE__</title>
@@ -441,7 +462,7 @@ HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><titl
  .dim{opacity:.1;transition:opacity .15s;}
  aside{width:340px;border-left:1px solid #e5e5e5;padding:16px 18px;overflow:auto;font-size:13.5px;line-height:1.45;}
  #fam{display:inline-block;padding:2px 9px;border-radius:11px;color:#fff;font-size:12px;font-weight:bold;}
- #apa{margin:12px 0;} #meta{color:#666;font-size:12.5px;}
+ #apa{margin:12px 0;} .meta{color:#666;font-size:12.5px;}
  #summary{margin:10px 0;color:#333;font-size:12.5px;line-height:1.5;}
  a.doi{display:inline-block;margin-top:12px;padding:7px 13px;background:#1b6ca8;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;}
  a.doi.off{background:#bbb;pointer-events:none;} .hint{color:#999;}
@@ -465,8 +486,8 @@ function show(k){const d=DATA[k];if(!d)return;
  const doi=url?'<a class="doi" href="'+esc(url)+'" target="_blank" rel="noopener">Open paper \\u2197</a>':'<a class="doi off">no DOI</a>';
  const c=[];if(Number.isInteger(d.oa))c.push(d.oa+' (OpenAlex)');if(Number.isInteger(d.s2))c.push(d.s2+' (S2)');
  panel.innerHTML='<button id="close" onclick="resetPanel()">\\u00d7</button>'
-  +'<div id="fam" style="background:'+esc(FAMCOLOR[d.family]||'#666')+'">'+esc(d.family)+'</div> <span id="meta">'+esc(d.ref)+' \\u00b7 '+esc(d.topic)+'</span>'
-  +'<div id="apa">'+esc(d.apa)+'</div>'+(d.summary?'<div id="summary">'+esc(d.summary)+'</div>':'')+(c.length?'<div id="meta">Cited by: '+esc(c.join(' \\u00b7 '))+'</div>':'')+doi;}
+  +'<div id="fam" style="background:'+esc(FAMCOLOR[d.family]||'#666')+'">'+esc(d.family)+'</div> <span class="meta">'+esc(d.ref)+' \\u00b7 '+esc(d.topic)+'</span>'
+  +'<div id="apa">'+esc(d.apa)+'</div>'+(d.summary?'<div id="summary">'+esc(d.summary)+'</div>':'')+(c.length?'<div class="meta">Cited by: '+esc(c.join(' \\u00b7 '))+'</div>':'')+doi;}
 document.querySelectorAll('.node').forEach(g=>{g.addEventListener('click',()=>show(g.dataset.key));
  g.addEventListener('mouseenter',()=>show(g.dataset.key));
  g.addEventListener('focus',()=>show(g.dataset.key));
