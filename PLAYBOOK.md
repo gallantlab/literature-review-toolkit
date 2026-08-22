@@ -878,7 +878,16 @@ be an HTML challenge page).
   bad split — so correct these in `rows.json` after the last canon, same as
   mojibake. `--audit` now *warns* on every multi-word surname so they get looked at;
   expect a handful of legitimate ones (Spanish, Vietnamese and Italian double
-  surnames) alongside the real errors.
+  surnames) alongside the real errors. The reverse error also happens: a given
+  name with two parts (`J. Adam Noah` → family `Adam Noah`) — the warning catches
+  it, the fix is `Noah, J. A.` by hand.
+- **CrossRef keeps a series part / subtitle in a separate `subtitle` field.** Until
+  2026-08-22 canon dropped it, so Creutzfeldt 1989 "I. Responses to speech" and
+  "II. Responses to the subjects own voice" rendered as one identical title — the
+  `--audit` "possible duplicate (1.00)" warning was the only tell. `crossref_record`
+  now joins them APA-style (`Title: Subtitle`). Corpora canonicalized before that
+  date still lack subtitles; restore them by hand (a re-canon would wipe other
+  post-canon fixes).
 - **What CrossRef deposits is sometimes simply wrong, not just mis-parsed.** Seen in
   one 396-row corpus: `family="A. Moffat"` with `given="Bradford"` (a middle initial
   folded into the surname — now auto-repaired, since no surname starts with an

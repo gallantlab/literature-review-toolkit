@@ -402,7 +402,16 @@ def crossref_record(msg, fallback_venue=""):
             journal = gt[0] if isinstance(gt, list) and gt else gt if isinstance(gt, str) else ""
         journal = (journal or "").strip() or clean_venue(fallback_venue)
     fam, giv = authors[0] if authors else ("", "")
-    return {"title": norm_title((msg.get("title") or [""])[0]), "year": year,
+    title = norm_title((msg.get("title") or [""])[0])
+    # CrossRef deposits a series part / subtitle separately ("I. Responses to
+    # speech"); dropping it made Part I and Part II papers identical. APA joins
+    # them with a colon. Some publishers repeat the subtitle inside the title
+    # field itself — skip it then rather than print it twice.
+    sub = norm_title((msg.get("subtitle") or [""])[0])
+    if sub and sub.lower() not in title.lower():
+        sub = sub[:1].upper() + sub[1:]
+        title = f"{title.rstrip(':')}: {sub}"
+    return {"title": title, "year": year,
             "authors": authors, "people": [person(f, g) for f, g in authors],
             "first_author": f"{fam} {giv[:1]}".strip(), "journal": journal,
             "volume": msg.get("volume"), "issue": msg.get("issue"), "pages": msg.get("page")}

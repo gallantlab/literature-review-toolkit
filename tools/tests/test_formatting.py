@@ -138,6 +138,19 @@ check("crossref_record falls back to the caller's venue",
 # An author-less work (some editorials, datasets) is still a real record for the
 # existence check; only canon (which must print authors) refuses it.
 check("crossref_record with no authors keeps the title", common.crossref_record({"title": ["T"]})["people"], [])
+# CrossRef deposits a series/subtitle in a separate `subtitle` field; dropping it
+# made "Part I" and "Part II" papers render as the same title (Creutzfeldt 1989).
+check("crossref_record appends the CrossRef subtitle APA-style",
+      common.crossref_record({"title": ["Neuronal activity in the human lateral temporal lobe"],
+                              "subtitle": ["I. Responses to speech"]})["title"],
+      "Neuronal activity in the human lateral temporal lobe: I. Responses to speech")
+check("crossref_record skips a subtitle the title already contains",
+      common.crossref_record({"title": ["Sleep: a review"], "subtitle": ["A review"]})["title"],
+      "Sleep: a review")
+check("crossref_record does not double a colon before the subtitle",
+      common.crossref_record({"title": ["Sleep:"], "subtitle": ["a review"]})["title"], "Sleep: A review")
+check("crossref_record ignores an empty subtitle list",
+      common.crossref_record({"title": ["T"], "subtitle": []})["title"], "T")
 
 _ATOM = ('<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">'
          '<entry><id>http://arxiv.org/abs/2305.18274v2</id><title>Semantic  reconstruction\n of language</title>'
