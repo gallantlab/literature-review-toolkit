@@ -84,6 +84,7 @@ python3 ../tools/references.py --rows rows.json --audit   # exits non-zero on an
 # then, in a reviewed pass, sentence-case the titles:
 python3 ../tools/sentence_case.py --rows rows.json --proper proper_nouns.json --vocab
 python3 ../tools/sentence_case.py --rows rows.json --proper proper_nouns.json --apply
+```
 
 !!! warning "Non-English titles are skipped by default"
     The pass lowercases German nouns, so a German or French title would come out
@@ -94,7 +95,6 @@ python3 ../tools/sentence_case.py --rows rows.json --proper proper_nouns.json --
     `man` ("including man"). A run of three or more ALL-CAPS words is lowercased as
     a shouted title, while isolated acronyms (`fMRI`, `MEG`) stay protected, and
     model-organism genera come from the shared `common.GENERA` list.
-```
 
 Rebuilds every reference from its **verified** DOI/arXiv id into canonical APA-7:
 full author lists, nobiliary particles, sentence-case titles, real venue names
@@ -130,8 +130,8 @@ python3 ../tools/spreadsheet.py --rows rows.json --out my_topic_bibliography.xls
 
 The core deliverable. Columns:
 `Topic · Ref# · APA reference · Link · Summary · Tag · Family · Cite (OpenAlex) ·
-Cite (S2) · PDF (local) · Xref`. Rows are **color-coded by origin**, and the
-`Cite` / `Family` columns appear automatically once their passes have run.
+Cite (S2) · Verify note · PDF (local) · Xref`. Rows are **color-coded by origin**, and the
+`Cite` / `Family` / `Verify note` columns appear automatically once any row carries them.
 
 <p>
 <span class="swatch source"></span> cited in your source doc (if any) &nbsp;·&nbsp;
