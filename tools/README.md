@@ -104,11 +104,17 @@ a defect** (exit status is unaffected): genuinely distinct papers do share
 near-identical titles, so each pair needs a human verdict. Keep the version of
 record, drop the preprint — and re-check any in-text citation whose year moves.
 
-The gate's second warning is a **multi-word surname**, which may be a real compound
+Another warning is a **multi-word surname**, which may be a real compound
 name (`Lambon Ralph`, `Sanz Perl`) or CrossRef folding given names into the family
 field (`Thomas Yeo` for B. T. T. Yeo). A machine cannot tell them apart, so each
 needs a human verdict; a *leading initial* in the family field (`A. Moffat`) is
 unambiguous and gets repaired automatically.
+
+The gate also warns on a **deposit-year conflict** (the DOI encodes a different
+year than the reference — back-file digitization re-dates old papers) and on a
+**cached `year` field that diverged from the apa** (a pre-canon emitter cached it;
+canon rewrote the apa; fix whichever is wrong or delete the cache). Warnings never
+change the exit status.
 
 ## `sentence_case.py` — strict APA-7 sentence case (Phase 3f, after canon)
 

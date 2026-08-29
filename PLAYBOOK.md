@@ -92,7 +92,8 @@ verify/count/dedup guardrails. Topic mode is the next section; lab mode is under
 
 1. New rows appended to `<spreadsheet>.xlsx` with columns:
    `Topic | Ref# | APA reference | Link | Summary | Tag | Family | Cite (OpenAlex) |
-   Cite (S2) | PDF (local) | Xref`.
+   Cite (S2) | Verify note | PDF (local) | Xref` (`Family` / `Cite` / `Verify note`
+   appear automatically once any row carries them).
    `Link` is always the DOI URL (`https://doi.org/<doi>`). `Family` (Phase 6b)
    and the two `Cite` columns (Phase 5b) are auto-added by `spreadsheet.py`
    whenever rows carry them.
@@ -137,7 +138,10 @@ Use the `general-purpose` Agent (or any web-enabled subagent). Give it a
 self-contained prompt — it has no context from this conversation. Use the
 template in `tools/search_prompt_template.md` and fill in:
 - `{TOPIC_NAME}` and `{TOPIC_DEFINITION}`
-- `{ALREADY_HAVE}` — bullet list of existing papers (don't rediscover)
+- `{ALREADY_HAVE_LIST}` — bullet list of existing papers (don't rediscover)
+- `{REVIEW_TITLE}`, `{LAB_NAME}`, `{SEARCH_QUERIES}`, `{RELEVANT_METHODS}`,
+  `{DOMAIN_SPECIFIC_CATEGORY}` — the template's remaining placeholders; fill or
+  strip each one (grep for `{` before sending)
 - `{TODAY}` — current date (gives the agent a recency anchor)
 - `{TIER_BOUNDARY_YEAR}`
 - `{TARGET_COUNT}` — usually 25-40 papers
@@ -216,6 +220,10 @@ arXiv ids in batches (many per `id_list` call); a genuinely real preprint that
 would otherwise 429 into a false NOT-FOUND now comes back OK (or, if the batch
 still fails, ERROR to re-run).
 
+`verify.py` exits **0 only when every verdict is OK** — the same fail-loud
+contract as the audit gate and `cite_check.py` — so a chained Phase-3 run stops
+on a table that still needs attention.
+
 Feed it the live table directly — `python3 tools/verify.py --rows rows.json --out
 verify_report.json` derives the label, DOI and the expected first author / year /
 title from each row's `apa`; do not write a per-project converter script (fourteen
@@ -281,15 +289,20 @@ all-caps titles, and a real venue — including preprint servers CrossRef leaves
 bare (`bioRxiv`, `PsyArXiv`, `arXiv`). The `--audit` gate fails the build on any
 defect (missing author/year, `et al.`, HTML entity, `U+FFFD` replacement-char
 mojibake, truncated/empty venue, uppercase title, **JATS/HTML markup left in a
-title** (`<scp>`, `<i>`), **a `?.` or `!.` double terminal punctuation**, and **a
-U+2010/U+2011 Unicode hyphen in a name**). The ONLY allowed non-fatal
+title** (`<scp>`, `<i>`), **a `?.` or `!.` double terminal punctuation**, **a
+U+2010/U+2011 Unicode hyphen in a name**, **a `?` standing in for a quote or dash
+(`mangled-punct`)**, and **words fused by stripped JATS tags (`missing-space`,
+`cockroachPeriplaneta`)**). The ONLY allowed non-fatal
 case is a DOI-less item (book, report, old proceedings) — it keeps its
 hand-written `apa` and is reported as a
 manual ref; verify those by hand. **Run the gate before every deliverable.**
 
-Two things the gate reports as **warnings**, because neither can be decided
-automatically: a near-duplicate row pair, and a **multi-word surname** that may be
-a mis-split given name. `Lambon Ralph` is a real compound surname and `Thomas Yeo`
+Four things the gate reports as **warnings**, because none can be decided
+automatically: a near-duplicate row pair; a **multi-word surname** that may be
+a mis-split given name; a **deposit-year conflict** (the DOI encodes a different
+year than the reference — publisher back-file digitization re-dates old papers);
+and a **cached `year` field that diverged from the apa** (fix whichever is wrong,
+or delete the stale cache). `Lambon Ralph` is a real compound surname and `Thomas Yeo`
 is CrossRef folding B. T. T. Yeo's given names into the family field; they are
 indistinguishable to a machine, so each needs a human verdict. (A *leading initial*
 in a family field — CrossRef's `family="A. Moffat"` — IS unambiguous and is now
@@ -366,8 +379,8 @@ described in step 5 — don't keep retrying programmatically.
 Use `xlsxwriter` (no install if already present; if not, write CSV instead
 and tell the user). Schema:
 
-| Topic | Ref # | APA reference | Link | Summary | Tag | Family | Cite (OpenAlex) | Cite (S2) | PDF (local) | Xref |
-|-------|-------|---------------|------|---------|-----|--------|-----------------|-----------|-------------|------|
+| Topic | Ref # | APA reference | Link | Summary | Tag | Family | Cite (OpenAlex) | Cite (S2) | Verify note | PDF (local) | Xref |
+|-------|-------|---------------|------|---------|-----|--------|-----------------|-----------|-------------|-------------|------|
 
 (`Family` appears only after Phase 6b, and the two `Cite` columns only when
 Phase 5b has populated them.)
@@ -496,7 +509,8 @@ rest is mechanical, owned by `tools/families.py`:
    python3 tools/families.py --rows rows.json --assign families_input.json \
            --out families.json
    ```
-   It enforces exhaustive / exclusive / balanced (fails loud otherwise), stamps
+   It enforces exhaustive / exclusive (fails loud otherwise; imbalance — one family
+   holding >60%, or a singleton — is only a stderr warning, so read it), stamps
    `family` onto rows.json, writes `families.json` (the reproducible cache, like
    `citation_counts.json`) + `families.md`, and `spreadsheet.py` auto-adds the
    `Family` column on the next rebuild. Re-run only when the taxonomy changes.
