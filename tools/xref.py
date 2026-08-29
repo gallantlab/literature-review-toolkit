@@ -133,7 +133,7 @@ def main():
     args = ap.parse_args()
 
     if not args.email:
-        sys.exit("error: provide --email or set LITREVIEW_EMAIL "
+        ap.error("--email or LITREVIEW_EMAIL required "
                  "(CrossRef polite pool expects a contact email in the User-Agent)")
     set_user_agent(args.email)
 
