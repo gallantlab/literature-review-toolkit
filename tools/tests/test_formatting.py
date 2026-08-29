@@ -7,6 +7,7 @@ check existed. Run with no arguments; no pytest required.
     python3 tools/tests/test_formatting.py
 """
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -410,10 +411,17 @@ check_true("nav row precedes the reference text",
            _SHELL.find("navHTML(k,doi)") < _SHELL.find('<div id="apa">'))
 # Hover must NOT re-pin the panel: the reader moves the mouse across other dots
 # on the way to the Next button, which would silently change the selection.
+# Positive-form guard: a byte-exact negative match only forbids one spelling of
+# the bug — any reformatted `mouseenter ... show(...)` handler must also fail.
 check_true("hover does not re-pin the panel",
-           "g.addEventListener('mouseenter',()=>show(g.dataset.key));" not in _SHELL)
-check_true("nodes still carry a hover tooltip", "<title>" in open(
-    os.path.join(os.path.dirname(families_figure.__file__), "families_figure.py")).read())
+           not re.search(r"mouseenter[^\n]*\bshow\(", _SHELL))
+# The node tooltip is the per-dot `<title>{esc(p["apa"])}</title>` (drawn twice:
+# node + label group) — a bare "<title>" grep is satisfied forever by the page's
+# own <title> tag in HTML_SHELL.
+with open(os.path.join(os.path.dirname(families_figure.__file__), "families_figure.py"),
+          encoding="utf-8") as _ffsrc:
+    check_true("nodes still carry a hover tooltip",
+               _ffsrc.read().count('<title>{esc(p["apa"])}</title>') >= 2)
 
 check_true("every tool module is indexed", {"verify.py", "references.py", "families_figure.py"} <= set(_ENT))
 check("phase comes from the module's PHASE constant", _ENT["references.py"]["phase"], "3f")
