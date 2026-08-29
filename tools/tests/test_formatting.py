@@ -489,6 +489,26 @@ _row = {"ref": "A1"}
 references.stamp_canonical(_row, "2026-08-18")
 check("references stamps canonical_at", _row["canonical_at"], "2026-08-18")
 
+# ---- xref: an incomplete fetch is not "this paper cites nothing" ------------
+# A throttle that exhausted the backoff used to collapse into an empty reference
+# list, silently deflating the frequency table and the --internal-out in-degrees.
+import urllib.error  # noqa: E402
+
+
+def _http_raising(code):
+    def _f(url, **kw):
+        raise urllib.error.HTTPError(url, code, "x", {}, None)
+    return _f
+
+
+_orig_http_json = xref.http_json
+xref.http_json = _http_raising(404)
+check("xref: DOI absent from CrossRef = complete, no reference list", xref.crossref_refs("10.1/x"), [])
+xref.http_json = _http_raising(503)
+check("xref: exhausted throttle = INCOMPLETE (None), never an empty list",
+      xref.crossref_refs("10.1/x"), None)
+xref.http_json = _orig_http_json
+
 # ---- verify is a gate: exit 0 only when every verdict is OK -----------------
 # It used to always exit 0, so `verify.py && references.py ...` sailed past a
 # run full of NOT-FOUNDs; the other two gates already failed loud.

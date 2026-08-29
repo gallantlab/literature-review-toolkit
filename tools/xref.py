@@ -24,6 +24,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 from collections import defaultdict
 
@@ -50,21 +51,34 @@ def rows_to_papers(rows, keyf=None):
 
 
 def crossref_refs(doi):
+    """Reference list for a DOI, or None when the fetch could not COMPLETE.
+
+    The distinction mirrors verify.py's NOT-FOUND vs ERROR: a DOI genuinely
+    absent from CrossRef (404 — arXiv DOIs, some publishers) returns [] —
+    the lookup completed and there is no reference list. A throttle/network
+    failure that exhausts http_json's backoff returns None — incomplete; the
+    caller must NOT count it as "this paper cites nothing", which silently
+    deflates the frequency table and the --internal-out in-degrees."""
     url = f"{common.CROSSREF_API}{urllib.parse.quote(doi)}"
     try:
         d = http_json(url)
-        refs = d["message"].get("reference", [])
-        return [{
-            "doi": (r.get("DOI") or "").lower(),
-            "author": (r.get("author") or "").strip(),
-            "year": (r.get("year") or "").strip(),
-            "title": (r.get("article-title") or "").strip(),
-            "journal": (r.get("journal-title") or "").strip(),
-            "raw": (r.get("unstructured") or "").strip(),
-        } for r in refs]
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return []
+        print(f"  CR fail {doi}: {e}", file=sys.stderr)
+        return None
     except Exception as e:
         print(f"  CR fail {doi}: {e}", file=sys.stderr)
         return None
+    refs = d["message"].get("reference", [])
+    return [{
+        "doi": (r.get("DOI") or "").lower(),
+        "author": (r.get("author") or "").strip(),
+        "year": (r.get("year") or "").strip(),
+        "title": (r.get("article-title") or "").strip(),
+        "journal": (r.get("journal-title") or "").strip(),
+        "raw": (r.get("unstructured") or "").strip(),
+    } for r in refs]
 
 
 def pdf_refs(pdf_path):
@@ -134,10 +148,14 @@ def main():
 
     print(f"Fetching reference lists for {len(papers)} papers...", file=sys.stderr)
     all_refs = {}
+    incomplete = []
     for p in papers:
         slug = p["slug"]
         if p.get("doi"):
-            refs = crossref_refs(p["doi"]) or []
+            refs = crossref_refs(p["doi"])
+            if refs is None:      # fetch did not complete — not the same as "cites nothing"
+                incomplete.append(slug)
+                refs = []
             src = "crossref"
         else:
             refs = pdf_refs(p.get("pdf"))
@@ -212,6 +230,12 @@ def main():
         print(f"{r['n_citations']:>3}  {r['doi']:40s}  {(au + ' ' + yr)[:25]:25s}  {ti}", file=sys.stderr)
     print(f"\nTotal DOIs cited by >= {args.min_cites}: {len(out)}", file=sys.stderr)
     print(f"Wrote {args.out}", file=sys.stderr)
+    if incomplete:
+        print(f"\nWARNING: {len(incomplete)} reference-list fetch(es) could not complete "
+              f"(throttle/network): {', '.join(incomplete)}\n"
+              "Their papers contributed ZERO references above — the frequency table and "
+              "any --internal-out in-degrees are undercounted. Re-run.", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
