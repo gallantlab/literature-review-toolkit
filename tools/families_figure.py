@@ -281,7 +281,7 @@ def main():
         for x, off, ref in beeswarm(items):
             pos[ref] = (x, yf(name) + off)
             bg.append(ref)
-    # big -> lane centre (default spine) or a wider beeswarm when emphasizing a source
+    # big -> lane center (default spine) or a wider beeswarm when emphasizing a source
     for name in order:
         bigs = [ref for ref, p in papers.items() if p["family"] == name and ref in big]
         if emph:

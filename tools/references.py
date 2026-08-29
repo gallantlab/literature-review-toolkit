@@ -100,7 +100,7 @@ def stamp_canonical(row, asof):
 def doi_year(doi):
     """A 4-digit year embedded in a DOI suffix, else None.
 
-    Publishers that digitized a back catalogue often deposit the DIGITIZATION
+    Publishers that digitized a back catalog often deposit the DIGITIZATION
     year as the issued date while leaving the true year in the DOI string
     (Wiley's `10.1111/j.1439-0310.1943.tb00655.x` is a 1943 paper deposited as
     2010). Only years in a plausible publishing range are returned."""
