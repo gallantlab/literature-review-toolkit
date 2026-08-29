@@ -150,8 +150,10 @@ def write_rows(path, rows, force=False):
 
 
 def attach_counts(rows, counts, keyf=None):
-    """Attach citations.py output to rows in place: counts[key]['openalex'/'s2']
-    -> row['cite_openalex'/'cite_s2'] — the exact keys spreadsheet.py reads.
+    """Attach citations.py output to rows in place: counts[key]['openalex'/'s2'/
+    's2_influential'] -> row['cite_openalex'/'cite_s2'/'cite_s2_influential'] —
+    the first two are the exact keys spreadsheet.py reads; the influential count
+    rides along for pages/figures that want it.
     Returns the number of rows updated. Raises KeyError if `counts` does not
     have citations.py's schema (every project once carried its own copy of this
     with a comment saying 'keep these in lockstep')."""
@@ -168,6 +170,8 @@ def attach_counts(rows, counts, keyf=None):
             r["cite_openalex"] = c["openalex"]
         if c.get("s2") is not None:
             r["cite_s2"] = c["s2"]
+        if c.get("s2_influential") is not None:
+            r["cite_s2_influential"] = c["s2_influential"]
         n += 1
     return n
 

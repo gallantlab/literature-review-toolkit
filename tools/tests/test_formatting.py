@@ -473,6 +473,10 @@ _R2 = [{"ref": "A1"}, {"ref": "A2", "cite_openalex": 3}]
 check("attach_counts stamps cite_openalex / cite_s2 and returns how many",
       common.attach_counts(_R2, {"A1": {"openalex": 5, "s2": 7, "s2_influential": 1, "asof": "d"}}), 1)
 check("attach_counts wrote the exact keys spreadsheet.py reads", (_R2[0]["cite_openalex"], _R2[0]["cite_s2"]), (5, 7))
+# citations.py fetches influentialCitationCount; attach_counts used to drop it on
+# the floor (world_models' rows carried the key only via a retired private script).
+check("attach_counts keeps the influential count it paid to fetch",
+      _R2[0].get("cite_s2_influential"), 1)
 check("attach_counts leaves an unlisted row alone", _R2[1]["cite_openalex"], 3)
 try:
     common.attach_counts([{"ref": "A1"}], {"A1": {"oa": 5}})
