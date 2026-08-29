@@ -323,6 +323,22 @@ check_true("spreadsheet knows an unknown source when it sees one",
            spreadsheet.unknown_sources([{"source": "never-seen-before"}, {"source": "xref"}])
            == ["never-seen-before"])
 
+# verify_note is the "this row still needs / got a human decision" field; 11 corpora
+# stamp it (102 rows in neuroethology alone) and the xlsx used to hide it entirely.
+import zipfile  # noqa: E402
+
+_tmpv = os.path.join(tempfile.mkdtemp(), "v.xlsx")
+spreadsheet.build([{"ref": "A1", "apa": "A, B. (2020). T. V.", "source": "search",
+                    "verify_note": "DOI-less item; needs catalog check"}], _tmpv)
+with zipfile.ZipFile(_tmpv) as _z:
+    _ss = _z.read("xl/sharedStrings.xml").decode("utf-8")
+check_true("verify_note reaches the spreadsheet",
+           "Verify note" in _ss and "needs catalog check" in _ss)
+spreadsheet.build([{"ref": "A1", "apa": "A, B. (2020). T. V.", "source": "search"}], _tmpv)
+with zipfile.ZipFile(_tmpv) as _z:
+    _ss = _z.read("xl/sharedStrings.xml").decode("utf-8")
+check_true("no verify_note anywhere -> no empty column", "Verify note" not in _ss)
+
 
 # ---- generated tool index -------------------------------------------------
 # The tool table in docs/tools.md, tools/README.md and PLAYBOOK.md is generated

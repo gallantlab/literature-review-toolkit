@@ -96,6 +96,9 @@ def build(rows, out, sheet_name="References"):
 
     # Optional thematic grouping column, auto-added when rows carry `family`.
     has_family = any(r.get("family") for r in rows)
+    # verify_note marks a reference needing (or explaining) human attention —
+    # a hand-check-pending row must not ship indistinguishable from a verified one.
+    has_vnote = any(r.get("verify_note") for r in rows)
 
     # Column plan: (header, key, width, kind). kind in {text, link, num}.
     cols = [
@@ -111,6 +114,8 @@ def build(rows, out, sheet_name="References"):
     if has_cite:
         cols += [("Cite (OpenAlex)", "cite_openalex", 13, "num"),
                  ("Cite (S2)",       "cite_s2",       12, "num")]
+    if has_vnote:
+        cols.append(("Verify note", "verify_note", 32, "text"))
     cols += [("PDF (local)", "pdf", 14, "text"), ("Xref", "xref", 8, "text")]
 
     for c, (header, _, width, _kind) in enumerate(cols):
