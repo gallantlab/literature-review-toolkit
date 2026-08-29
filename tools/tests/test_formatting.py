@@ -471,6 +471,20 @@ except common.CanonicalTableError:
 check("the canonical table survived", common.load_json(_rp)[0]["apa"], "canon")
 common.write_rows(_rp, [{"ref": "A1", "apa": "forced"}], force=True)
 check("write_rows(force=True) overrides the guard", common.load_json(_rp)[0]["apa"], "forced")
+# An unreadable table must DISARM nothing: a half-written rows.json (truncated dump,
+# bad permissions) is exactly when the canonical stamps can't be seen — refuse blind.
+with open(_rp, "w", encoding="utf-8") as _f:
+    _f.write('[{"ref": "A1", "apa": "canon", "canonical_at": "2026-08-1')  # truncated write
+try:
+    common.write_rows(_rp, [{"ref": "A1", "apa": "emitter output"}])
+    check_true("write_rows refuses to overwrite an unreadable table", False)
+except common.CanonicalTableError:
+    pass
+check("the unreadable table was left untouched",
+      open(_rp, encoding="utf-8").read().endswith('2026-08-1'), True)
+common.write_rows(_rp, [{"ref": "A1", "apa": "rebuilt"}], force=True)
+check("write_rows(force=True) still overrides on an unreadable table",
+      common.load_json(_rp)[0]["apa"], "rebuilt")
 _row = {"ref": "A1"}
 references.stamp_canonical(_row, "2026-08-18")
 check("references stamps canonical_at", _row["canonical_at"], "2026-08-18")

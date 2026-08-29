@@ -134,8 +134,13 @@ def write_rows(path, rows, force=False):
     if not force and os.path.exists(path):
         try:
             old = load_json(path)
-        except Exception:
-            old = []
+        except Exception as e:
+            # An unreadable table must not disarm the guard: a half-written or
+            # permission-broken rows.json is exactly when the canonical stamps
+            # can't be seen, and overwriting destroys whatever is recoverable.
+            raise CanonicalTableError(
+                f"{path} exists but could not be read ({e}); refusing to overwrite it "
+                "blind. Inspect/restore the file, or pass force=True to rebuild it.")
         if isinstance(old, list) and any(isinstance(r, dict) and r.get("canonical_at") for r in old):
             raise CanonicalTableError(
                 f"{path} is a canonical table (rows stamped canonical_at by references.py); "
