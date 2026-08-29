@@ -61,11 +61,15 @@ Save that as `families_input.json`, then run:
 ```
 python3 tools/families.py --rows rows.json --assign families_input.json --out families.json
 ```
-It validates (exhaustive / exclusive / balanced — fails loud otherwise), stamps
+It validates exhaustive / exclusive (fails loud otherwise; imbalance is only a
+stderr warning — read it), stamps
 `family` onto rows.json, writes `families.json` (the reproducible cache) and
 `families.md`, and `tools/spreadsheet.py` will auto-add the Family column on the
 next rebuild.
 
-**Note.** The optional lineage/taxonomy *figure* is a separate, bespoke step —
-hand-curate node selection and the cross-family arrows; don't expect a good one
-auto-generated. Treat it as a collaboration with the user (the third checkpoint).
+**Note.** The lineage/taxonomy *figure* is built by `tools/families_figure.py`,
+which **auto-selects and labels the landmark papers** — do not hand-build a labels
+overlay. The editorial `--spec` checkpoint covers lane order, cross-family arrows
+and notes (and, on a niche corpus whose antecedents outrank its own canon, a
+hand-curated `labels` override). Treat that spec as a collaboration with the user
+(the third checkpoint), and check the rendered figure before shipping.
