@@ -497,6 +497,20 @@ _row = {"ref": "A1"}
 references.stamp_canonical(_row, "2026-08-18")
 check("references stamps canonical_at", _row["canonical_at"], "2026-08-18")
 
+# ---- stale cached year: canon rewrites apa, nothing re-checked the cache ----
+# complexity 2b3 cached 2005 vs apa 2004; human_brain_decoding T03 1961 vs 2012.
+check("cached year that diverged from the apa is warned",
+      bool(references.cached_year_conflict(
+          {"year": 2005, "apa": "Kemp, C. (2004). A theory. Science."})), True)
+check("matching cached year is quiet",
+      references.cached_year_conflict(
+          {"year": "2004", "apa": "Kemp, C. (2004). A theory. Science."}), None)
+check("APA year suffix does not false-positive the cache check",
+      references.cached_year_conflict(
+          {"year": 2025, "apa": "Kral, T. (2025a). Paper. J."}), None)
+check("a row with no cached year is quiet",
+      references.cached_year_conflict({"apa": "Kemp, C. (2004). T. S."}), None)
+
 # ---- xref: an incomplete fetch is not "this paper cites nothing" ------------
 # A throttle that exhausted the backoff used to collapse into an empty reference
 # list, silently deflating the frequency table and the --internal-out in-degrees.

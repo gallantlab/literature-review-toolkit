@@ -125,6 +125,26 @@ def deposit_year_conflict(doi, apa):
     return None
 
 
+def cached_year_conflict(row):
+    """Pre-canon emitters often cache a `year` field next to the apa. Canon
+    rewrites the apa but nothing re-checked the cache, and a page that prefers
+    the cache (`r.get("year") or year_of(apa)`) then trusts a stale copy —
+    five corpora had already diverged when this warning was added. Reported as
+    a warning, not a defect: only a human can say which value is right."""
+    cached = row.get("year")
+    apa_year = common.year_of(row.get("apa", ""))
+    if cached in (None, "") or apa_year is None:
+        return None
+    try:
+        cached_int = int(str(cached).strip())
+    except ValueError:
+        return f"cached year {cached!r} is not a year (apa says {apa_year})"
+    if cached_int != apa_year:
+        return (f"cached year {cached_int} != apa year {apa_year} — "
+                "fix whichever is wrong, or delete the stale cache field")
+    return None
+
+
 def audit(apa, has_source):
     """Return (defects, notes). `defects` are real formatting errors that must
     fail the build; `notes` are non-fatal (a well-formed book/report with no DOI
@@ -312,6 +332,9 @@ def main():
         conflict = deposit_year_conflict(doi_of(r), r.get("apa", ""))
         if conflict:
             n = list(n) + [conflict]
+        stale = cached_year_conflict(r)
+        if stale:
+            n = list(n) + [stale]
         if d:
             defects[k] = d
         if n:
