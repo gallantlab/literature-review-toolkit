@@ -55,7 +55,8 @@ def tool_entries():
         name = os.path.basename(path)
         if name in SKIP:
             continue
-        src = open(path, encoding="utf-8").read()
+        with open(path, encoding="utf-8") as f:
+            src = f.read()
         tree = ast.parse(src)
         m = re.search(r'^PHASE = "([^"]*)"', src, re.M)
         entries.append({"name": name, "phase": m.group(1) if m else "—",
@@ -98,12 +99,14 @@ def main():
     stale = []
     for rel in TARGETS:
         path = os.path.join(ROOT, rel)
-        text = open(path, encoding="utf-8").read()
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
         new = splice(text, table)
         if new != text:
             stale.append(rel)
             if not args.check:
-                open(path, "w", encoding="utf-8").write(new)
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(new)
     if args.check:
         if stale:
             print("stale generated tool index in: " + ", ".join(stale)

@@ -419,7 +419,8 @@ def main():
     # optional embedded xlsx download button (base64 data URI -> works offline)
     xlsx_btn = ""
     if args.xlsx and os.path.exists(args.xlsx):
-        b64 = base64.b64encode(open(args.xlsx, "rb").read()).decode()
+        with open(args.xlsx, "rb") as xf:
+            b64 = base64.b64encode(xf.read()).decode()
         xlsx_btn = (f'<a class="dl" download="{esc(os.path.basename(args.xlsx))}" '
                     f'href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;'
                     f'base64,{b64}">⬇ Download table (.xlsx)</a>')
