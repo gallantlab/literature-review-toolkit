@@ -489,6 +489,14 @@ _row = {"ref": "A1"}
 references.stamp_canonical(_row, "2026-08-18")
 check("references stamps canonical_at", _row["canonical_at"], "2026-08-18")
 
+# ---- verify is a gate: exit 0 only when every verdict is OK -----------------
+# It used to always exit 0, so `verify.py && references.py ...` sailed past a
+# run full of NOT-FOUNDs; the other two gates already failed loud.
+check("verify gate passes an all-OK run", verify.gate_code([{"verdict": "OK"}] * 3), 0)
+for _v in ("MISMATCH", "NOT-FOUND", "ERROR"):
+    check(f"verify gate fails a run with a {_v}",
+          verify.gate_code([{"verdict": "OK"}, {"verdict": _v}]), 1)
+
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

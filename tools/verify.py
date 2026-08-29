@@ -9,6 +9,10 @@ Collapsing the two — as an earlier version did by swallowing exceptions into
 NOT-FOUND — can drop a real paper on a transient throttle. Never add a NOT-FOUND
 without chasing it, and always re-run an ERROR.
 
+Exit status: 0 only when every verdict is OK; 1 otherwise — the same fail-loud
+contract as references.py --audit and cite_check.py, so a chained Phase-3 run
+stops on the first table that needs attention.
+
 arXiv/conference papers are a verification BLIND SPOT for PMC/PubMed/CrossRef:
 an arXiv DOI (10.48550/arXiv.<id>) is not in CrossRef, and a PubMed title-search
 returns a plausible-but-wrong paper — so they come back NOT-FOUND or a garbage
@@ -239,6 +243,15 @@ def verify_one(c, arxiv_results=None, arxiv_errored=None):
     }
 
 
+def gate_code(results):
+    """Exit status for a verify run: 0 only when every verdict is OK.
+
+    verify is the Phase-3 fabrication gate; like references.py --audit and
+    cite_check.py it must fail loud, or a chained run (`verify.py && ...`)
+    sails past a table full of MISMATCH/NOT-FOUND/ERROR verdicts."""
+    return 0 if all(r.get("verdict") == "OK" for r in results) else 1
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--citations", help="JSON citation list (else --rows, else stdin)")
@@ -308,6 +321,7 @@ def main():
     if n_er:
         print("    ERROR = lookup could not complete (rate-limit/network); re-run "
               "those — NOT the same as NOT-FOUND.", file=sys.stderr)
+    sys.exit(gate_code(out))
 
 
 if __name__ == "__main__":
