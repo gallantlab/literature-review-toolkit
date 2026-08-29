@@ -97,6 +97,34 @@ def stamp_canonical(row, asof):
 
 
 # ---- quality gate ---------------------------------------------------------
+def doi_year(doi):
+    """A 4-digit year embedded in a DOI suffix, else None.
+
+    Publishers that digitized a back catalogue often deposit the DIGITIZATION
+    year as the issued date while leaving the true year in the DOI string
+    (Wiley's `10.1111/j.1439-0310.1943.tb00655.x` is a 1943 paper deposited as
+    2010). Only years in a plausible publishing range are returned."""
+    # Deliberately NARROW: only the Wiley legacy back-file shape `.<year>.tb<n>`,
+    # which is where this error class actually comes from. A looser scan matches
+    # page numbers (`science.167.3926.1745`), article ids (`nrn1606`, `nmeth.1694`)
+    # and ISSN fragments (`s1874-6055`) and is pure noise.
+    m = re.search(r"\.(1[89]\d\d|20[0-4]\d)\.tb\d", str(doi or ""), re.I)
+    return int(m.group(1)) if m else None
+
+
+def deposit_year_conflict(doi, apa):
+    """Warn when the DOI's embedded year disagrees with the reference's year.
+
+    Returns a message or None. Three real cases in one corpus: Seyfarth 1991
+    deposited as 2008, Lorenz 1943 and Schleidt 1962 both deposited as 2010."""
+    dy = doi_year(doi)
+    ay = common.year_of(apa)
+    if dy and ay and abs(dy - ay) > 1:
+        return (f"deposit-year: DOI encodes {dy} but the reference says {ay} — "
+                "likely a publisher back-file/digitization date; verify by hand")
+    return None
+
+
 def audit(apa, has_source):
     """Return (defects, notes). `defects` are real formatting errors that must
     fail the build; `notes` are non-fatal (a well-formed book/report with no DOI
@@ -121,6 +149,21 @@ def audit(apa, has_source):
         defects.append("markup-tag (JATS/HTML left in the reference)")
     if re.search(r"[?!]\.", apa):
         defects.append("double-terminal-punctuation (a title ending in ? or ! takes no period)")
+    if parts:
+        t = parts["title"]
+        if re.search(r"[,;](?=[A-Za-z])", t):
+            # a comma or semicolon with no space after it: CrossRef's JATS markup
+            # was stripped without a separator ("marine mollusc,Tritonia")
+            defects.append("missing-space (punctuation glued to the next word)")
+        elif re.search(r"[a-z](" + "|".join(sorted(common.GENERA)) + r")\b", t):
+            # same bug where the tag wrapped a genus ("cockroachPeriplaneta")
+            defects.append("missing-space (a genus is glued to the preceding word)")
+    if re.search(r"\?[A-Za-z]", apa) or re.search(r"\s\?\s", apa):
+        # A '?' glued to a letter, or floating alone, is a smart quote / dash the
+        # source could not encode (Wehner 1987 came back as "?Matched filters? ?
+        # neural models"). A real question mark is followed by a space or a
+        # closing bracket, so "What is (was?) the fixed action pattern?" is fine.
+        defects.append("mangled-punct (a '?' where a quote or dash belongs — fix by hand)")
     if "‐" in apa or "‑" in apa:
         defects.append("unicode-hyphen (U+2010/U+2011 in a name — normalize to ASCII '-')")
     if re.search(r"\(\.|\[\.", apa):
@@ -263,6 +306,12 @@ def main():
                 print(f"  [fetch-fail] {k}: {res['error']}", file=sys.stderr)
             time.sleep(args.sleep)
         d, n = audit(r.get("apa", ""), bool(doi_of(r) or r.get("arxiv")))
+        # The DOI is not visible inside audit(), so the back-file/digitization
+        # date check runs here and reports as a warning (only a human can say
+        # which year is right).
+        conflict = deposit_year_conflict(doi_of(r), r.get("apa", ""))
+        if conflict:
+            n = list(n) + [conflict]
         if d:
             defects[k] = d
         if n:

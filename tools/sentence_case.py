@@ -56,7 +56,7 @@ PROPER = {
     "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
     "January", "February", "March", "April", "June", "July", "August",
     "September", "October", "November", "December",
-}
+} | set(common.GENERA)   # model-organism genera are proper nouns in any corpus
 
 SEPS = r"[-–—/]"
 # punctuation that can wrap a token without being part of the word
@@ -105,7 +105,48 @@ def case_token(tok, clause_initial, words):
     return "".join(out)
 
 
+# Foreign-language titles must not be sentence-cased: the pass lowercases German
+# nouns ("Der Kumpan in der Umwelt des Vogels" -> "der kumpan in der umwelt ...").
+# 'von' and 'de' are NOT markers - they occur inside personal names in English
+# titles (Karl von Frisch, fin-de-siecle) - and neither is 'man', which is the
+# English word in "animals and man". Learned on a corpus with 16 German/French
+# titles among 493.
+FOREIGN = re.compile(
+    r"\b(der|die|das|und|über|ueber|zur|zum|den|des|dem|ein|eine|einen|im|bei|mit|auf|aus|"
+    r"nach|zwischen|namentlich|durch|wenn|ihm|einzelnen|la|le|les|du|et|sur)\b", re.I)
+
+
+def is_foreign_title(title):
+    """True when a title looks German/French and must be left exactly as published."""
+    return bool(FOREIGN.search(title or ""))
+
+
+# A run of ALL-CAPS words is a shouted title, not an acronym. references.norm_title
+# only fixes a title that is ENTIRELY caps, and case_token protects all-caps tokens
+# as possible acronyms, so a MIXED title ("BEHAVIORAL MUTANTS OF Drosophila ISOLATED
+# BY COUNTERCURRENT DISTRIBUTION") slipped through both.
+CAPS_RUN_MIN = 3
+
+
+def _lower_caps_runs(title, words):
+    toks = title.split(" ")
+    def is_shout(t):
+        c = t.strip(WRAP)
+        return len(c) >= 2 and c.isalpha() and c.isupper() and c not in words
+    i, n = 0, len(toks)
+    while i < n:
+        j = i
+        while j < n and is_shout(toks[j]):
+            j += 1
+        if j - i >= CAPS_RUN_MIN:
+            for k in range(i, j):
+                toks[k] = toks[k].lower()
+        i = j + 1 if j == i else j
+    return " ".join(toks)
+
+
 def sentence_case(title, words, phrases):
+    title = _lower_caps_runs(title, words)
     toks = title.split(" ")
     protected = set()
     low = [t.strip(WRAP).lower() for t in toks]
@@ -146,6 +187,9 @@ def main():
     ap.add_argument("--apply", action="store_true", help="write the changes")
     ap.add_argument("--vocab", action="store_true",
                     help="report distinct token changes instead of full titles")
+    ap.add_argument("--include-foreign", action="store_true",
+                    help="also case non-English titles (default: leave them exactly as "
+                         "published — the pass lowercases German nouns)")
     args = ap.parse_args()
 
     words, phrases = set(PROPER), []
@@ -156,13 +200,18 @@ def main():
 
     rows = common.load_json(args.rows)
     keyf = common.key_field(rows)
-    changes, vocab, unparsed = [], {}, []
+    changes, vocab, unparsed, foreign = [], {}, [], []
     for r in rows:
         parts = split_apa(r.get("apa", ""))
         if not parts:
             unparsed.append(r.get(keyf, "?"))
             continue
         head, title, rest = parts
+        if not args.include_foreign and is_foreign_title(title):
+            # German and French titles are correct as published; casing them
+            # lowercases every noun. Report them so the skip is visible.
+            foreign.append(r.get(keyf, "?"))
+            continue
         new = sentence_case(title[:-1], words, phrases) + title[-1]
         if new != title:
             changes.append((r.get(keyf, "?"), title, new))
@@ -172,6 +221,11 @@ def main():
             if args.apply:
                 r["apa"] = head + new + rest
 
+    if foreign:
+        print(f"skipped {len(foreign)} non-English title(s), left exactly as published: "
+              f"{', '.join(map(str, foreign[:12]))}"
+              f"{' ...' if len(foreign) > 12 else ''}\n"
+              f"  (pass --include-foreign to case them anyway)")
     if args.apply:
         common.dump_json(rows, args.out or args.rows)
         print(f"applied {len(changes)} title changes to {args.out or args.rows}")

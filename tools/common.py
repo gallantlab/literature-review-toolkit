@@ -336,6 +336,25 @@ def clean_venue(v):
     return re.sub(r"\s*\([^)]*\)\s*$", "", (v or "").strip())
 
 
+# Model-organism genera. These are proper nouns in ANY corpus, and canon's
+# ALL-CAPS sentence-caser would otherwise emit "caenorhabditis elegans" (seen on
+# Brenner 1974, whose Genetics deposit is entirely uppercase).
+GENERA = frozenset("""Aplysia Apis Acheta Anas Apteronotus Bombyx Bufo Caenorhabditis Calliphora
+Cataglyphis Chlorocebus Columba Danio Dixippus Drosophila Eigenmannia Gallus Gryllus Gymnotus
+Helisoma Hirundo Hyla Limulus Locusta Lymnaea Macaca Manduca Melospiza Musca Myotis Nasonia
+Ormia Pan Periplaneta Physalaemus Pteronotus Rana Rhinolophus Saimiri Schistocerca Serinus
+Sternopygus Sturnus Taeniopygia Teleogryllus Tritonia Tyto Xenopus Zonotrichia""".split())
+
+
+def restore_genera(text):
+    """Re-capitalize a genus name that a lowercasing pass flattened."""
+    if not text:
+        return text
+    return re.sub(r"\b([a-z][a-z]+)\b",
+                  lambda m: m.group(1).capitalize()
+                  if m.group(1).capitalize() in GENERA else m.group(1), text)
+
+
 def norm_title(title):
     """HTML-unescape, strip JATS/HTML markup, and sentence-case a title only if it
     is ENTIRELY uppercase (acronyms inside a mixed-case title are left alone)."""
@@ -344,6 +363,7 @@ def norm_title(title):
     alpha = [c for c in t if c.isalpha()]
     if alpha and all(c.isupper() for c in alpha):
         t = re.sub(r"(^|[.:]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), t.lower())
+        t = restore_genera(t)
     return re.sub(r"\s+", " ", t).strip()
 
 

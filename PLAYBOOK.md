@@ -775,6 +775,68 @@ that with the priority audit (contract rule 5; Phase 7).
 
 ## Lessons learned (don't repeat these mistakes)
 
+
+### Casing and foreign-language titles (learned on a 493-ref history corpus, 2026-08-29)
+
+Four failure modes, all now handled by the tools and covered by regression tests
+in `tools/tests/test_formatting.py`:
+
+- **A non-English title must never be sentence-cased.** The pass lowercases German
+  nouns, turning "Der Kumpan in der Umwelt des Vogels" into "der kumpan in der
+  umwelt des vogels". `sentence_case.py` now detects German/French titles and
+  **skips them by default**, printing which refs it skipped; `--include-foreign`
+  forces the old behavior. Getting the language test right took three attempts:
+  **`von` and `de` are not usable markers** (they sit inside personal names in
+  English titles — "Karl von Frisch", "fin-de-siècle"), and neither is **`man`**
+  ("the nervous system of vertebrates, including man"). Allowlisting German nouns
+  one by one is the wrong fix; skip the title.
+- **A partly ALL-CAPS title is shouting, not an acronym.** `references.norm_title`
+  only sentence-cases a title that is *entirely* caps, and `case_token` protects
+  all-caps tokens as possible acronyms — so "BEHAVIORAL MUTANTS OF *Drosophila*
+  ISOLATED BY COUNTERCURRENT DISTRIBUTION" passed through both untouched and only
+  showed up as an audit `uppercase-title run` that nothing fixed. `sentence_case.py`
+  now lowercases a **run of ≥3 consecutive all-caps words** while still protecting
+  isolated acronyms (`fMRI`, `MEG`).
+- **Model-organism genera are proper nouns in any corpus.** Canon's ALL-CAPS
+  sentence-caser emitted "the genetics of caenorhabditis elegans" from Brenner
+  1974's uppercase deposit. `common.GENERA` is now shared: `common.norm_title`
+  restores the capital, and `sentence_case.PROPER` includes the list, so no
+  project has to allowlist *Drosophila* or *Aplysia* again.
+- **A `?` inside a title or venue is mangled punctuation, not a question.** CrossRef
+  could not encode the quotes and dash in Wehner 1987 and returned
+  `?Matched filters? ? neural models of the external world`; the same deposit bug put
+  `Journal of Comparative Physiology ? A` in the venue of five other rows while forty
+  rows carried it correctly. The gate's existing check only caught a `?.` double
+  terminal, so all six shipped silently. The audit now fails on a `?` glued to a
+  letter or floating between spaces, while leaving a real question mark alone
+  ("What is (was?) the fixed action pattern?").
+- **Stripping JATS markup glues words together.** `common.MARKUP.sub("")` removes an
+  `<i>` tag but leaves no separator, so a wrapped species name fuses with the word
+  before it: `the cockroachPeriplaneta americana`, `desert ants, genusCataglyphis`,
+  `the marine mollusc,Tritonia`. The audit now reports `missing-space` for
+  punctuation glued to the next word, and for a `common.GENERA` name glued to a
+  preceding lowercase letter. Found on the same rows as the venue bug — a deposit
+  that is broken in one way is usually broken in several.
+
+### A publisher back-file deposit re-dates an old paper (2026-08-29)
+
+Digitized back catalogues are deposited with the **digitization year** as the issued
+date while the true year survives in the DOI string. Three cases in one corpus:
+Seyfarth & Zottoli 1991 deposited as 2008, Lorenz 1943 and Schleidt 1962 both
+deposited as 2010 (`10.1111/j.1439-0310.1943.tb00655.x` — the year is right there in
+the suffix). `references.py --audit` now warns via `deposit_year_conflict()` when a
+DOI's embedded year disagrees with the reference's year by more than one. It is a
+**warning, not a defect**: only a human can say which year is right.
+
+`doi_year()` is deliberately **narrow** — it matches only the Wiley legacy
+`.<year>.tb<n>` shape. The first version scanned for any plausible 4-digit year
+anywhere in the DOI and produced **fifteen false positives and no true ones** on a
+493-ref corpus, matching page numbers (`science.167.3926.1745`), article ids
+(`nrn1606`, `nmeth.1694`) and ISSN fragments (`s1874-6055`). A narrow check that
+fires rarely and correctly beats a broad one the reader learns to ignore. Note that
+Seyfarth's `10.1159/000114363` carries no year at all, so no DOI-based check can
+catch it — that one is caught by `verify.py` comparing the claimed year to CrossRef.
+
 ### On the search agent
 - **Always verify.** ~25% of agent-returned citations have errors. Wrong
   first authors are the most common; the agent confuses similar-titled
@@ -1010,7 +1072,7 @@ it is stale); the per-tool detail is in `tools/README.md` and `docs/tools.md`.
 |---|---|---|---|
 | `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / arXiv. | `--citations` `--email` `--key` `--out` `--rows` `--sleep` |
 | `references.py` | 3f | Canonical reference builder — make EVERY reference perfect, in both modes. | `--asof` `--audit` `--email` `--key` `--out` `--repair` `--rows` `--sleep` |
-| `sentence_case.py` | 3f | Post-canon pass — propose strict APA-7 sentence case for reference titles. | `--apply` `--out` `--proper` `--rows` `--vocab` |
+| `sentence_case.py` | 3f | Post-canon pass — propose strict APA-7 sentence case for reference titles. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
 | `download.py` | 4 (opt-in) | Multi-source PDF downloader (Phase 4 — OPT-IN, not run by default). | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
 | `reconcile_downloads.py` | 4 (opt-in) | Reconcile manually-downloaded PDFs against a slug+title+doi manifest. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
 | `spreadsheet.py` | 5 | Build/rebuild the bibliography xlsx from a JSON of accumulated rows. | `--out` `--rows` `--sheet-name` |

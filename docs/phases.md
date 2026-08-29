@@ -84,6 +84,16 @@ python3 ../tools/references.py --rows rows.json --audit   # exits non-zero on an
 # then, in a reviewed pass, sentence-case the titles:
 python3 ../tools/sentence_case.py --rows rows.json --proper proper_nouns.json --vocab
 python3 ../tools/sentence_case.py --rows rows.json --proper proper_nouns.json --apply
+
+!!! warning "Non-English titles are skipped by default"
+    The pass lowercases German nouns, so a German or French title would come out
+    wrecked. `sentence_case.py` detects them and leaves them exactly as published,
+    printing which refs it skipped; pass `--include-foreign` to override. Note that
+    `von` and `de` are **not** usable language markers — they appear inside personal
+    names in English titles ("Karl von Frisch", "fin-de-siècle") — and neither is
+    `man` ("including man"). A run of three or more ALL-CAPS words is lowercased as
+    a shouted title, while isolated acronyms (`fMRI`, `MEG`) stay protected, and
+    model-organism genera come from the shared `common.GENERA` list.
 ```
 
 Rebuilds every reference from its **verified** DOI/arXiv id into canonical APA-7:

@@ -328,6 +328,93 @@ check_true("spreadsheet knows an unknown source when it sees one",
 # from the modules themselves (docstring first sentence, PHASE constant, argparse
 # flags), so four hand-written descriptions can no longer drift apart.
 _ENT = {e["name"]: e for e in gen_docs.tool_entries()}
+# --- lessons from the neuroethology history corpus (2026-08-29) -------------
+# 1. Mangled punctuation INSIDE a title. CrossRef could not encode the quotes and
+#    dash in Wehner 1987 and returned literal '?' characters. The existing check
+#    only catches a '?.' double terminal, so this shipped silently.
+check_true("stray ? before a letter is a defect", any(
+    "mangled-punct" in d for d in defects(
+        'Wehner, R. (1987). ?Matched filters? ? neural models of the world. JCP A, 161(4), 511-531.')))
+check_true("a legitimate question mark is not a defect", not any(
+    "mangled-punct" in d for d in defects(
+        "Dewsbury, D. (1978). What is (was?) the fixed action pattern? Animal Behaviour, 26, 310-311.")))
+
+# 2. A publisher back-file/digitization deposit re-dates an old paper. Seen three
+#    times in one corpus: Seyfarth 1991->2008, Lorenz 1943->2010, Schleidt 1962->2010.
+#    The DOI suffix usually still carries the true year.
+check("doi year is read out of the suffix",
+      references.doi_year("10.1111/j.1439-0310.1943.tb00655.x"), 1943)
+check("doi with no year gives None", references.doi_year("10.1038/nn.4244"), None)
+# A loose scan matched page numbers, article ids and ISSN fragments: 15 false
+# positives and no true ones on a 493-ref corpus. These must all read None.
+check("a page number is not a year", references.doi_year("10.1126/science.167.3926.1745"), None)
+check("an article id is not a year", references.doi_year("10.1038/nrn1606"), None)
+check("an issn fragment is not a year", references.doi_year("10.1016/s1874-6055(98)80006-6"), None)
+check("a method id is not a year", references.doi_year("10.1038/nmeth.1694"), None)
+
+# Stripping JATS <i> tags removes the tag but leaves no separator, so the words
+# either side are glued ("marine mollusc,Tritonia", "cockroachPeriplaneta").
+check_true("comma glued to a word is a defect", any("missing-space" in d for d in defects(
+    "Getting, P. A. (1976). Escape swimming of the marine mollusc,Tritonia. JCP, 110(3), 271-286.")))
+check_true("genus glued to a word is a defect", any("missing-space" in d for d in defects(
+    "Camhi, J. M. (1978). The escape behavior of the cockroachPeriplaneta americana. JCP, 128, 203-212.")))
+check_true("a normal title has no missing-space defect", not any("missing-space" in d for d in defects(
+    "Getting, P. A. (1976). Escape swimming of the marine mollusc, Tritonia. JCP, 110(3), 271-286.")))
+check_true("deposit-year conflict is reported", references.deposit_year_conflict(
+    "10.1111/j.1439-0310.1943.tb00655.x",
+    "Lorenz, K. (2010). Die angeborenen Formen. Z. Tierpsychol., 5(2), 235-409.") is not None)
+check_true("matching years are not reported", references.deposit_year_conflict(
+    "10.1111/j.1439-0310.1943.tb00655.x",
+    "Lorenz, K. (1943). Die angeborenen Formen. Z. Tierpsychol., 5(2), 235-409.") is None)
+
+# 3. A non-English title must not be sentence-cased: the pass lowercases German
+#    nouns. The language test must not fire on 'von'/'de' inside a personal name
+#    ("Karl von Frisch", "fin-de-siecle") or on the English word 'man'.
+check_true("German title detected", sc.is_foreign_title("Der Kumpan in der Umwelt des Vogels"))
+check_true("French title detected", sc.is_foreign_title("La machine animale: Locomotion terrestre"))
+check_true("English title with 'von' in a name is not foreign",
+           not sc.is_foreign_title("Karl von Frisch and the discipline of ethology"))
+check_true("English title with 'de' in a name is not foreign",
+           not sc.is_foreign_title("Neuroanatomist in fin-de-siecle Vienna"))
+check_true("'animals and man' is not foreign",
+           not sc.is_foreign_title("The nervous system of vertebrates, including man"))
+
+# 4. A partly ALL-CAPS title is shouting, not an acronym. references.norm_title
+#    only fixes a title that is ENTIRELY caps, and sentence_case protects all-caps
+#    tokens as possible acronyms, so 'BEHAVIORAL MUTANTS OF Drosophila ISOLATED BY
+#    COUNTERCURRENT DISTRIBUTION' passed through both untouched.
+check("all-caps run is lowered", sent("BEHAVIORAL MUTANTS OF Drosophila ISOLATED BY DISTRIBUTION"),
+      "Behavioral mutants of Drosophila isolated by distribution")
+check("a short acronym is still protected", sent("Encoding and decoding in fMRI and MEG studies"),
+      "Encoding and decoding in fMRI and MEG studies")
+
+# 5. Model-organism genera must keep their capital when canon sentence-cases an
+#    ALL-CAPS title (Brenner 1974 came back as 'caenorhabditis elegans').
+check("genus survives an all-caps title",
+      common.norm_title("THE GENETICS OF CAENORHABDITIS ELEGANS"),
+      "The genetics of Caenorhabditis elegans")
+
+# --- families_figure: the timeline walk-through (added 2026-08-29) -----------
+# The figure has hundreds of small dots; clicking each one to read it is
+# impractical, so the panel carries Prev/Next plus arrow-key bindings that step
+# through papers in year order. These assert the shell actually ships that code.
+_SHELL = families_figure.HTML_SHELL
+check_true("figure panel has Prev/Next buttons", 'id="prev"' in _SHELL and 'id="next"' in _SHELL)
+check_true("figure binds the arrow keys", "ArrowRight" in _SHELL and "ArrowLeft" in _SHELL)
+check_true("figure orders the walk by year", "DATA[a].year-DATA[b].year" in _SHELL)
+check_true("figure can leave the family scope", "LANEONLY" in _SHELL and 'id="lanechk"' in _SHELL)
+check_true("figure shows the walk position", 'id="pos"' in _SHELL)
+# The controls sit ABOVE the reference text: a summary can run several hundred
+# characters, and a nav row placed under it would move on every step.
+check_true("nav row precedes the reference text",
+           _SHELL.find("navHTML(k,doi)") < _SHELL.find('<div id="apa">'))
+# Hover must NOT re-pin the panel: the reader moves the mouse across other dots
+# on the way to the Next button, which would silently change the selection.
+check_true("hover does not re-pin the panel",
+           "g.addEventListener('mouseenter',()=>show(g.dataset.key));" not in _SHELL)
+check_true("nodes still carry a hover tooltip", "<title>" in open(
+    os.path.join(os.path.dirname(families_figure.__file__), "families_figure.py")).read())
+
 check_true("every tool module is indexed", {"verify.py", "references.py", "families_figure.py"} <= set(_ENT))
 check("phase comes from the module's PHASE constant", _ENT["references.py"]["phase"], "3f")
 check_true("flags come from argparse", "--audit" in _ENT["references.py"]["flags"])

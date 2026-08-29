@@ -7,7 +7,10 @@ the old static matplotlib figure.
 
 Open in a browser, present fullscreen. Hover any node -> full reference
 (tooltip); click -> side panel with citation + a live DOI link; hover a family's
-name -> spotlight its lineage.
+name -> spotlight its lineage. The panel also carries Prev/Next buttons (and
+binds the left/right arrow keys) that step through the papers in year order, so a
+reader can walk the timeline instead of hunting for individual dots; a checkbox
+switches between stepping within the selected family and across the whole corpus.
 
 Data-driven: family lanes come from families.json, dots from rows.json (one per
 paper, beeswarm-packed by year within its lane).
@@ -468,8 +471,16 @@ HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><titl
  a.doi.off{background:#bbb;pointer-events:none;} .hint{color:#999;}
  #close{float:right;border:none;background:#eee;border-radius:50%;width:24px;height:24px;font-size:16px;cursor:pointer;color:#444;}
  a.dl{float:right;margin-left:12px;padding:5px 11px;background:#217346;color:#fff;border-radius:6px;text-decoration:none;font-size:12.5px;}
+ #nav{margin:10px 0 0;padding-bottom:10px;border-bottom:1px solid #e3e3e3;display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:32px;}
+ #nav a.doi{margin:0;}
+ #nav button{padding:6px 12px;font-size:12.5px;border:1px solid #bbb;border-radius:6px;background:#fafafa;cursor:pointer;}
+ #nav button:hover{background:#eee;} #nav button:disabled{opacity:.4;cursor:default;}
+ #pos{font-size:11.5px;color:#777;margin-left:auto;}
+ #scope{font-size:11.5px;color:#555;margin:8px 0 12px;}
+ #scope label{cursor:pointer;}
 </style></head><body>
-<header>__XLSXBTN__<div class="sub">Hover a node for its citation + summary; click it to pin the citation + DOI.
+<header>__XLSXBTN__<div class="sub">Hover a node for its reference; click it to pin the full entry here,
+ then walk the timeline with Next/Prev or the \\u2190/\\u2192 arrow keys.
  Hover a family's name at left to spotlight its lineage.</div></header>
 <main><div id="figwrap">__SVG__</div>
 <aside id="panel"><div class="hint">Click any node to see its full reference here.</div></aside></main>
@@ -478,7 +489,8 @@ const DATA=__DATA__, FAMCOLOR=__COLOR__, panel=document.getElementById('panel');
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>(
  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function resetPanel(){document.querySelectorAll('.node.sel').forEach(n=>n.classList.remove('sel'));
- panel.innerHTML='<div class="hint">Click any node to see its full reference here.</div>';}
+ panel.innerHTML='<div class="hint">Click any node to see its full reference here, '
+  +'then step through the timeline with Next/Prev or the arrow keys.</div>';CUR=null;}
 function show(k){const d=DATA[k];if(!d)return;
  document.querySelectorAll('.node.sel').forEach(n=>n.classList.remove('sel'));
  const g=document.querySelector('.node[data-key="'+CSS.escape(k)+'"]');if(g)g.classList.add('sel');
@@ -487,9 +499,37 @@ function show(k){const d=DATA[k];if(!d)return;
  const c=[];if(Number.isInteger(d.oa))c.push(d.oa+' (OpenAlex)');if(Number.isInteger(d.s2))c.push(d.s2+' (S2)');
  panel.innerHTML='<button id="close" onclick="resetPanel()">\\u00d7</button>'
   +'<div id="fam" style="background:'+esc(FAMCOLOR[d.family]||'#666')+'">'+esc(d.family)+'</div> <span class="meta">'+esc(d.ref)+' \\u00b7 '+esc(d.topic)+'</span>'
-  +'<div id="apa">'+esc(d.apa)+'</div>'+(d.summary?'<div id="summary">'+esc(d.summary)+'</div>':'')+(c.length?'<div class="meta">Cited by: '+esc(c.join(' \\u00b7 '))+'</div>':'')+doi;}
+  +navHTML(k,doi)
+  +'<div id="apa">'+esc(d.apa)+'</div>'+(d.summary?'<div id="summary">'+esc(d.summary)+'</div>':'')+(c.length?'<div class="meta">Cited by: '+esc(c.join(' \\u00b7 '))+'</div>':'');
+ CUR=k; wireNav();}
+
+// ---- walking the timeline -------------------------------------------------
+// ORDER is every paper sorted by year; WITHIN is the same restricted to one
+// family lane. The figure has hundreds of small dots, so clicking each one is
+// impractical; Next/Prev (and the arrow keys) step through them in time order.
+let CUR=null, LANEONLY=true;
+const ORDER=Object.keys(DATA).sort((a,b)=>DATA[a].year-DATA[b].year||a.localeCompare(b));
+function seq(){return LANEONLY&&CUR?ORDER.filter(r=>DATA[r].family===DATA[CUR].family):ORDER;}
+function navHTML(k,doi){const q=LANEONLY?ORDER.filter(r=>DATA[r].family===DATA[k].family):ORDER;
+ const i=q.indexOf(k);
+ return '<div id="nav"><button id="prev"'+(i<=0?' disabled':'')+'>\\u2190 Prev</button>'
+  +'<button id="next"'+(i<0||i>=q.length-1?' disabled':'')+'>Next \\u2192</button>'
+  +(doi||'')+'<span id="pos">'+(i+1)+' / '+q.length+'</span></div>'
+  +'<div id="scope"><label><input type="checkbox" id="lanechk"'+(LANEONLY?' checked':'')+'> '
+  +'stay in this family ('+esc(DATA[k].family)+')</label></div>';}
+function step(n){const q=seq();const i=q.indexOf(CUR);const j=i+n;
+ if(j<0||j>=q.length)return;show(q[j]);
+ const g=document.querySelector('.node[data-key="'+CSS.escape(q[j])+'"]');
+ if(g&&g.scrollIntoView)g.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});}
+function wireNav(){const p=document.getElementById('prev'),n=document.getElementById('next'),
+  c=document.getElementById('lanechk');
+ if(p)p.onclick=()=>step(-1); if(n)n.onclick=()=>step(1);
+ if(c)c.onchange=()=>{LANEONLY=c.checked;show(CUR);};}
+document.addEventListener('keydown',e=>{if(!CUR)return;
+ if(e.target&&/^(INPUT|TEXTAREA)$/.test(e.target.tagName))return;
+ if(e.key==='ArrowRight'){e.preventDefault();step(1);}
+ else if(e.key==='ArrowLeft'){e.preventDefault();step(-1);}});
 document.querySelectorAll('.node').forEach(g=>{g.addEventListener('click',()=>show(g.dataset.key));
- g.addEventListener('mouseenter',()=>show(g.dataset.key));
  g.addEventListener('focus',()=>show(g.dataset.key));
  g.addEventListener('keydown',e=>{if(e.key==='Enter')show(g.dataset.key);});});
 document.querySelectorAll('.lanelabel').forEach(g=>{const f=g.dataset.fam;
