@@ -10,6 +10,7 @@ reads+writes UTF-8 (ensure_ascii=False) through a context manager.
 Tools are run as `python3 tools/<tool>.py`, so `tools/` is on sys.path[0] and a
 plain `import common` resolves.
 """
+import http.client
 import json
 import re
 import socket
@@ -38,6 +39,11 @@ HDRS = {"User-Agent": "litreview-toolkit/1.0"}
 # by http()'s backoff and by verify.py's ERROR-vs-NOT-FOUND split, so a 502 from
 # CrossRef is never retried in one tool and reported as a clean miss in another.
 TRANSIENT_HTTP = {429, 500, 502, 503, 504}
+# Connection-level failures that mean "try again", not "no such record": a
+# server closing the socket mid-response (RemoteDisconnected, IncompleteRead —
+# both http.client.HTTPException, NOT URLError) or resetting it (ConnectionError).
+TRANSIENT_NETWORK = (urllib.error.URLError, TimeoutError, socket.timeout,
+                     http.client.HTTPException, ConnectionError)
 
 
 def set_user_agent(email):
@@ -61,7 +67,7 @@ def http(url, retries=5, timeout=30, data=None, headers=None):
                 time.sleep(3 * 2 ** attempt)          # 3, 6, 12, 24s
                 continue
             raise
-        except (urllib.error.URLError, TimeoutError, socket.timeout):
+        except TRANSIENT_NETWORK:
             if attempt < retries - 1:
                 time.sleep(2 * 2 ** attempt)          # 2, 4, 8, 16s
                 continue
@@ -78,7 +84,7 @@ def is_transient(exc):
     could not complete), as opposed to a clean 'no such record' (e.g. 404)."""
     if isinstance(exc, urllib.error.HTTPError):
         return exc.code in TRANSIENT_HTTP
-    return isinstance(exc, (urllib.error.URLError, TimeoutError, socket.timeout))
+    return isinstance(exc, TRANSIENT_NETWORK)
 
 
 # ---- JSON I/O (always UTF-8, human-readable) ------------------------------

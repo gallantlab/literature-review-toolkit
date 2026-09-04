@@ -180,6 +180,19 @@ check_true("502 is transient for verify", verify._is_transient(urllib.error.HTTP
 check_true("404 is a clean miss for verify", not verify._is_transient(urllib.error.HTTPError("u", 404, "no", {}, None)))
 check("verify and http share the transient set", verify._TRANSIENT_HTTP, common.TRANSIENT_HTTP)
 check_true("http() retries on every transient code", {500, 502, 504} <= common.TRANSIENT_HTTP)
+# A dropped connection is transient too. On a 588-row verify run CrossRef closed
+# ~30 connections mid-response (RemoteDisconnected / IncompleteRead); neither is a
+# URLError, so is_transient() called them clean misses, the DOI lookup returned
+# None, and the title-search fallback filed unrelated PubMed hits as MISMATCH.
+import http.client  # noqa: E402
+
+check_true("RemoteDisconnected is transient",
+           common.is_transient(http.client.RemoteDisconnected("closed")))
+check_true("IncompleteRead is transient",
+           common.is_transient(http.client.IncompleteRead(b"x")))
+check_true("ConnectionResetError is transient", common.is_transient(ConnectionResetError()))
+check_true("ValueError is still not transient", not common.is_transient(ValueError("bad json")))
+
 
 
 # ---- audit gate -----------------------------------------------------------
@@ -550,6 +563,44 @@ xref.http_json = _http_raising(503)
 check("xref: exhausted throttle = INCOMPLETE (None), never an empty list",
       xref.crossref_refs("10.1/x"), None)
 xref.http_json = _orig_http_json
+
+# ---- a throttled DOI lookup must not be masked by the title-search fallback ---
+# On a 588-row run CrossRef throttled ~30 DOI lookups; verify_one then fell through
+# to lookup_pubmed_title, which returned an unrelated paper, and the row was
+# reported MISMATCH ("Adelson 1985" -> "Wang 2026, MSF: Multi-Level Spatiotemporal
+# Filtering") instead of ERROR. A MISMATCH reads as "the agent got it wrong"; an
+# ERROR reads as "re-run". The two must stay distinct when the real lookup errored.
+_orig_cr, _orig_pt = verify.lookup_crossref, verify.lookup_pubmed_title
+def _throttled(doi):
+    raise urllib.error.HTTPError("u", 429, "rate limited", {}, None)
+verify.lookup_crossref = _throttled
+verify.lookup_pubmed_title = lambda t: {"title": "MSF: Multi-Level Spatiotemporal Filtering",
+                                        "year": "2026", "first_author": "Wang J", "journal": "X"}
+_r = verify.verify_one({"label": "E15", "doi": "10.1364/josaa.2.000284",
+                        "title": "Spatiotemporal energy models for the perception of motion",
+                        "expect_first_author": "Adelson", "expect_year": "1985"})
+check("throttled DOI lookup + unrelated title hit -> ERROR, not MISMATCH", _r["verdict"], "ERROR")
+# ...but a title-search hit that DOES match the claim is still accepted as OK.
+verify.lookup_pubmed_title = lambda t: {"title": "Spatiotemporal energy models for the perception of motion",
+                                        "year": "1985", "first_author": "Adelson EH", "journal": "JOSA A"}
+_r = verify.verify_one({"label": "E15", "doi": "10.1364/josaa.2.000284",
+                        "title": "Spatiotemporal energy models for the perception of motion",
+                        "expect_first_author": "Adelson", "expect_year": "1985"})
+check("throttled DOI lookup + matching title hit -> OK", _r["verdict"], "OK")
+verify.lookup_crossref, verify.lookup_pubmed_title = _orig_cr, _orig_pt
+
+# ---- two deposit defects that shipped through the gate on a 588-row corpus ------
+# CrossRef stores a hyphenated given name with the second part missing ("Poline,
+# J. -." for Jean-Baptiste Poline) and glues a footnote digit to the last title
+# word ("psychological science1"). Neither was caught; both were found by eye.
+_d, _n = references.audit("Friston, K. J., & Poline, J. -. (1994). Statistical parametric maps. Human Brain Mapping, 2(4), 189-210.", True)
+check_true("hyphenated initial with a missing part is a defect", any(x.startswith("malformed-initial") for x in _d), str(_d))
+_d, _n = references.audit("Allport, G. W. (1962). The general and the unique in psychological science1. Journal of Personality, 30(3), 405-422.", True)
+check_true("footnote digit glued to the title is flagged", any("glued-footnote" in x for x in _d + _n), str(_d + _n))
+_d, _n = references.audit("Boynton, G. M. (1996). Linear systems analysis of fMRI in human V1. Journal of Neuroscience, 16(13), 4207-4221.", True)
+check_true("a title ending in an area name (V1) is not a glued footnote", not any("glued-footnote" in x for x in _d + _n), str(_d + _n))
+_d, _n = references.audit("Kay, K. N. (2013). Compressive spatial summation in area 3b. Journal of Vision, 13(2), 1-10.", True)
+check_true("a title ending in 3b is not a glued footnote", not any("glued-footnote" in x for x in _d + _n), str(_d + _n))
 
 # ---- verify is a gate: exit 0 only when every verdict is OK -----------------
 # It used to always exit 0, so `verify.py && references.py ...` sailed past a

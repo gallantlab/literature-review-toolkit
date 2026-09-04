@@ -235,6 +235,15 @@ def verify_one(c, arxiv_results=None, arxiv_errored=None):
     if expect_year.isdigit() and actual_year.isdigit() and abs(int(expect_year) - int(actual_year)) > 1:
         issues.append(f"year mismatch: expected {expect_year}, got {found['year']}")
 
+    if issues and errored and src == "title-search":
+        # The authoritative lookup (DOI/PMID) could not complete and the fallback
+        # title search returned something that does not match the claim. That is
+        # almost always an unrelated PubMed hit standing in for a throttled
+        # CrossRef call, so report ERROR (re-run), not MISMATCH (agent was wrong).
+        # A fallback hit that DOES match the claim is still accepted above.
+        return {"verdict": "ERROR", "found": found, "source": src,
+                "issues": ["lookup failed (rate-limit/network); title-search fallback did not "
+                           "match the claim — re-run to verify"] + issues}
     return {
         "verdict": "OK" if not issues else "MISMATCH",
         "issues": issues,

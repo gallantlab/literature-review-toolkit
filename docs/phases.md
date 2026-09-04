@@ -72,7 +72,9 @@ lookup completed and nothing matched (chase it — likely fabricated), while
 `ERROR` means a lookup could not complete (rate-limit / network) and must be
 **re-run**. To keep arXiv's aggressive rate-limiting from turning real preprints
 into false `NOT-FOUND`s, arXiv ids are prefetched in batches (`id_list`, many per
-call). `expect_year` may be a string or an int.
+call). `expect_year` may be a string or an int. A throttled DOI lookup is not
+rescued by the title-search fallback either: if the authoritative lookup errored and the
+fallback record does not match the claim, the verdict is `ERROR`, never `MISMATCH`.
 
 ---
 

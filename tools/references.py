@@ -189,12 +189,24 @@ def audit(apa, has_source):
     if re.search(r"\(\.|\[\.", apa):
         # a used name in parentheses initialized literally: 'L. (Renzo)' -> 'L. (.'
         defects.append("malformed-initial (a bracket was initialized as a name)")
+    if re.search(r"\b[A-Z]\. -\.", apa):
+        # a hyphenated given name deposited with its second part missing:
+        # CrossRef's "Jean-" for Jean-Baptiste Poline initializes to 'J. -.'
+        defects.append("malformed-initial (hyphenated given name missing its second part)")
     if "�" in apa:
         # U+FFFD replacement char = mojibake the source (often CrossRef) stored with
         # broken encoding; the original glyph is unrecoverable, so flag for a hand fix.
         defects.append("replacement-char (U+FFFD mojibake — fix by hand)")
     if re.search(r"\.\s+[A-Z]\.\s*$", apa):
         defects.append("single-letter venue (truncated)")
+    # A footnote marker digit glued to the last title word ("psychological
+    # science1", "BOLD fMRI1"): CrossRef keeps the superscript as plain text. Only
+    # a lowercase letter followed by a single digit at the END of the title is
+    # flagged, so area names (V1, S1, M1) and "area 3b" pass. A warning, because a
+    # real title can end that way ("...of H1").
+    _p = common.parse_apa(apa)
+    if _p and re.search(r"[a-z][1-9]$", _p["title"]):
+        notes.append("glued-footnote (a footnote digit stuck to the last title word — check the source)")
     # Catch an uppercase TITLE (norm_title misses titles that are only MOSTLY
     # caps). Scan the title sentence ONLY — author initials ("R. B. H.") and
     # venue acronyms ("PLOS ONE") legitimately have caps and must be excluded.

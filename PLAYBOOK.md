@@ -219,6 +219,10 @@ On a big run this matters — arXiv rate-limits hard, so the tool prefetches all
 arXiv ids in batches (many per `id_list` call); a genuinely real preprint that
 would otherwise 429 into a false NOT-FOUND now comes back OK (or, if the batch
 still fails, ERROR to re-run).
+The same discipline applies to the title-search fallback: when the DOI/PMID lookup
+errored and the fallback title search returns a record that does not match the
+claim, the verdict is ERROR, not MISMATCH (on a 588-row run ~30 throttled CrossRef
+calls each surfaced an unrelated PubMed paper and looked like agent fabrications).
 
 `verify.py` exits **0 only when every verdict is OK** — the same fail-loud
 contract as the audit gate and `cite_check.py` — so a chained Phase-3 run stops
@@ -291,8 +295,11 @@ defect (missing author/year, `et al.`, HTML entity, `U+FFFD` replacement-char
 mojibake, truncated/empty venue, uppercase title, **JATS/HTML markup left in a
 title** (`<scp>`, `<i>`), **a `?.` or `!.` double terminal punctuation**, **a
 U+2010/U+2011 Unicode hyphen in a name**, **a `?` standing in for a quote or dash
-(`mangled-punct`)**, and **words fused by stripped JATS tags (`missing-space`,
-`cockroachPeriplaneta`)**). The ONLY allowed non-fatal
+(`mangled-punct`)**, **words fused by stripped JATS tags (`missing-space`,
+`cockroachPeriplaneta`)**, and **a hyphenated given name deposited with its second
+part missing (`Poline, J. -.`, a second `malformed-initial` shape)**; it warns on a
+**footnote digit glued to the last title word (`glued-footnote`, `psychological
+science1`)**). The ONLY allowed non-fatal
 case is a DOI-less item (book, report, old proceedings) — it keeps its
 hand-written `apa` and is reported as a
 manual ref; verify those by hand. **Run the gate before every deliverable.**

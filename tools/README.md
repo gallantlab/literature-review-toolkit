@@ -57,6 +57,10 @@ none matched (chase it down — likely fabricated); ERROR = a lookup could not
 complete (rate-limit / network), so **re-run those** — never treat a throttled
 fetch as "does not exist." One malformed row degrades to ERROR rather than
 aborting the whole batch.
+A throttled DOI lookup is **not** rescued by the title-search fallback: if the
+authoritative lookup errored and the fallback record does not match the claim, the
+verdict is ERROR (re-run), never MISMATCH — an unrelated PubMed hit standing in for a
+429 used to read as "the agent got it wrong."
 
 ## `references.py` — canonical reference builder (Phase 3f)
 
@@ -82,7 +86,9 @@ preprint servers CrossRef leaves bare (`bioRxiv`, `PsyArXiv`, `arXiv`; arXiv's
 `journal_ref` is used when present). `--audit` fails on any defect — no
 author/year, `et al.`, HTML entity, JATS/HTML markup tag, `?.`/`!.` double
 terminal punctuation, a U+2010/U+2011 Unicode hyphen, a malformed initial
-(`L. (.`), `U+FFFD` mojibake, a truncated or empty venue, an uppercase title;
+(`L. (.`, or a hyphenated given name missing its second part, `J. -.`), `U+FFFD`
+mojibake, a truncated or empty venue, an uppercase title (and warns on a footnote
+digit glued to the last title word, `glued-footnote`);
 a DOI-less item (book/report) is the only non-fatal case — reported as a manual
 ref to check by hand. Mojibake is flagged, not fixed: the glyph is
 unrecoverable, so hand-fix it LAST (re-canon reintroduces it).
