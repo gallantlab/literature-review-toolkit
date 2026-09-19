@@ -550,6 +550,15 @@ the drawn copy is clamped to the room the lane actually has and ellipsized
 (`claim_lines()`). So write the claim for the reader who hovers, not for the
 40-character column: the figure will show as much as fits and no more.
 
+**An SVG `<g>` is not hoverable — give it a hit target.** A `<g>` has no geometry of
+its own and `<text>` only receives pointer events on the rendered glyph strokes, so a
+handler bound to the lane-label group fires when the cursor is exactly on a letter and
+nowhere else. That reads to a user as "the hover does not work", which is how it was
+reported. Every node group already carried an invisible
+`<circle class="hit" fill="none" pointer-events="all">` for this reason; the lane label
+now carries an equivalent transparent rect over its whole left-margin band. The same
+trap applies to any future affordance attached to SVG text.
+
 **The family definitions must be readable FROM the figure.** `families.json` has always
 carried each family's `claim` and `lineage`, but until 2026-09-18 the figure drew only a
 truncated claim beside the lane name and never showed the lineage at all — so the one

@@ -601,6 +601,22 @@ check("full containment is the inner area",
 check_true("placement falls back to the least-overlapping tier, not the last one",
            "TIERS[-1]" not in _FFSRC_EARLY and "best_pen" in _FFSRC_EARLY)
 
+# --- families_figure: the lane title needs a HIT TARGET (2026-09-19) ---------
+# The hover panel was wired to the .lanelabel <g>, but an SVG <g> has no geometry
+# of its own and <text> only receives pointer events on the rendered glyph
+# strokes. So the panel fired only when the cursor landed exactly on a letter,
+# and not in the gaps between words or lines — which reads as "the hover does not
+# work". The node groups already solve this with an invisible
+# `<circle class="hit" fill="none" pointer-events="all">`; the lane label needs
+# the same treatment, a transparent rect over the whole left-margin band.
+# Slice the whole lane-label emit block rather than a fixed character window, so
+# adding a comment to the renderer cannot silently disarm the check.
+_LANEBLOCK = _FFSRC_EARLY.split('class="lanelabel"')[1].split("s.append('</g>')")[0]
+check_true("lane label carries an invisible hit rect", 'class="hit"' in _LANEBLOCK)
+check_true("the lane hit target accepts pointer events",
+           'pointer-events="all"' in _LANEBLOCK)
+check_true("the lane hit target is invisible", 'fill="none"' in _LANEBLOCK)
+
 check_true("every tool module is indexed", {"verify.py", "references.py", "families_figure.py"} <= set(_ENT))
 check("phase comes from the module's PHASE constant", _ENT["references.py"]["phase"], "3f")
 check_true("flags come from argparse", "--audit" in _ENT["references.py"]["flags"])

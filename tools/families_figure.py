@@ -388,6 +388,13 @@ def main():
         if lineage[name]:
             tip += "\n\nLineage: " + lineage[name]
         s.append(f'<title class="lanetitle">{esc(tip)}</title>')
+        # Invisible hit target. A <g> has no geometry and <text> is only hit on its
+        # glyph strokes, so without this the hover fires exactly on a letter and
+        # nowhere else — the same reason every node group carries a `hit` circle.
+        # Covers the whole left-margin band for this lane, stopping short of the
+        # plot area so it cannot steal events from the dots.
+        s.append(f'<rect class="hit" x="0" y="{top:.0f}" width="{PADL - 8}" '
+                 f'height="{laneH:.0f}" fill="none" pointer-events="all"/>')
         ly = top + 20
         for ln in wrap(name, 24):                       # wrap long theme names onto multiple lines
             s.append(f'<text x="10" y="{ly:.0f}" font-size="14" font-weight="bold" fill="{c}">{esc(ln)}</text>')
