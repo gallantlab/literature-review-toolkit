@@ -6,8 +6,14 @@ standalone .svg and, if rsvg-convert/inkscape is present, .png + .pdf. Replaces
 the old static matplotlib figure.
 
 Open in a browser, present fullscreen. Hover any node -> full reference
-(tooltip); click -> side panel with citation + a live DOI link; hover a family's
-name -> spotlight its lineage. The panel also carries Prev/Next buttons (and
+(tooltip); click -> side panel with citation + a live DOI link; hover or focus a
+family's NAME -> a panel giving that family's claim and its lineage in full, plus
+its paper count, while its papers are spotlighted. (families.json has always
+carried `claim` and `lineage`; until 2026-09-18 the figure drew only a truncated
+claim beside the lane and the lineage was invisible, so a reader had to open
+families.md to learn what a family meant. The exported .svg/.png/.pdf carry the
+same text in a native SVG <title>, since no script runs out there.)
+The panel also carries Prev/Next buttons (and
 binds the left/right arrow keys) that step through the papers in year order, so a
 reader can walk the timeline instead of hunting for individual dots; a checkbox
 switches between stepping within the selected family and across the whole corpus.
@@ -56,6 +62,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections import Counter
 
 import common
 
@@ -111,6 +118,26 @@ def _box_hits_dot(box, dx, dy, margin=11):
     return box[0] - margin <= dx <= box[1] + margin and box[2] - margin <= dy <= box[3] + margin
 
 
+def claim_lines(claim, width, max_lines):
+    """Wrap `claim` to `width`, clamped to `max_lines` and ellipsized if it did
+    not fit.
+
+    The lane label draws the family's claim under its name. Nothing used to bound
+    how many lines that was, so a long claim ran straight through the next
+    family's title — a real collision on any spec whose claims are written as
+    prose. The full text is one hover away (the #famtip panel, and the lane's
+    native <title> in the exported SVG), so the drawn copy only has to say enough
+    to identify the family."""
+    if max_lines <= 0:
+        return []
+    lines = wrap(claim or "", width)
+    if len(lines) <= max_lines:
+        return lines
+    lines = lines[:max_lines]
+    lines[-1] = lines[-1].rstrip(" ,;:.") + "\u2026"
+    return lines
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -155,6 +182,8 @@ def main():
     fams = fam_spec["families"]
     order = spec.get("order") or [f["name"] for f in fams]
     claim = {f["name"]: f.get("claim", "") for f in fams}
+    lineage = {f["name"]: f.get("lineage", "") for f in fams}
+    famkey = {f["name"]: f.get("key", "") for f in fams}
     COLOR = {name: PALETTE[i % len(PALETTE)] for i, name in enumerate(order)}
     LANE = {name: i for i, name in enumerate(order)}
     subtitle = spec.get("subtitle") or fam_spec.get("principle", "")
@@ -335,13 +364,23 @@ def main():
         s.append(f'<rect x="{PADL}" y="{top:.0f}" width="{plotW}" height="{laneH:.0f}" '
                  f'fill="{c}" opacity="0.05"/>')
         s.append(f'<line x1="{PADL}" y1="{y:.0f}" x2="{W-PADR}" y2="{y:.0f}" stroke="{c}" opacity="0.25"/>')
-        s.append(f'<g class="lanelabel" data-fam="{esc(name)}">')
+        s.append(f'<g class="lanelabel" tabindex="0" data-fam="{esc(name)}">')
+        # Native SVG tooltip: the exported .svg/.png/.pdf carry no script, so the
+        # family's claim and lineage have to travel inside the graphic itself.
+        # Stripped out of the HTML build below, where the styled #famtip replaces it.
+        tip = name + (" — " + claim[name] if claim[name] else "")
+        if lineage[name]:
+            tip += "\n\nLineage: " + lineage[name]
+        s.append(f'<title class="lanetitle">{esc(tip)}</title>')
         ly = top + 20
         for ln in wrap(name, 24):                       # wrap long theme names onto multiple lines
             s.append(f'<text x="10" y="{ly:.0f}" font-size="14" font-weight="bold" fill="{c}">{esc(ln)}</text>')
             ly += 15
         ly += 4
-        for ln in wrap(claim[name], 42):
+        # Stay inside this lane: whatever vertical room is left below the name,
+        # at the 12px line pitch, minus one line of breathing space.
+        budget = max(0, int((top + laneH - ly) / 12) - 1)
+        for ln in claim_lines(claim[name], 42, budget):
             s.append(f'<text x="10" y="{ly:.0f}" font-size="9.5" fill="{c}" opacity="0.85">{esc(ln)}</text>')
             ly += 12
         s.append('</g>')
@@ -425,11 +464,22 @@ def main():
                     f'href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;'
                     f'base64,{b64}">⬇ Download table (.xlsx)</a>')
 
+    # Everything the hover panel needs about a family, including the lineage that
+    # families.json has always carried and the figure never showed.
+    fam_n = Counter(p["family"] for p in papers.values())
+    faminfo = {name: {"key": famkey[name], "claim": claim[name],
+                      "lineage": lineage[name], "n": fam_n.get(name, 0)}
+               for name in order}
+
     # `<\/` so a "</script>" inside any apa can't terminate the inline <script>
     def js_json(o): return json.dumps(o).replace("</", "<\\/")
-    doc = HTML_SHELL.replace("__TITLE__", esc(args.title)).replace("__SVG__", svg)\
+    # The HTML gets the styled #famtip instead of the browser's native title
+    # tooltip; showing both would stack two descriptions on the same hover.
+    svg_html = re.sub(r'<title class="lanetitle">.*?</title>', "", svg, flags=re.S)
+    doc = HTML_SHELL.replace("__TITLE__", esc(args.title)).replace("__SVG__", svg_html)\
         .replace("__XLSXBTN__", xlsx_btn)\
-        .replace("__DATA__", js_json(data)).replace("__COLOR__", js_json(COLOR))
+        .replace("__DATA__", js_json(data)).replace("__COLOR__", js_json(COLOR))\
+        .replace("__FAMINFO__", js_json(faminfo))
 
     base = args.out_prefix
     with open(base + ".html", "w", encoding="utf-8") as f:
@@ -479,14 +529,26 @@ HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><titl
  #pos{font-size:11.5px;color:#777;margin-left:auto;}
  #scope{font-size:11.5px;color:#555;margin:8px 0 12px;}
  #scope label{cursor:pointer;}
+ .lanelabel{cursor:help;} .lanelabel:focus{outline:2px solid #1b6ca8;outline-offset:2px;}
+ #famtip{position:fixed;z-index:20;width:330px;max-width:46vw;background:#fff;color:#222;
+   border:1px solid #d5d5d5;border-left-width:4px;border-radius:6px;padding:12px 14px;
+   box-shadow:0 8px 28px rgba(0,0,0,.17);font-size:12.5px;line-height:1.45;pointer-events:none;}
+ #famtip[hidden]{display:none;}
+ #famtip .ft-name{font-weight:bold;font-size:14px;margin-bottom:1px;}
+ #famtip .ft-n{color:#888;font-size:11px;margin-bottom:8px;}
+ #famtip .ft-claim{color:#333;}
+ #famtip .ft-lab{margin-top:10px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#999;}
+ #famtip .ft-lin{color:#444;font-size:12px;margin-top:2px;}
 </style></head><body>
 <header>__XLSXBTN__<div class="sub">Hover a node for its reference; click it to pin the full entry here,
  then walk the timeline with Next/Prev or the \\u2190/\\u2192 arrow keys.
- Hover a family's name at left to spotlight its lineage.</div></header>
+ Hover a family's name at left for its claim and lineage, and to spotlight its papers.</div></header>
 <main><div id="figwrap">__SVG__</div>
 <aside id="panel"><div class="hint">Click any node to see its full reference here.</div></aside></main>
+<div id="famtip" hidden></div>
 <script>
-const DATA=__DATA__, FAMCOLOR=__COLOR__, panel=document.getElementById('panel');
+const DATA=__DATA__, FAMCOLOR=__COLOR__, FAMINFO=__FAMINFO__,
+ panel=document.getElementById('panel'), famtip=document.getElementById('famtip');
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>(
  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function resetPanel(){document.querySelectorAll('.node.sel').forEach(n=>n.classList.remove('sel'));
@@ -533,9 +595,24 @@ document.addEventListener('keydown',e=>{if(!CUR)return;
 document.querySelectorAll('.node').forEach(g=>{g.addEventListener('click',()=>show(g.dataset.key));
  g.addEventListener('focus',()=>show(g.dataset.key));
  g.addEventListener('keydown',e=>{if(e.key==='Enter')show(g.dataset.key);});});
+function showFam(f,el){const d=FAMINFO[f];if(!d)return;const c=FAMCOLOR[f]||'#222';
+ famtip.innerHTML='<div class="ft-name" style="color:'+esc(c)+'">'+esc(f)+'</div>'
+  +'<div class="ft-n">'+d.n+' paper'+(d.n===1?'':'s')+' in this family</div>'
+  +(d.claim?'<div class="ft-claim">'+esc(d.claim)+'</div>':'')
+  +(d.lineage?'<div class="ft-lab">Lineage</div><div class="ft-lin">'+esc(d.lineage)+'</div>':'');
+ famtip.style.borderLeftColor=c;famtip.hidden=false;
+ const r=el.getBoundingClientRect(),h=famtip.offsetHeight,w=famtip.offsetWidth;
+ let left=r.right+14;if(left+w>window.innerWidth-8)left=Math.max(8,r.left-w-14);
+ famtip.style.left=left+'px';
+ famtip.style.top=Math.max(8,Math.min(r.top,window.innerHeight-h-8))+'px';}
+function hideFam(){famtip.hidden=true;}
 document.querySelectorAll('.lanelabel').forEach(g=>{const f=g.dataset.fam;
- g.addEventListener('mouseenter',()=>document.querySelectorAll('.node').forEach(n=>{if(DATA[n.dataset.key].family!==f)n.classList.add('dim');}));
- g.addEventListener('mouseleave',()=>document.querySelectorAll('.node').forEach(n=>n.classList.remove('dim')));});
+ const on=()=>{showFam(f,g);
+  document.querySelectorAll('.node').forEach(n=>{if(DATA[n.dataset.key].family!==f)n.classList.add('dim');});};
+ const off=()=>{hideFam();document.querySelectorAll('.node').forEach(n=>n.classList.remove('dim'));};
+ g.addEventListener('mouseenter',on);g.addEventListener('focus',on);
+ g.addEventListener('mouseleave',off);g.addEventListener('blur',off);
+ g.addEventListener('keydown',e=>{if(e.key==='Escape'){off();g.blur();}});});
 </script></body></html>"""
 
 

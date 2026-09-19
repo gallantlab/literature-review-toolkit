@@ -195,6 +195,69 @@ check_true("ValueError is still not transient", not common.is_transient(ValueErr
 
 
 
+# ---- common.http: compressed transfers (added 2026-09-18) ------------------
+# CrossRef reference lists are large (a single work record can exceed 1 MB), and
+# an uncompressed chunked response is the shape that gets truncated in transit:
+# `IncompleteRead(1782210 bytes read, 399724 more expected)`. That surfaces as
+# http.client.HTTPException, so it is correctly classed transient and retried —
+# but it retries forever on the big records, which is what a large truncation
+# looks like from the outside. Asking for gzip cuts the payload ~5x and the
+# failures with it. Measured on the cortical-layers build: 117 of 537 rows failed
+# canon uncompressed, and an xref pass was running at ~19 papers per 7 minutes.
+import gzip as _gzip  # noqa: E402
+import zlib as _zlib  # noqa: E402
+
+check_true("http requests a compressed body",
+           "gzip" in common.HDRS.get("Accept-Encoding", ""))
+check("gzip body is decompressed",
+      common.decompress(_gzip.compress(b'{"ok":1}'), "gzip"), b'{"ok":1}')
+check("deflate body is decompressed",
+      common.decompress(_zlib.compress(b'{"ok":1}'), "deflate"), b'{"ok":1}')
+# An uncompressed response must pass through untouched — servers ignore the
+# header freely, and most of the toolkit's endpoints do.
+check("identity body is passed through",
+      common.decompress(b'{"ok":1}', ""), b'{"ok":1}')
+check("unknown encoding is passed through, not corrupted",
+      common.decompress(b'{"ok":1}', "br-unsupported"), b'{"ok":1}')
+# A server that lies about the encoding must not take the whole run down: better
+# to hand back the raw bytes and let the JSON parser complain than to raise here.
+check("a mislabeled body degrades to raw bytes",
+      common.decompress(b"not actually gzipped", "gzip"), b"not actually gzipped")
+
+def _raises(fn):
+    try:
+        fn()
+    except Exception:
+        return True
+    return False
+
+
+# ---- common.http: curl fallback (added 2026-09-18) -------------------------
+# Some CrossRef records fail INSTANTLY and deterministically under urllib
+# (`RemoteDisconnected`, 0.3s, same DOIs every time) while curl fetches the exact
+# same URL without trouble — an HTTP-stack/proxy interaction, not rate limiting
+# and not truncation. 71 of 536 reference-list fetches died this way on the
+# cortical-layers xref pass. When urllib has exhausted its retries, one curl
+# attempt recovers them. Exercised offline here through file://, which curl
+# supports, so the suite still needs no network.
+import subprocess as _sp  # noqa: E402
+import tempfile as _tf  # noqa: E402
+
+if _sp.run(["which", "curl"], capture_output=True).returncode == 0:
+    with _tf.NamedTemporaryFile("wb", suffix=".json", delete=False) as _fh:
+        _fh.write(b'{"message":"curl-fallback-ok"}')
+        _curlpath = _fh.name
+    check("curl_get fetches a body", common.curl_get("file://" + _curlpath, {}, 10),
+          b'{"message":"curl-fallback-ok"}')
+    check_true("curl_get raises, not returns, on a missing target",
+               _raises(lambda: common.curl_get("file:///nonexistent-litreview-test", {}, 10)))
+    os.unlink(_curlpath)
+# The fallback must be wired into http(), not merely defined beside it.
+with open(os.path.join(os.path.dirname(common.__file__), "common.py"), encoding="utf-8") as _csrc:
+    _CSRC = _csrc.read()
+check_true("http() falls back to curl after exhausting retries",
+           "curl_get" in _CSRC.split("def http(")[1].split("def http_json")[0])
+
 # ---- audit gate -----------------------------------------------------------
 def defects(apa, has_source=True):
     return references.audit(apa, has_source)[0]
@@ -203,6 +266,25 @@ def defects(apa, has_source=True):
 def notes(apa, has_source=True):
     return references.audit(apa, has_source)[1]
 
+
+# "et al." is a DEFECT in an author list and a legitimate word in a TITLE. Nature
+# journals title their Matters Arising replies "<Author> et al. reply", so the
+# whole-string check condemned a correctly canonicalized reference and no edit
+# could satisfy the gate without falsifying the published title. Found on
+# Nat Neurosci 29(2), 284-286 in the cortical-layers corpus, 2026-09-18.
+_ETAL_TITLE = ("Major, A. J., Abdaltawab, A., & Mendoza-Halliday, D. (2026). "
+               "A. J. Major et al. reply. Nature Neuroscience, 29(2), 284-286.")
+check_true("et al. inside a TITLE is not a defect",
+           "et-al (should list all authors)" not in defects(_ETAL_TITLE),
+           str(defects(_ETAL_TITLE)))
+# ...but an abbreviated AUTHOR list is still the defect it always was.
+_ETAL_AUTHORS = "Hubel, D. H., et al. (1977). Functional architecture. Phil Trans, 198, 1-59."
+check_true("et al. in the AUTHOR list is still a defect",
+           "et-al (should list all authors)" in defects(_ETAL_AUTHORS))
+# A reference the APA grammar cannot parse has no author segment to inspect, so
+# the check must fall back to the whole string rather than silently passing.
+check_true("et al. still caught when the reference will not parse",
+           "et-al (should list all authors)" in defects("Hubel et al. Functional architecture."))
 
 check_true("clean reference passes",
            defects("Biswal, B. (1995). Functional connectivity. MRM, 34(4), 537-541.") == [],
@@ -451,6 +533,55 @@ with open(os.path.join(os.path.dirname(families_figure.__file__), "families_figu
           encoding="utf-8") as _ffsrc:
     check_true("nodes still carry a hover tooltip",
                _ffsrc.read().count('<title>{esc(p["apa"])}</title>') >= 2)
+
+with open(os.path.join(os.path.dirname(families_figure.__file__), "families_figure.py"),
+          encoding="utf-8") as _ffe:
+    _FFSRC_EARLY = _ffe.read()
+# --- families_figure: family definitions on hover (added 2026-09-18) ---------
+# The families carry a `claim` and a `lineage` in families.json, and the figure
+# drew only a truncated claim beside the lane name — the lineage, which is the
+# whole point of a lineage figure, was carried in the data and never shown. A
+# reader could not find out what a family MEANT without opening families.md.
+# Hovering (or focusing) the lane title now reveals both.
+check_true("figure ships a family hover tooltip", 'id="famtip"' in _SHELL)
+check_true("figure hover carries claim AND lineage",
+           "FAMINFO" in _SHELL and ".claim" in _SHELL and ".lineage" in _SHELL)
+check_true("family tooltip is injected with the rest of the data", "__FAMINFO__" in _SHELL)
+# Keyboard parity: a hover-only affordance is unreachable without a mouse, and
+# the lane titles are the figure's primary legend.
+check_true("lane titles are focusable",
+           'class="lanelabel" tabindex="0"' in _FFSRC_EARLY)
+# The family tooltip must not overwrite a PINNED reference in the side panel —
+# the reader passes the lane titles on the way to anything else, and losing the
+# pinned entry is the same defect the node-hover guard above forbids.
+check_true("family hover does not clobber the pinned panel",
+           not re.search(r"lanelabel[\s\S]{0,400}?panel\.innerHTML", _SHELL))
+with open(os.path.join(os.path.dirname(families_figure.__file__), "families_figure.py"),
+          encoding="utf-8") as _ffsrc:
+    _FFSRC = _ffsrc.read()
+# The standalone .svg/.png/.pdf have no JavaScript, so the lane group carries a
+# native <title> too: the exported figure must describe its own families.
+check_true("lane label carries a native SVG title", "lanetitle" in _FFSRC)
+check_true("figure reads lineage out of the family spec", '.get("lineage"' in _FFSRC)
+
+# --- families_figure: the drawn claim must stay inside its lane (2026-09-18) --
+# The lane label draws the family's claim under its name at 12px line pitch, with
+# no bound on how many lines that is. A long claim (this toolkit's own family
+# specs run 300-500 characters) overflowed into the NEXT family's title and drew
+# on top of it. Now that the full claim is one hover away, the drawn copy is
+# clamped to the space the lane actually has and ellipsized.
+check_true("the drawn claim is clamped to the lane height", "claim_lines" in _FFSRC_EARLY)
+check("claim_lines keeps a short claim whole",
+      families_figure.claim_lines("Short enough to fit.", 42, 10),
+      ["Short enough to fit."])
+_long = ("Before any laminar difference can be measured the layer has to be made into a "
+         "well-defined measurable object, and these papers are about knowing which layer "
+         "you are in across every method the corpus uses.")
+_cl = families_figure.claim_lines(_long, 42, 3)
+check_true("claim_lines never exceeds the line budget", len(_cl) <= 3, str(len(_cl)))
+check_true("a truncated claim says so", _cl[-1].endswith("\u2026"), repr(_cl[-1]))
+# A budget of zero must yield nothing rather than raising or drawing one line.
+check("a zero budget draws no claim", families_figure.claim_lines(_long, 42, 0), [])
 
 check_true("every tool module is indexed", {"verify.py", "references.py", "families_figure.py"} <= set(_ENT))
 check("phase comes from the module's PHASE constant", _ENT["references.py"]["phase"], "3f")

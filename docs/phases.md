@@ -212,7 +212,17 @@ you approve or edit the *definitions* before it labels every paper. Then
 `families_figure.py` renders an **interactive HTML** lineage figure (plus
 SVG/PNG/PDF): families as horizontal lanes on a citation-weighted timeline, with
 **landmark dots auto-selected** by citation count, within-corpus citation
-in-degree, and lab authorship — no hand-built label map.
+in-degree, and lab authorship — no hand-built label map. Hovering or focusing a
+family's lane title opens a panel with that family's **claim, its full lineage and
+its paper count**, while its papers are spotlighted in the plot.
+
+!!! tip "The family definitions travel with the figure"
+    A reader opens the figure, not `families.md`. The `claim` and `lineage` you
+    write into the family spec are surfaced on the lane title — in the HTML as a
+    styled panel, and in the exported `.svg`/`.png`/`.pdf` as a native SVG
+    `<title>`, since no script runs there. Write them as if they are the only
+    description the reader will ever see, because they usually are. (Before
+    2026-09-18 the figure drew only a truncated claim and never showed the lineage.)
 
 !!! note "Home-lab favoring is off by default"
     The lab-authorship criterion — starring your own group's papers as

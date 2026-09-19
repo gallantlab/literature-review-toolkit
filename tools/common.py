@@ -10,11 +10,15 @@ reads+writes UTF-8 (ensure_ascii=False) through a context manager.
 Tools are run as `python3 tools/<tool>.py`, so `tools/` is on sys.path[0] and a
 plain `import common` resolves.
 """
+import gzip
 import http.client
 import json
 import re
+import shutil
 import socket
+import subprocess
 import time
+import zlib
 import urllib.error
 import urllib.request
 
@@ -33,7 +37,12 @@ MARKUP = re.compile(r"</?[A-Za-z][A-Za-z0-9:._-]*(?:\s[^>]*)?/?>")
 # are deliberately left alone: en/em dashes are legitimate in titles and page ranges.
 UNI_HYPHEN = str.maketrans({"‐": "-", "‑": "-"})
 
-HDRS = {"User-Agent": "litreview-toolkit/1.0"}
+# Ask for a compressed body. CrossRef work records carry full reference lists
+# and run to megabytes; an uncompressed chunked response of that size is the
+# one that arrives truncated (`IncompleteRead(... more expected)`), which is
+# transient-by-class and so retries until the run stalls. gzip cuts the
+# payload several-fold and the truncations with it.
+HDRS = {"User-Agent": "litreview-toolkit/1.0", "Accept-Encoding": "gzip, deflate"}
 
 # HTTP statuses that mean "try again later", not "does not exist". ONE set, used
 # by http()'s backoff and by verify.py's ERROR-vs-NOT-FOUND split, so a 502 from
@@ -52,22 +61,86 @@ def set_user_agent(email):
 
 
 # ---- network --------------------------------------------------------------
+def decompress(body, encoding):
+    """Undo Content-Encoding. urllib does NOT do this for you — asking for gzip
+    without decoding the reply yields binary garbage, so the two belong together.
+
+    An unknown encoding, or a body that does not actually match the encoding the
+    server declared, is passed through unchanged rather than raised on: the
+    caller's json.loads gives a far more useful error than a decompression
+    traceback five frames down, and a lying server should not take a 500-row run
+    with it."""
+    enc = (encoding or "").strip().lower()
+    try:
+        if enc == "gzip":
+            return gzip.decompress(body)
+        if enc == "deflate":
+            try:
+                return zlib.decompress(body)
+            except zlib.error:            # raw deflate, no zlib wrapper
+                return zlib.decompress(body, -zlib.MAX_WBITS)
+    except (OSError, zlib.error, EOFError):
+        return body
+    return body
+
+
+def curl_get(url, headers, timeout):
+    """GET via the curl binary. Bytes on success; raises on any failure.
+
+    A fallback, not a preference. Some hosts close the connection on urllib
+    instantly and deterministically for particular URLs while curl fetches the
+    same URL without trouble — an HTTP-stack/proxy interaction, distinct from
+    rate limiting (random) and from truncation (same byte count each time). On
+    one xref pass 71 of 536 reference-list fetches failed this way and every one
+    of them succeeded through curl. `--compressed` matters here for the same
+    reason the Accept-Encoding header does above."""
+    exe = shutil.which("curl")
+    if not exe:
+        raise RuntimeError("curl not available for fallback")
+    cmd = [exe, "-sS", "--compressed", "--fail", "--max-time", str(int(timeout))]
+    for k, v in (headers or {}).items():
+        if k.lower() == "accept-encoding":
+            continue                      # --compressed sets and decodes it
+        cmd += ["-H", f"{k}: {v}"]
+    cmd.append(url)
+    p = subprocess.run(cmd, capture_output=True, timeout=timeout + 10)
+    if p.returncode != 0:
+        raise OSError(f"curl exit {p.returncode}: {p.stderr.decode('utf-8', 'replace')[:120]}")
+    return p.stdout
+
+
 def http(url, retries=5, timeout=30, data=None, headers=None):
     """GET (or POST if `data` given) with exponential backoff on rate-limits
     (429/503) and timeouts, so a throttled fetch retries instead of failing
-    hard. Returns raw bytes; raises on exhaustion."""
+    hard. Requests a gzip/deflate body and decodes it. Returns raw bytes;
+    raises on exhaustion."""
     hdrs = headers or HDRS
+    tried_curl = False
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, data=data, headers=hdrs)
             with urllib.request.urlopen(req, timeout=timeout) as r:
-                return r.read()
+                return decompress(r.read(), r.headers.get("Content-Encoding", ""))
         except urllib.error.HTTPError as e:
             if e.code in TRANSIENT_HTTP and attempt < retries - 1:
                 time.sleep(3 * 2 ** attempt)          # 3, 6, 12, 24s
                 continue
             raise
         except TRANSIENT_NETWORK:
+            # Try curl at the FIRST network failure, before any backoff. A
+            # connection the host closes on us is usually a stack/proxy
+            # incompatibility rather than load, and urllib will reproduce it
+            # exactly however long we wait — so sleeping 2+4+8+16s first only
+            # makes a recoverable fetch slow. curl gets these on the first try.
+            # GETs only: a POST body is not worth re-sending through a second
+            # stack. If curl fails too, fall into the normal backoff, which is
+            # the right response to genuine load.
+            if data is None and not tried_curl:
+                tried_curl = True
+                try:
+                    return curl_get(url, hdrs, timeout)
+                except Exception:
+                    pass
             if attempt < retries - 1:
                 time.sleep(2 * 2 ** attempt)          # 2, 4, 8, 16s
                 continue

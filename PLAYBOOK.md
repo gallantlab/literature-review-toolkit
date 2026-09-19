@@ -291,7 +291,7 @@ initials and nobiliary particles (`de Heer`, `Dupré la Tour`), fixed name casin
 (`ANDERSON`→`Anderson`, `zhang`→`Zhang`), HTML-unescaped + sentence-cased
 all-caps titles, and a real venue — including preprint servers CrossRef leaves
 bare (`bioRxiv`, `PsyArXiv`, `arXiv`). The `--audit` gate fails the build on any
-defect (missing author/year, `et al.`, HTML entity, `U+FFFD` replacement-char
+defect (missing author/year, `et al.` **in the author list**, HTML entity, `U+FFFD` replacement-char
 mojibake, truncated/empty venue, uppercase title, **JATS/HTML markup left in a
 title** (`<scp>`, `<i>`), **a `?.` or `!.` double terminal punctuation**, **a
 U+2010/U+2011 Unicode hyphen in a name**, **a `?` standing in for a quote or dash
@@ -397,7 +397,8 @@ Phase 5b has populated them.)
   added refs (e.g. `M1`-`M40` for first multimodal batch, `M41`-`M70` for xref
   batch). Keep numbering monotonically increasing across batches.
 - `APA reference`: the canonical `apa` from Phase 3f — full author list (APA-7:
-  up to 20; 19 + ellipsis + last beyond that). Never `et al.`; the audit gate
+  up to 20; 19 + ellipsis + last beyond that). Never `et al.` in the author list;
+  the audit gate
   fails on it.
 - `Link`: DOI URL in `https://doi.org/<doi>` form — verified to resolve.
   PubMed/PMC URLs are NOT used as the primary link. If a paper has only a
@@ -536,9 +537,27 @@ python3 tools/families_figure.py --rows rows.json --families families.json \
 
 It writes a self-contained `.html` (family lanes with their defining sentences,
 every paper as a dot beeswarm-packed by year, landmark studies as big labeled dots;
-hover any node for its full reference, click for citation + DOI, hover a family name
-to spotlight its lineage) plus a standalone `.svg` and — if `rsvg-convert`/`inkscape`
+hover any node for its full reference, click for citation + DOI, **hover or focus a
+family's NAME for a panel giving that family's claim and its full lineage** while its
+papers are spotlighted) plus a standalone `.svg` and — if `rsvg-convert`/`inkscape`
 is present — `.png` + `.pdf` for slides/papers. This replaces the old static figure.
+
+**Write the family `claim` as prose and let the figure clamp it.** The lane label
+draws the claim under the family name, and until 2026-09-18 nothing bounded how many
+lines that was — a claim of a few hundred characters ran straight through the NEXT
+family's title and drew on top of it. Since the full claim is now one hover away,
+the drawn copy is clamped to the room the lane actually has and ellipsized
+(`claim_lines()`). So write the claim for the reader who hovers, not for the
+40-character column: the figure will show as much as fits and no more.
+
+**The family definitions must be readable FROM the figure.** `families.json` has always
+carried each family's `claim` and `lineage`, but until 2026-09-18 the figure drew only a
+truncated claim beside the lane name and never showed the lineage at all — so the one
+artifact a reader actually opens could not tell them what a family *meant*, and they had to
+go find `families.md`. Hovering or focusing a lane title now opens a panel with the claim,
+the lineage and the family's paper count. The exported `.svg`/`.png`/`.pdf` carry the same
+text in a native SVG `<title>`, because no JavaScript runs there. Nothing to configure —
+write a good `claim` and `lineage` into the family spec and the figure surfaces them.
 
 **Landmark labeling is AUTOMATIC — do not hand-build a labels overlay.** A paper is
 labeled as a landmark (big dot) if ANY of: (1) it is among the **most-cited in its
@@ -858,6 +877,30 @@ fires rarely and correctly beats a broad one the reader learns to ignore. Note t
 Seyfarth's `10.1159/000114363` carries no year at all, so no DOI-based check can
 catch it — that one is caught by `verify.py` comparing the claimed year to CrossRef.
 
+### Three network failures that look alike and are not (2026-09-18)
+
+A run that will not finish is almost always one of these. They are distinguished by
+*timing and determinism*, not by the exception type — all three arrive as
+`http.client.HTTPException` and so are all correctly classed transient.
+
+| Symptom | What it is | Fix |
+|---|---|---|
+| Random requests fail, succeed on retry | genuine rate limiting | backoff (already there); raise `--sleep` |
+| The **same** records fail at the **same byte count**, small ones fine | response truncation of a large uncompressed body | `Accept-Encoding: gzip` + `common.decompress` |
+| The **same** records fail **instantly** (~0.3s) every time, curl fetches them fine | HTTP-stack / proxy incompatibility | `common.curl_get` fallback |
+
+Only the first is fixed by waiting. The other two are deterministic, and a retry
+loop against them is an infinite loop that reports as slowness. On the
+cortical-layers build all three appeared: 117 canon rows lost to truncation, then 71
+of 536 xref reference-list fetches lost to the stack issue. `common.http` now tries
+`curl` at the **first** network failure rather than after the full 2+4+8+16s backoff
+— for the affected records that is 0.7s instead of 32s, and for genuine load nothing
+changes because curl fails too and the backoff still runs.
+
+**The diagnostic to reach for first:** re-fetch one failing URL with
+`curl -sS --compressed`. If curl succeeds where the tool failed, it is not the
+server and no amount of `--sleep` will help.
+
 ### On the search agent
 - **Always verify.** ~25% of agent-returned citations have errors. Wrong
   first authors are the most common; the agent confuses similar-titled
@@ -898,6 +941,83 @@ catch it — that one is caught by `verify.py` comparing the claimed year to Cro
   names, and hyphen parts; keep a small proper-noun allowlist; eyeball every
   changed title, e.g. a product name like `Matrix-Game`). This is a post-canon
   hand-fix like the mojibake and compound-surname fixes below.
+
+### Make the agent verify its own citations — it drives fabrication to ~zero (2026-09-18)
+
+The ~25% fabrication rate quoted throughout this playbook is what you get when the
+brief asks for papers. Put an explicit **verification duty** section in every lane
+brief and the rate collapses: on the 541-ref cortical-layers build, Phase 3 returned
+**535 OK / 2 / 0 NOT-FOUND**, and both exceptions were missing diacritics in a name
+the agent typed (`Hertag` for `Hertäg`), which canon then restored. Not one
+fabricated reference in fourteen lanes.
+
+The section that did it, in every brief, roughly:
+
+1. Visit the actual landing page for every paper; read the author list **off the
+   page**, never reconstruct it from memory.
+2. Confirm first author and year on that page before writing the row.
+3. Confirm the DOI **resolves to the paper you think it is** — not merely that it
+   resolves. (This caught a real one: the DOI in circulation for Nandy et al. 2017
+   resolves to a different Neuron paper.)
+4. Read the abstract before writing the summary; do not invert the finding.
+5. Do not judge a DOI by the shape of its string.
+6. If you cannot confirm a paper, leave it out and list it under "Could not confirm".
+
+Phase 3 still runs — it is the gate, not a formality, and it is what proves the
+above happened. But it now confirms good work instead of finding a quarter of the
+corpus rotten. Agents also report *what* they could not confirm, which is where the
+useful findings come from (a misattributed classic, a wrong stored DOI, a title that
+does not exist).
+
+### Seed lane briefs with titles, and expect a third of them to be wrong (2026-09-18)
+
+The standing rule is **seed with titles only, never remembered author names** —
+author-name seeding injected fabricated attributions into three builds. That rule
+holds. But titles recalled from memory are themselves unreliable: on the
+cortical-layers build **roughly forty of ~170 seeded titles did not exist** under
+that or any close wording ("Laminar analysis of ocular dominance plasticity",
+"Cortical microcircuitry of attention", "The draining vein problem in laminar fMRI"
+— all plausible, none real).
+
+This cost little because the briefs labeled the seeds honestly ("These are paper
+TITLES ONLY, from memory, and some may be slightly wrong... if one turns out not to
+exist under any similar title, drop it and say so"), and every agent substituted the
+real nearest work and reported the substitution. **Keep that framing** — a seed list
+presented as fact would have sent fourteen agents hunting ghosts. Better still,
+where a real source exists (a sibling corpus, a review's reference list), seed from
+it instead of from memory.
+
+### The shared WebSearch budget runs out early on a wide fan-out (2026-09-18)
+
+The session's WebSearch quota (200 calls) is shared across all subagents. With 14
+lanes it was exhausted after about two of them, and the remaining twelve completed
+discovery through the Europe PMC, PubMed E-utilities, CrossRef, bioRxiv and arXiv
+REST APIs instead. That was **not** a degradation — dated, field-restricted API
+sweeps are more systematic than keyword search, and verification against those same
+records is what the machine check uses anyway. The one real weakness is finding work
+that does not put the topic's vocabulary in its title.
+
+So: do not treat "WebSearch exhausted" as a reason to re-run a lane. Tell the briefs
+up front that the API path is a first-class route, and if a lane comes back thin,
+**resume it via SendMessage** (transcript intact) rather than re-spawning — a
+re-spawn discards everything it had already verified.
+
+### Family claims and lineages are content, and need the same discipline as citations (2026-09-18)
+
+Since the figure now surfaces each family's `claim` and `lineage` on hover, those
+strings are read by the reader, not just by the agent doing the assignment — and a
+lineage composed from memory can be wrong in exactly the way a citation can. On the
+cortical-layers build the `contingency` lineage named Senzai et al. 2019, whose
+actual contribution (reproducible laminar landmarks from spike power and sink-source
+distributions) puts it squarely in `boundary`. An assignment agent flagged the
+conflict, correctly deferred to the frozen spec, and the error propagated until the
+flag was read.
+
+Two rules follow. **Compose lineages from rows that are already in the corpus** —
+grep `rows.json` after canon and use the canonical lead surname and year, rather
+than recalling a chain. And **read the assignment agents' `hard_calls`**: they are
+the only place a wrong family definition shows up, because the agents are instructed
+not to argue with the spec.
 
 ### On contextualizing a lab review (lab mode L4c)
 - **The outward search is a FULL topic-mode review, not a "context" add-on.**
@@ -955,6 +1075,15 @@ be an HTML challenge page).
   the spreadsheet/figure — fixing it earlier just gets it overwritten on the next
   canon, and you loop on the gate. Real cases: `Bürgel`, `Zeitschrift für
   Anatomie`.
+- **A defect check that reads the whole reference string will condemn a legitimate
+  title.** The gate forbade `et al.` anywhere in the `apa`, which is right for an
+  author list and wrong for a title: Nature titles its Matters Arising replies
+  "<Author> et al. reply", so a correctly canonicalized Nat Neurosci reply could not
+  pass the gate without falsifying its own published title. The check now inspects
+  only `parse_apa`'s author segment, falling back to the whole string when the
+  reference will not parse (a malformed reference is exactly where an abbreviated
+  author list hides). Generalize the rule, not the example: before adding a
+  whole-string check, ask which APA segment the defect actually lives in.
 - **CrossRef mis-splits compound / particle surnames** (`Lambon Ralph` →
   `Ralph, M. A. L.`; `de Heer` → `Heer, W. A. D.`). The shared formatter handles
   the common particles, but novel ones slip through and re-canon reintroduces the
@@ -1022,6 +1151,28 @@ be an HTML challenge page).
   successive years of the same challenge), so every pair needs a human verdict.
   Keep the version of record, drop the preprint, and re-check any in-text citation
   whose YEAR moves as a result (a preprint→journal promotion can shift 2025 → 2026).
+
+### Always ask for a compressed body (2026-09-18)
+
+`common.HDRS` now sends `Accept-Encoding: gzip, deflate` and `common.http` decodes the
+reply (`common.decompress`). urllib does **not** decompress for you, so the two must
+land together — requesting gzip without decoding returns binary garbage.
+
+Why it matters: a CrossRef work record carries its whole reference list and can exceed
+a megabyte. Uncompressed, those large responses arrive truncated —
+`IncompleteRead(1782210 bytes read, 399724 more expected)` — which is an
+`http.client.HTTPException` and therefore correctly classed **transient**, so the tools
+retry it. The failure mode is not an error message; it is a run that never finishes.
+On the 541-row cortical-layers build, uncompressed: **117 of 537 rows failed canon**
+and needed three splice passes, and `xref.py` was managing ~19 papers per 7 minutes
+(a ~3-hour projection). Compressed, the same records fetch in 0.3 s each.
+
+The tell is a burst of `RemoteDisconnected` / `IncompleteRead` against *particular*
+DOIs that fail identically every time, at the same byte count, while small records
+sail through. That is not throttling and no amount of `--sleep` fixes it — a retry
+loop on a truncating transfer just truncates again. `decompress()` passes an unknown
+or mislabeled encoding straight through rather than raising, so a server that lies
+about Content-Encoding degrades to a JSON parse error instead of killing the run.
 
 ### On cross-citation analysis
 - CrossRef coverage varies by publisher. Nature, Cell, OUP, JNeurosci have

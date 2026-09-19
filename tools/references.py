@@ -159,7 +159,12 @@ def audit(apa, has_source):
         defects.append("no-year")
     if apa.startswith("Anon.") or (parts and not parts["authors"]):
         defects.append("no-authors")
-    if " et al" in apa:
+    # "et al." is a defect in an AUTHOR LIST and an ordinary word in a TITLE:
+    # Nature titles its Matters Arising replies "<Author> et al. reply". So look
+    # only at the author segment, falling back to the whole string when the APA
+    # grammar cannot parse the reference (no author segment to narrow to, and a
+    # malformed reference is exactly where an abbreviated list hides).
+    if " et al" in (parts["authors"] if parts else apa):
         defects.append("et-al (should list all authors)")
     if "&amp;" in apa or "&#x" in apa or "&lt;" in apa or "&gt;" in apa:
         defects.append("html-entity")
