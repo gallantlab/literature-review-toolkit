@@ -583,6 +583,24 @@ check_true("a truncated claim says so", _cl[-1].endswith("\u2026"), repr(_cl[-1]
 # A budget of zero must yield nothing rather than raising or drawing one line.
 check("a zero budget draws no claim", families_figure.claim_lines(_long, 42, 0), [])
 
+# --- families_figure: label placement never gives up blindly (2026-09-19) -----
+# Placement tries 12 vertical tiers and, if every one is taken, used to fall back
+# to TIERS[-1] unconditionally — registering a box that overlaps a label already
+# placed. On cognitive_map_representation that put "Tolman 1948" on top of
+# "O'Keefe 1971": two early, heavily-cited papers crowded at the compressed left
+# end of a warped axis. The fallback now picks the LEAST-overlapping tier, so a
+# crowded lane degrades to the best available slot instead of an arbitrary one.
+check("no overlap between disjoint boxes",
+      families_figure._overlap_area((0, 10, 0, 10), (20, 30, 0, 10)), 0.0)
+check("touching edges do not count as overlap",
+      families_figure._overlap_area((0, 10, 0, 10), (10, 20, 0, 10)), 0.0)
+check("overlap area is width times height",
+      families_figure._overlap_area((0, 10, 0, 10), (5, 25, 5, 8)), 15.0)
+check("full containment is the inner area",
+      families_figure._overlap_area((0, 10, 0, 10), (2, 4, 2, 7)), 10.0)
+check_true("placement falls back to the least-overlapping tier, not the last one",
+           "TIERS[-1]" not in _FFSRC_EARLY and "best_pen" in _FFSRC_EARLY)
+
 check_true("every tool module is indexed", {"verify.py", "references.py", "families_figure.py"} <= set(_ENT))
 check("phase comes from the module's PHASE constant", _ENT["references.py"]["phase"], "3f")
 check_true("flags come from argparse", "--audit" in _ENT["references.py"]["flags"])

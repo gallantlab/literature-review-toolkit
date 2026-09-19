@@ -113,6 +113,17 @@ def _boxes_overlap(a, b):
     return not (a[1] < b[0] or a[0] > b[1] or a[3] < b[2] or a[2] > b[3])
 
 
+def _overlap_area(a, b):
+    """Intersection area of two (x0, x1, y0, y1) boxes; 0.0 if they miss.
+
+    Used to rank tiers when EVERY candidate slot for a label is already taken:
+    the placement then degrades to the least-bad slot rather than an arbitrary
+    one. Touching edges count as no overlap, matching _boxes_overlap."""
+    dx = min(a[1], b[1]) - max(a[0], b[0])
+    dy = min(a[3], b[3]) - max(a[2], b[2])
+    return float(dx * dy) if dx > 0 and dy > 0 else 0.0
+
+
 def _box_hits_dot(box, dx, dy, margin=11):
     """True if a dot at (dx, dy) falls within `margin` of the label box."""
     return box[0] - margin <= dx <= box[1] + margin and box[2] - margin <= dy <= box[3] + margin
@@ -334,17 +345,22 @@ def main():
                       key=lambda t: t[1][0])
         for ref, (x, dy) in lane:
             w = len(labeled[ref]) * 6.2 + 8
-            pick = TIERS[-1]
+            # Track the least-bad tier as we go: in a crowded lane every slot can
+            # be taken, and falling back to a fixed tier drops the label on top of
+            # one already placed. Rank the misses by overlap area instead.
+            pick, best_pen = None, None
             for o in TIERS:
                 ly = dy + o
                 box = (x - w / 2, x + w / 2, ly - 8, ly + 6)
-                if any(_boxes_overlap(box, b) for b in placed_lbl):
-                    continue
-                if any(not (abs(bx - x) < 0.5 and abs(by - dy) < 0.5)  # ignore own dot
-                       and _box_hits_dot(box, bx, by) for bx, by in big_dots):
-                    continue
-                pick = o
-                break
+                pen = sum(_overlap_area(box, b) for b in placed_lbl)
+                pen += sum(60.0 for bx, by in big_dots
+                           if not (abs(bx - x) < 0.5 and abs(by - dy) < 0.5)
+                           and _box_hits_dot(box, bx, by))
+                if pen == 0:
+                    pick = o
+                    break
+                if best_pen is None or pen < best_pen:
+                    pick, best_pen = o, pen
             loff[ref] = pick
             ly = dy + pick
             placed_lbl.append((x - w / 2, x + w / 2, ly - 8, ly + 6))

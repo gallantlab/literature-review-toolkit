@@ -571,6 +571,18 @@ lab's own work stands out. Total labels are capped at `--max-labels` (default 28
 survives the cap is the home-lab papers plus the top-2 most-cited per family, with the
 rest of the budget filled by within-review in-degree.
 
+**Raising a cap must never REMOVE a label that was already shown.** The obvious fix
+for a capped figure — raise `--motif-min` until the qualified set is small enough to
+label in full — can silently drop papers the capped figure was already showing,
+because a higher threshold shrinks the *qualified pool*, not just the cap. On
+structure_representation, going to `--motif-min 10` lost Smolensky 1990, Schuck 2016
+and Liu 2019 (in-degree 8-9): the old cap had been selecting them by in-degree from a
+much larger pool, and the new threshold put them outside it. Tune by measuring the
+before/after label sets, not by reasoning about the numbers: pick the highest
+`--motif-min` at which the diff shows **zero removals**, then set `--max-labels`
+above the resulting qualified count so the cap never binds. Six figures were retuned
+this way on 2026-09-19 (+72 landmarks, 0 lost).
+
 **`--motif-min` does not scale with corpus size, so watch the drop count.** The default
 of 3 is tuned for a ~50-paper review. On a 396-paper corpus whose papers cite each other
 heavily, 175 papers cleared it and the cap silently discarded 147 of them — a figure
