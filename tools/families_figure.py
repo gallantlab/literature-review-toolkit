@@ -628,7 +628,7 @@ def main():
     for j, ln in enumerate(wrap(subtitle, 150)[:2]):
         s.append(f'<text x="10" y="{56+j*18}" font-size="12.5" fill="#555">{esc(ln)}</text>')
     if size_mode:
-        s.append(f'<g id="sizelegend">'
+        s.append('<g id="sizelegend">'
                  + size_legend(lambda c: _scale(c), [_cites(p) for p in papers.values()],
                                W - PADR, PADT - 30, R_MAX,
                                sum(1 for p in papers.values() if _cites(p) < 0))

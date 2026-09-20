@@ -18,9 +18,9 @@ import shutil
 import socket
 import subprocess
 import time
-import zlib
 import urllib.error
 import urllib.request
+import zlib
 
 ARXIV_DOI = re.compile(r"10\.48550/arxiv\.(.+)$", re.I)
 ATOM = "{http://www.w3.org/2005/Atom}"
