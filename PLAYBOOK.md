@@ -53,8 +53,8 @@ There is a public documentation website built from `docs/` (MkDocs + Material),
 live at **https://gallantlab.org/literature-review-toolkit/**. It is a *superset*
 of this PLAYBOOK and the README, not a fork. **When you change the toolkit — a
 tool, a phase, a command/flag, a guardrail or lesson — update the matching page
-under `docs/` in the same change** (fastest to drift: `docs/phases.md`,
-`docs/pipeline.md`). The tool index in `docs/tools.md`, `tools/README.md` and
+under `docs/` in the same change** (fastest to drift: `docs/manual.md`, which
+carries every phase command, guardrail and flag). The tool index in `docs/tools.md`, `tools/README.md` and
 this file is **generated** — run `python3 tools/gen_docs.py` after adding a tool
 or a flag; `.github/workflows/tests.yml` fails on a stale copy, and also runs
 `ruff check .` and `tools/tests/test_formatting.py`. The site auto-deploys via
@@ -904,7 +904,7 @@ in `tools/tests/test_formatting.py`:
 
 ### A publisher back-file deposit re-dates an old paper (2026-08-29)
 
-Digitized back catalogues are deposited with the **digitization year** as the issued
+Digitized back catalogs are deposited with the **digitization year** as the issued
 date while the true year survives in the DOI string. Three cases in one corpus:
 Seyfarth & Zottoli 1991 deposited as 2008, Lorenz 1943 and Schleidt 1962 both
 deposited as 2010 (`10.1111/j.1439-0310.1943.tb00655.x` — the year is right there in
@@ -1087,7 +1087,7 @@ count is partly an AGE variable, so the right-hand edge of any timeline goes sma
 
 The figure's Next/Prev walk sorted on `(year, reference string)`. The reference
 string has nothing to do with where the beeswarm put the dot, and the beeswarm fans
-a year's papers out from the lane centre as 0, +d, -d, +2d, -2d — so the highlight
+a year's papers out from the lane center as 0, +d, -d, +2d, -2d — so the highlight
 hopped up and down the column and the walk read as random. 137 backward steps inside
 a year-column on a 555-paper corpus. Every paper of one year shares an x, so a year
 IS a vertical column: tie-break on the dot's own drawn y and the walk sweeps it.
@@ -1111,6 +1111,28 @@ delivered file, so the whole safety net was reading noise. Sort keys are now
 If a harness's guarantee is "re-rendering changes nothing", prove that by rendering
 TWICE with unchanged code first. Any diff there is a bug in the renderer, not a
 change in the data.
+
+### A highlight ring must never be the color of the thing it rings (2026-09-20)
+
+The home-lab ring marked a paper by outlining its dot in gold, `#d4a017`. That is
+also `PALETTE[4]` — the FIFTH family's lane color. So on any figure with five or
+more families, a home-lab paper in family 5 got a gold ring on a gold dot and the
+highlight silently did nothing. Live in `gallant_lab_in_context` (6 families, 2
+lab papers in family 5) and latent in four more corpora.
+
+The ring color is now `--lab-color`, and it is resolved against the lane colors
+actually in use: an unset default that collides moves itself out of the way and
+says which color it took, an explicitly chosen one is honored but warned about.
+The starred label's ink is *derived* from the ring color rather than being a
+second hardcoded constant (`#9a7400`), so one parameter controls both.
+
+Two general rules. **A marker drawn on top of colored data must be checked against
+that data's palette, not chosen in isolation** — the collision is invisible in
+every figure where no marked item happens to land in the clashing lane, which is
+why this survived every visual review. And when asked to "make X a parameter",
+**check whether it already is**: *which* lab gets starred had been
+`--lab-author` / `LITREVIEW_LAB_AUTHOR` all along, off by default and lab-neutral.
+The real gap was one layer down, in the appearance.
 
 ### On contextualizing a lab review (lab mode L4c)
 - **The outward search is a FULL topic-mode review, not a "context" add-on.**
@@ -1344,7 +1366,7 @@ it is stale); the per-tool detail is in `tools/README.md` and `docs/tools.md`.
 | `citations.py` | 5b | Fetch citation counts for a bibliography from OpenAlex + Semantic Scholar. | `--asof` `--email` `--key` `--out` `--rows` `--sources` |
 | `xref.py` | 6 | Build a cross-citation index from a list of papers. | `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--rows` `--sleep` |
 | `families.py` | 6b | Phase 6b — validate an LLM-proposed family taxonomy against the bibliography, stamp `family` onto rows.json, and emit families.json (the reproducible cache) + families.md (grouped tables + a family x topic cross-tab). | `--asof` `--assign` `--digest` `--md` `--out` `--rows` |
-| `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |
+| `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |
 | `cite_check.py` | 7 | Phase 7 gate — every in-text citation must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
 | `review_paper.py` | 7 | Phase 7 — build a review ARTICLE (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `lab_corpus.py` | L1 | Lab mode — Phase L1: ingest a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |

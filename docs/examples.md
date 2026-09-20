@@ -119,5 +119,9 @@ zoom.
 </div>
 
 !!! tip "The HTML version is interactive"
-    These are static exports. Each run also produces an **interactive HTML**
-    figure (hover for paper details, zoom, pan) plus SVG and PDF for publication.
+    These are static exports. Each run also produces an **interactive HTML** figure
+    — hover a dot for its full reference, click for a panel with the summary,
+    citation counts and a live DOI link, hover a family name for its claim and
+    lineage, and step through the timeline with Next/Prev or the arrow keys — plus
+    SVG and PDF for publication. See
+    [Reading the lineage figure](manual.md#72-the-lineage-figure).

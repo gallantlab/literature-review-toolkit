@@ -8,8 +8,8 @@ Notes for whoever edits the docs next — human or agent.
     flag, add a guardrail/lesson — **update the affected page under `docs/` in the
     same change.** The pages that drift fastest:
 
-    - `docs/phases.md` — phase commands and guardrails
-    - `docs/pipeline.md` — the Mermaid flow and the phases-at-a-glance line
+    - `docs/manual.md` — phase commands, guardrails, the Mermaid flow and the
+      phases-at-a-glance line all live here now
 
     The tool index in `docs/tools.md` (and its copies in `tools/README.md` and
     `PLAYBOOK.md`) is **generated** from the modules — script, phase, docstring
@@ -64,8 +64,8 @@ Markdown, so keep them stable.
 
 ## The spreadsheet preview table
 
-The color-coded bibliography table on the [Phases](phases.md#phase-5-build-the-spreadsheet)
-page is **not** a screenshot — it's HTML generated from a real `rows.json` and
+The color-coded bibliography table in the [manual](manual.md#71-the-spreadsheet)
+is **not** a screenshot — it's HTML generated from a real `rows.json` and
 pulled in as a snippet (`--8<-- "docs/_includes/bib_table.html"`). To regenerate
 it from a different review, build an HTML `<table class="bib-preview">` with rows
 classed `row-search` / `row-xref` / `row-source` (the color classes live in

@@ -848,13 +848,13 @@ check_true("the renderer emits a size legend", "sizelegend" in _FFSRC_EARLY)
 
 
 # When no slot in the lane is clear the packer must take the LEAST-buried one.
-# The first draft fell back to `off = 0.0`, which is dead centre — the single
+# The first draft fell back to `off = 0.0`, which is dead center — the single
 # worst slot available, right on top of the dot already there.
 _crowd = families_figure.beeswarm([(50.0, "a"), (50.0, "b")], maxoff=5,
                                   radius=lambda ref: 9.0)
 _boff = dict((ref, off) for _, off, ref in _crowd)
-check("the first dot takes the centre", _boff["a"], 0.0)
-check_true("a buried dot moves as far from the centre as the lane allows",
+check("the first dot takes the center", _boff["a"], 0.0)
+check_true("a buried dot moves as far from the center as the lane allows",
            abs(_boff["b"]) == 5 - 0.5, str(_boff))
 # and nothing is ever placed outside the lane it belongs to
 _packed_t = families_figure.beeswarm([(50.0, f"p{i}") for i in range(40)],
@@ -867,7 +867,7 @@ check_true("no dot is placed outside the lane",
 # --- families_figure: Next/Prev must follow the picture (2026-09-19) ---------
 # The walk-through sorted on (year, reference string). The reference string bears
 # no relation to where the dot was drawn, and the beeswarm fans a year's papers
-# out from the lane centre (0, +d, -d, +2d, -2d), so Next sent the highlight
+# out from the lane center (0, +d, -d, +2d, -2d), so Next sent the highlight
 # hopping up and down the column: 137 backward steps inside a year-column on the
 # 555-paper cortical-layers corpus. Every paper of one year shares an x, so a
 # year IS a vertical column; the tie-break has to be the dot's own drawn y.
@@ -878,6 +878,45 @@ check_true("the walk-through breaks year ties on the drawn y, not the ref string
            "DATA[a].ny-DATA[b].ny" in _ORDER, _ORDER)
 check_true("the drawn y is tried before the ref string",
            _ORDER.index("ny") < _ORDER.index("localeCompare"), _ORDER)
+
+
+# --- families_figure: the home-lab ring must be visible, and settable (2026-09-20)
+# WHICH lab gets starred has always been a parameter (--lab-author / the
+# LITREVIEW_LAB_AUTHOR env var, off by default so the tool is lab-neutral). What
+# was NOT settable was the ring's COLOR, hardcoded to the same #d4a017 that sits
+# at PALETTE[4] — so a home-lab paper landing in the FIFTH family got a gold ring
+# on a gold dot and the highlight vanished. Live in gallant_lab_in_context: two
+# lab papers in family 5.
+check_true("the gold default really is a palette color (the bug's root)",
+           "#d4a017" in families_figure.PALETTE)
+
+_lanes5 = families_figure.PALETTE[:5]          # a 5-family figure includes the gold
+_lanes4 = families_figure.PALETTE[:4]          # a 4-family figure does not
+
+_c, _note = families_figure.lab_ring_color("#d4a017", _lanes4)
+check("no collision keeps the default gold", _c, "#d4a017")
+check("no collision raises no note", _note, None)
+
+_c, _note = families_figure.lab_ring_color("#d4a017", _lanes5)
+check_true("a colliding default is replaced", _c.lower() != "#d4a017", _c)
+check_true("the replacement is not itself a lane color",
+           _c.lower() not in {x.lower() for x in _lanes5}, _c)
+check_true("the substitution is reported", bool(_note), str(_note))
+
+# An explicitly chosen color is HONORED even when it collides — the operator may
+# know something the tool does not — but it must still say so.
+_c, _note = families_figure.lab_ring_color("#2a9d8f", _lanes5, explicit=True)
+check("an explicit color is honored", _c, "#2a9d8f")
+check_true("an explicit collision is still warned about", bool(_note), str(_note))
+
+# The label ink is derived from the ring color, not a second hardcoded constant,
+# or setting --lab-color leaves the starred label in the old gold.
+_ink = families_figure.darken("#d4a017", 0.55)
+check_true("darken returns a hex color", re.fullmatch(r"#[0-9a-f]{6}", _ink) is not None, _ink)
+check_true("darken actually darkens",
+           int(_ink[1:3], 16) < 0xd4 and int(_ink[3:5], 16) < 0xa0, _ink)
+check("darken is a no-op at factor 1.0", families_figure.darken("#d4a017", 1.0), "#d4a017")
+check("darken clamps to black", families_figure.darken("#d4a017", 0.0), "#000000")
 
 
 # ---- report ---------------------------------------------------------------

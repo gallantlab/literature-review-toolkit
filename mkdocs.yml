@@ -87,10 +87,7 @@ extra:
 
 nav:
   - Home: index.md
-  - Getting started: getting-started.md
-  - The pipeline: pipeline.md
-  - Phases in detail: phases.md
-  - Topic mode vs lab mode: modes.md
+  - Operator manual: manual.md
   - Tools reference: tools.md
   - Examples: examples.md
   - Maintaining this site: maintaining.md

@@ -29,7 +29,8 @@ A paper is a landmark if ANY of:
       silently skipped if not supplied),
   (3) it is a home-lab paper — an author surname listed in --lab-author or the
       LITREVIEW_LAB_AUTHOR env var (home-lab favoring is OFF by default), or a row
-      with source == "lab" — these are starred (★) and gold-ringed.
+      with source == "lab" — these are starred (★) and ringed in --lab-color
+      (default gold, moved automatically if it clashes with a family lane).
 Total labels are capped at --max-labels for legibility. When the cap bites, what is
 guaranteed to survive is the home-lab papers plus the top-2 most-cited per family;
 the rest of the budget is filled by within-review in-degree. Internal-motif papers
@@ -105,6 +106,49 @@ def wrap(text, n=40):
     return out
 
 
+# Ring colors to fall back to when the requested one is already a family lane's
+# color. Ordered by how loudly they read against the palette; none is in PALETTE.
+LAB_RING_FALLBACKS = ["#111111", "#00a5cf", "#ff006e", "#7f4f24", "#006400"]
+
+
+def darken(color, factor):
+    """Scale a #rrggbb toward black. Used for the starred label's ink.
+
+    The label ink was a second hardcoded constant (#9a7400, a darker gold), so
+    setting the ring color left the label in the old color. Deriving it means one
+    parameter controls both.
+    """
+    factor = max(0.0, min(1.0, factor))
+    r, g, b = (int(color[i:i + 2], 16) for i in (1, 3, 5))
+    return "#%02x%02x%02x" % tuple(int(round(v * factor)) for v in (r, g, b))
+
+
+def lab_ring_color(requested, lane_colors, explicit=False):
+    """Pick the home-lab ring color; return (color, note-or-None).
+
+    The ring marks a home-lab paper by outlining its dot. If the ring color is
+    the SAME as the color that dot is filled with — which is exactly what
+    happened, because the default gold #d4a017 is also PALETTE[4] — the ring is
+    invisible and the whole highlight silently does nothing for every lab paper
+    in the fifth family.
+
+    An explicitly requested color is honored (the operator may be matching a
+    brand) but still reported. An un-asked-for default is moved out of the way.
+    """
+    used = {c.lower() for c in lane_colors}
+    if requested.lower() not in used:
+        return requested, None
+    if explicit:
+        return requested, (f"--lab-color {requested} is also a family lane color — "
+                           f"home-lab rings will be invisible on that lane's dots")
+    for alt in LAB_RING_FALLBACKS:
+        if alt.lower() not in used:
+            return alt, (f"the default home-lab ring {requested} is also a family lane "
+                         f"color, so it would be invisible there; using {alt} instead "
+                         f"(set --lab-color to choose your own)")
+    return requested, f"every fallback ring color is in use; keeping {requested}"
+
+
 def radius_scale(mode, cites, r_min, r_max, ref_pct=95):
     """Build value -> radius for --size-by-citations.
 
@@ -157,7 +201,7 @@ def beeswarm(items, r=2.7, step=5.6, maxoff=52, radius=None):
             rr = radius(payload)
             off, best = None, None
             for cand in _offsets(maxoff):
-                # How deep does this slot bury the dot in its neighbours? 0 = clear.
+                # How deep does this slot bury the dot in its neighbors? 0 = clear.
                 pen = sum(max(0.0, (rr + pr + 0.7) - math.hypot(x - px, cand - po))
                           for px, po, pr in placed)
                 if pen == 0:
@@ -167,7 +211,7 @@ def beeswarm(items, r=2.7, step=5.6, maxoff=52, radius=None):
                     best = (pen, cand)
             if off is None:
                 # Every slot in the lane is taken. Falling back to 0 would drop the
-                # dot dead centre, on top of everything — the worst slot, not the
+                # dot dead center, on top of everything — the worst slot, not the
                 # best. Take the least-buried one, the same way label placement
                 # degrades to the least-overlapping tier.
                 off, crowded = best[1], crowded + 1
@@ -333,6 +377,12 @@ def main():
                          "(repeatable). OFF by default; also settable via the "
                          "LITREVIEW_LAB_AUTHOR env var (comma-separated), which this flag "
                          "overrides. Rows with source=='lab' are always starred.")
+    ap.add_argument("--lab-color", default=None, metavar="HEX",
+                    help="color of the home-lab ring and its starred label "
+                         "(default #d4a017, gold). Set it to your group's own color. "
+                         "If the color is also one of the family lane colors the ring "
+                         "would be invisible on that lane, so an unset default is moved "
+                         "out of the way automatically and an explicit one is warned about.")
     ap.add_argument("--size-by-citations", choices=("log", "sqrt"), default=None,
                     metavar="SCALE",
                     help="size every dot by its citation count instead of by landmark "
@@ -431,6 +481,15 @@ def main():
                   f"Raise --max-labels or --motif-min (currently {args.motif_min}) to change this.",
                   file=sys.stderr)
         labeled = {ref: f'{lead(papers[ref]["apa"]).strip()} {papers[ref]["year"]}' for ref in chosen}
+
+    # Home-lab ring color. Resolved against the lane colors actually in use, so a
+    # lab paper's ring can never be the same color as the dot it outlines.
+    _req = args.lab_color or "#d4a017"
+    LAB_RING, _ring_note = lab_ring_color(_req, [COLOR[n] for n in order],
+                                          explicit=bool(args.lab_color))
+    LAB_INK = darken(LAB_RING, 0.72)
+    if _ring_note and lab:
+        print(f"  home-lab ring: {_ring_note}", file=sys.stderr)
 
     # star home-lab papers in their label (auto or manual), so they read as the lab's own
     labeled = {ref: (("★ " + t) if (ref in lab and not t.startswith("★")) else t)
@@ -686,7 +745,7 @@ def main():
             rr = rad_of(ref, landmark=True)
         else:
             rr = (9.5 if is_lab else 8.5) if ref in labeled else 7
-        stroke, sw = ("#d4a017", 2.6) if is_lab else ("#fff", 1.2)   # home-lab -> gold ring
+        stroke, sw = (LAB_RING, 2.6) if is_lab else ("#fff", 1.2)    # home-lab -> its own ring
         leader = label = ""
         if ref in labeled:
             off = loff[ref]
@@ -699,7 +758,7 @@ def main():
             leader = (f'<line x1="{x:.0f}" y1="{ly1:.0f}" x2="{x:.0f}" y2="{ly2:.0f}" '
                       f'stroke="{COLOR[p["family"]]}" stroke-width="1" opacity="0.65"/>')
             label = (f'<text class="lbl" x="{x:.0f}" y="{y+off:.0f}" text-anchor="middle" '
-                     f'font-size="11" font-weight="bold" fill="{"#9a7400" if is_lab else "#222"}">'
+                     f'font-size="11" font-weight="bold" fill="{LAB_INK if is_lab else "#222"}">'
                      f'{esc(labeled[ref])}</text>')
         s.append(f'{leader}<g class="node spine" data-key="{esc(ref)}" tabindex="0">'
                  f'<title>{esc(p["apa"])}</title>'
@@ -830,7 +889,7 @@ function show(k){const d=DATA[k];if(!d)return;
 // given year shares one x, so a year IS a vertical column; ordering the walk by
 // ny sweeps that column top to bottom. Sorting on the reference string instead
 // (what this did until 2026-09-19) bore no relation to the beeswarm, which fans
-// dots out from the lane centre as 0, +d, -d, +2d, -2d - so Next jumped the
+// dots out from the lane center as 0, +d, -d, +2d, -2d - so Next jumped the
 // highlight up and down the column and the walk read as random.
 let CUR=null, LANEONLY=true;
 const ORDER=Object.keys(DATA).sort((a,b)=>DATA[a].year-DATA[b].year

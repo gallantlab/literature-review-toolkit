@@ -14,9 +14,10 @@ where a single fabricated author or off-by-one DOI quietly poisons a review.
 ![Lineage figure: how the brain represents complexity](assets/figures/lineage_complexity.png){ loading=lazy }
 <figcaption>
 A finished lineage figure (Phase&nbsp;6b) — 190 verified papers grouped into six
-theoretical families, plotted on a citation-weighted timeline from Shannon&nbsp;1948
-to today. Landmark papers are auto-labeled. Every dot is a verified, canonically
-formatted reference in the spreadsheet.
+theoretical families on a density-warped timeline from Shannon&nbsp;1948 to today,
+each dot sized by how often the paper has been cited. Landmark papers are
+auto-labeled. Every dot is a verified, canonically formatted reference in the
+spreadsheet.
 </figcaption>
 </figure>
 
@@ -92,7 +93,8 @@ tag, family, and citation counts — color-coded by where the paper came from.
 <div class="card" markdown>
 ### :material-chart-timeline-variant: Lineage figure *(opt)*
 An interactive HTML figure (plus SVG/PNG/PDF) grouping the corpus into
-theoretical families on a citation-weighted timeline.
+theoretical families on a density-warped timeline, with dot size carrying
+citation count.
 </div>
 
 <div class="card" markdown>
@@ -122,15 +124,13 @@ canonically from the verified corpus, with a mandatory priority audit.
     > field."*
 
 Both share the same verify → canonicalize → count → families → figure → review
-machinery. See [Topic mode vs lab mode](modes.md).
+machinery. See [Choosing a front end](manual.md#4-choosing-a-front-end).
 
 ## Next steps
 
-- **[Getting started](getting-started.md)** — install, configure, and run your
-  first review.
-- **[The pipeline](pipeline.md)** — the whole flow on one page.
-- **[Phases in detail](phases.md)** — every phase, its guardrail, and its real
-  output shown as a figure.
+- **[Operator manual](manual.md)** — the complete document: install, the rules
+  that don't bend, every phase with its command and its gate, how to read the
+  outputs, and what to do when a step fails.
 - **[Examples](examples.md)** — two complete worked reviews, plus a gallery of
   finished lineage figures.
 
