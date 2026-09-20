@@ -531,7 +531,7 @@ rest is mechanical, owned by `tools/families.py`:
 python3 tools/xref.py --rows rows.json --out xref_<topic>.json \
         --exclude xref_exclude.json --internal-out internal_citations.json --email you@inst.edu
 python3 tools/families_figure.py --rows rows.json --families families.json \
-        --internal internal_citations.json \
+        --internal internal_citations.json --size-by-citations sqrt \
         --out-prefix <topic>_families --title "<Topic> — theoretical families"
 ```
 
@@ -541,6 +541,22 @@ hover any node for its full reference, click for citation + DOI, **hover or focu
 family's NAME for a panel giving that family's claim and its full lineage** while its
 papers are spotlighted) plus a standalone `.svg` and — if `rsvg-convert`/`inkscape`
 is present — `.png` + `.pdf` for slides/papers. This replaces the old static figure.
+
+**Size the dots by citation count (`--size-by-citations sqrt`) — standard since
+2026-09-19.** Without it dot size is binary (big = labeled landmark, small = the
+rest) and the figure says nothing about how much a paper is actually cited. `sqrt`
+is area-proportional and is the one to use; `log` reads flat. Both normalize against
+the 95th percentile and clamp above it, because counts span four orders of magnitude
+and one runaway classic otherwise flattens the rest. Landmark status moves entirely
+onto the ring, leader line and label. Papers with no citation count draw HOLLOW, not
+at the floor — "unknown" is not "zero" (see Lessons). The figure gains a size legend
+automatically. Record the flag in the corpus's `figure_render_args.txt`.
+
+**Next/Prev walks each year's column top to bottom.** All papers of one year share an
+x, so a year is a vertical column; the walk-through tie-breaks on the dot's own drawn
+y. Nothing to configure — but if you touch the ordering, re-run
+`verify_nav_order.mjs` (project root), which executes the figure's own sort against
+its own data.
 
 **Write the family `claim` as prose and let the figure clamp it.** The lane label
 draws the claim under the family name, and until 2026-09-18 nothing bounded how many
@@ -1047,6 +1063,55 @@ than recalling a chain. And **read the assignment agents' `hard_calls`**: they a
 the only place a wrong family definition shows up, because the agents are instructed
 not to argue with the spec.
 
+### A size encoding must not turn "unknown" into a number (2026-09-19)
+
+`--size-by-citations` maps a paper's citation count onto its dot radius. The first
+version sized a paper with NO count at the floor, which is exactly where a paper
+with zero citations lands — so the figure asserted a count it did not have. On
+`reverse_polish_notation` that is 67% coverage, i.e. a third of the corpus silently
+claimed to be uncited. Missing counts now draw HOLLOW, keyed in the legend.
+
+The general rule: before mapping a data column onto a visual channel, **count how
+many rows actually have that column**, per corpus, and decide what the blanks look
+like. Coverage across the 15 corpora here runs 67-100%, so the blanks are never
+negligible and are worst exactly where the literature is oldest and most obscure.
+
+Two scale notes, from rendering both: citation counts span four orders of magnitude
+(0 to ~80k), so normalize against a high percentile and CLAMP above it, or one
+runaway classic flattens everything else. `sqrt` (area-proportional) is the one to
+use; `log` compresses so hard that a 100-citation paper sits at ~67% of the radius
+range and the whole figure reads flat. And say it out loud when presenting: citation
+count is partly an AGE variable, so the right-hand edge of any timeline goes small.
+
+### A walk-through's order must follow the drawn geometry, not the data key (2026-09-19)
+
+The figure's Next/Prev walk sorted on `(year, reference string)`. The reference
+string has nothing to do with where the beeswarm put the dot, and the beeswarm fans
+a year's papers out from the lane centre as 0, +d, -d, +2d, -2d — so the highlight
+hopped up and down the column and the walk read as random. 137 backward steps inside
+a year-column on a 555-paper corpus. Every paper of one year shares an x, so a year
+IS a vertical column: tie-break on the dot's own drawn y and the walk sweeps it.
+
+This survived code review twice because the sort LOOKS right until you ask what its
+tie-break has to do with the picture. The check that caught it executes the figure's
+own `ORDER` expression against its own embedded data (`verify_nav_order.mjs`) — the
+same tactic as `verify_hover.mjs`. **For anything interactive, run the figure's own
+code; do not read it.**
+
+### Set iteration makes a render nondeterministic, which defeats the diff (2026-09-19)
+
+`families_figure.py` picked landmarks into a `set` of reference strings, and Python
+randomizes string hashes per process. Same-year and same-x ties therefore came out
+in a different order on every run: two renders of identical code against identical
+data produced different bytes and moved 5 of 57 labels between tiers. Harmless on
+screen — but `rerender_figures.py` verifies by DIFFING the re-render against the
+delivered file, so the whole safety net was reading noise. Sort keys are now
+`(year, ref)` and `(x, ref)`; three consecutive renders are byte-identical.
+
+If a harness's guarantee is "re-rendering changes nothing", prove that by rendering
+TWICE with unchanged code first. Any diff there is a bug in the renderer, not a
+change in the data.
+
 ### On contextualizing a lab review (lab mode L4c)
 - **The outward search is a FULL topic-mode review, not a "context" add-on.**
   Framing it as optional/lighter is precisely how a sloppy, half-fabricated field
@@ -1279,7 +1344,7 @@ it is stale); the per-tool detail is in `tools/README.md` and `docs/tools.md`.
 | `citations.py` | 5b | Fetch citation counts for a bibliography from OpenAlex + Semantic Scholar. | `--asof` `--email` `--key` `--out` `--rows` `--sources` |
 | `xref.py` | 6 | Build a cross-citation index from a list of papers. | `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--rows` `--sleep` |
 | `families.py` | 6b | Phase 6b — validate an LLM-proposed family taxonomy against the bibliography, stamp `family` onto rows.json, and emit families.json (the reproducible cache) + families.md (grouped tables + a family x topic cross-tab). | `--asof` `--assign` `--digest` `--md` `--out` `--rows` |
-| `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--spec` `--time-warp` `--title` `--xlsx` |
+| `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |
 | `cite_check.py` | 7 | Phase 7 gate — every in-text citation must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
 | `review_paper.py` | 7 | Phase 7 — build a review ARTICLE (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `lab_corpus.py` | L1 | Lab mode — Phase L1: ingest a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |

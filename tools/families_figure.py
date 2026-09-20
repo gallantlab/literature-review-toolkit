@@ -39,6 +39,16 @@ is reported on every run; raise --max-labels or --motif-min if it is large.
 Pass --spec with a "labels" map to override auto-selection entirely (manual curation wins);
 --no-auto-landmarks turns labeling off.
 
+DOT SIZE is binary by default — big = labeled landmark, small = everything else —
+so the figure says nothing about how much a paper is actually cited.
+--size-by-citations {log,sqrt} replaces that with a continuous scale and adds a
+size legend; landmark status then rides entirely on the ring, leader and label.
+Counts span four orders of magnitude in a real corpus (0 to ~24k), so both modes
+normalize against the 95th percentile and clamp above it; `sqrt` is
+area-proportional and separates the heavy tail, `log` compresses harder and
+reads flatter. Read the result with the obvious caveat in mind: citation count
+is partly an AGE variable, so the right-hand edge of any timeline will be small.
+
   python3 tools/families_figure.py --rows rows.json --families families.json \
           --out-prefix mytopic_families --title "My topic — theoretical families" \
           --internal internal_citations.json   # optional, from xref.py --internal-out
@@ -57,6 +67,7 @@ import base64
 import bisect
 import html
 import json
+import math
 import os
 import re
 import shutil
@@ -94,8 +105,78 @@ def wrap(text, n=40):
     return out
 
 
-def beeswarm(items, r=2.7, step=5.6, maxoff=52):
+def radius_scale(mode, cites, r_min, r_max, ref_pct=95):
+    """Build value -> radius for --size-by-citations.
+
+    Citation counts in a real corpus span four orders of magnitude (0 to ~24k),
+    so the naive mappings both fail: radius-proportional makes the top paper 100x
+    the width of the median, and area-proportional against the MAXIMUM squashes
+    the whole bulk into the bottom sixth of the range. Both modes here therefore
+    normalize against a high percentile (`ref_pct`) and clamp above it, so one
+    runaway classic cannot flatten the rest of the figure.
+
+      "log"  — r rises with log1p(c). Compresses the tail hardest; separates the
+               10-vs-100-vs-1000 band a reader actually needs to tell apart.
+      "sqrt" — area-proportional, the perceptually honest encoding: a dot with
+               4x the area has 4x the citations, up to the clamp.
+
+    A missing count (< 0) draws at the floor, same as an uncited paper — the
+    figure must not imply a count it does not have.
+    """
+    vals = sorted(c for c in cites if isinstance(c, int) and c >= 0)
+    ref = vals[min(len(vals) - 1, int(len(vals) * ref_pct / 100))] if vals else 1
+    ref = max(ref, 1)
+    span = r_max - r_min
+    if mode == "sqrt":
+        def t(c): return math.sqrt(max(0, c) / ref)
+    else:
+        denom = math.log1p(ref)
+        def t(c): return math.log1p(max(0, c)) / denom
+
+    def radius(c):
+        if not isinstance(c, (int, float)) or c < 0:
+            return r_min
+        return r_min + span * min(1.0, t(c))
+    return radius
+
+
+def beeswarm(items, r=2.7, step=5.6, maxoff=52, radius=None):
+    """Pack (x, payload) into vertical offsets within a lane.
+
+    With `radius=None` every dot is the same size and the fixed-lattice packing
+    below is exact. `radius` (payload -> r) turns on variable-size packing: the
+    fixed lattice is then WRONG, because it tests every pair against a constant
+    2r, so an 11px dot and a 2px dot sitting 5.6px apart on the lattice overlap.
+    In that mode each dot is tried against the real circle geometry of the dots
+    already placed, scanning outward in fine increments for the first clear slot.
+    """
     placed, out = [], []
+    if radius is not None:
+        crowded = 0
+        for x, payload in sorted(items, key=lambda t: t[0]):
+            rr = radius(payload)
+            off, best = None, None
+            for cand in _offsets(maxoff):
+                # How deep does this slot bury the dot in its neighbours? 0 = clear.
+                pen = sum(max(0.0, (rr + pr + 0.7) - math.hypot(x - px, cand - po))
+                          for px, po, pr in placed)
+                if pen == 0:
+                    off = cand
+                    break
+                if best is None or pen < best[0]:
+                    best = (pen, cand)
+            if off is None:
+                # Every slot in the lane is taken. Falling back to 0 would drop the
+                # dot dead centre, on top of everything — the worst slot, not the
+                # best. Take the least-buried one, the same way label placement
+                # degrades to the least-overlapping tier.
+                off, crowded = best[1], crowded + 1
+            placed.append((x, off, rr))
+            out.append((x, off, payload))
+        if crowded:
+            print(f"  beeswarm: {crowded} dot(s) had no clear slot in the lane and took "
+                  f"the least-overlapping one (lane is full at +/-{maxoff}px)", file=sys.stderr)
+        return out
     for x, payload in sorted(items, key=lambda t: t[0]):
         off, k = 0, 1
         while any(abs(x - px) < 2 * r + 0.6 and abs(off - po) < 2 * r + 0.6 for px, po in placed):
@@ -106,6 +187,16 @@ def beeswarm(items, r=2.7, step=5.6, maxoff=52):
         placed.append((x, off))
         out.append((x, off, payload))
     return out
+
+
+def _offsets(maxoff, inc=1.5):
+    """0, +inc, -inc, +2inc, ... out to maxoff — the candidate slots a dot tries."""
+    yield 0.0
+    n = 1
+    while n * inc <= maxoff:
+        yield n * inc
+        yield -n * inc
+        n += 1
 
 
 def _boxes_overlap(a, b):
@@ -122,6 +213,65 @@ def _overlap_area(a, b):
     dx = min(a[1], b[1]) - max(a[0], b[0])
     dy = min(a[3], b[3]) - max(a[2], b[2])
     return float(dx * dy) if dx > 0 and dy > 0 else 0.0
+
+
+def num(v):
+    """Shortest exact-looking form of a coordinate: 9.0 -> "9", 2.40 -> "2.4".
+
+    Radii became floats when --size-by-citations landed; without this every
+    figure rendered WITHOUT the flag would churn (r="9" -> r="9.0") and the
+    re-render harness's byte-comparison against the delivered SVG would go red
+    on a change that moves nothing.
+    """
+    return f"{float(v):.2f}".rstrip("0").rstrip(".") or "0"
+
+
+def size_legend(rad, cites, x_right, y_base, r_max, n_unknown=0):
+    """A row of circles keying dot size to citation count.
+
+    A size encoding with no key is decoration: the reader can see that one dot
+    is bigger without being able to say how much more cited it is. Ticks are
+    round numbers, kept only when they are at least 1.3px apart in radius (on a
+    log scale 1 and 3 citations draw the same dot, and two identical circles
+    labeled differently is worse than one), and the largest is marked "+"
+    because the scale clamps above its reference percentile.
+    """
+    top = max([c for c in cites if isinstance(c, int) and c >= 0] or [0])
+    cand = [0, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000]
+    cand = [c for c in cand if c <= top] or [0]
+    ticks, last = [], None
+    for c in cand:
+        r = rad(c)
+        if last is None or r - last >= 1.3:
+            ticks.append(c)
+            last = r
+    ticks = ticks[-5:]
+    # "+" on the top tick whenever papers sit ABOVE it — either because the
+    # scale clamps there or because the tick is simply the largest round number
+    # below the top of the data. Keying it to the radius alone let the log scale
+    # print a bare "1,000" on a corpus whose most-cited paper had 13,923.
+    clamped = bool(ticks) and (top > ticks[-1] or rad(ticks[-1]) >= r_max - 1e-9)
+
+    out, pitch = [], 2 * r_max + 16
+    x = x_right - pitch * (len(ticks) - 1)
+    out.append(f'<text x="{x - r_max - 8:.0f}" y="{y_base - 2 * r_max - 8:.0f}" '
+               f'font-size="10.5" fill="#777">dot size = times cited</text>')
+    for i, c in enumerate(ticks):
+        r = rad(c)
+        cx = x + i * pitch
+        out.append(f'<circle cx="{cx:.0f}" cy="{y_base - r:.1f}" r="{num(r)}" fill="none" '
+                   f'stroke="#9a9a9a" stroke-width="1.1"/>')
+        lab = f"{c:,}" + ("+" if (i == len(ticks) - 1 and clamped) else "")
+        out.append(f'<text x="{cx:.0f}" y="{y_base + 13:.0f}" text-anchor="middle" '
+                   f'font-size="9.5" fill="#777">{lab}</text>')
+    if n_unknown:
+        cy = y_base + 26
+        hx = x_right - pitch * (len(ticks) - 1)
+        out.append(f'<circle cx="{hx:.0f}" cy="{cy - 3:.0f}" r="3" fill="none" '
+                   f'stroke="#9a9a9a" stroke-width="1.1"/>')
+        out.append(f'<text x="{hx + 7:.0f}" y="{cy:.0f}" font-size="9.5" fill="#777">'
+                   f'hollow = no count ({n_unknown})</text>')
+    return "".join(out)
 
 
 def _box_hits_dot(box, dx, dy, margin=11):
@@ -183,6 +333,16 @@ def main():
                          "(repeatable). OFF by default; also settable via the "
                          "LITREVIEW_LAB_AUTHOR env var (comma-separated), which this flag "
                          "overrides. Rows with source=='lab' are always starred.")
+    ap.add_argument("--size-by-citations", choices=("log", "sqrt"), default=None,
+                    metavar="SCALE",
+                    help="size every dot by its citation count instead of by landmark "
+                         "status: 'log' compresses the heavy tail (best for a corpus "
+                         "spanning 0-20k citations), 'sqrt' is area-proportional. Both "
+                         "normalize against the 95th percentile and clamp above it, and "
+                         "the figure gains a size legend. Landmarks stay distinguished "
+                         "by their ring and label. Default: off (binary big/small dots).")
+    ap.add_argument("--size-range", default="2.0,11.0", metavar="MIN,MAX",
+                    help="dot radius range in px for --size-by-citations (default 2.0,11.0)")
     args = ap.parse_args()
 
     load = common.load_json
@@ -313,12 +473,39 @@ def main():
     if emph:
         big |= {ref for ref, p in papers.items() if p.get("source") == emph}
 
+    # ---- dot size -----------------------------------------------------------
+    # Default: size is BINARY — a big dot is a labeled landmark, a small dot is
+    # everything else, so the figure says nothing about how much a paper is
+    # actually cited. --size-by-citations replaces that with a continuous scale.
+    # Landmark status does not disappear; it moves entirely onto the ring, the
+    # leader line and the label, which is where it already half lived.
+    LANDMARK_FLOOR = 4.5      # a 2px dot cannot carry a 2.6px gold ring legibly
+    size_mode = args.size_by_citations
+    try:
+        R_MIN, R_MAX = (float(v) for v in args.size_range.split(","))
+    except ValueError:
+        sys.exit("families_figure: --size-range wants MIN,MAX (e.g. 2.0,11.0)")
+    if size_mode:
+        _scale = radius_scale(size_mode, [_cites(p) for p in papers.values()], R_MIN, R_MAX)
+        def rad_of(ref, landmark=False):
+            r = _scale(_cites(papers[ref]))
+            return max(r, LANDMARK_FLOOR) if landmark else r
+        n_clamped = sum(1 for p in papers.values() if _scale(_cites(p)) >= R_MAX - 1e-9)
+        print(f"  dot size: {size_mode} scale on citation counts, r {R_MIN}-{R_MAX}px "
+              f"({n_clamped} paper(s) at the ceiling)", file=sys.stderr)
+    else:
+        def rad_of(ref, landmark=False):
+            return 2.4
+
     pos, bg = {}, []
     # small (non-big) -> beeswarm background
     for name in order:
         items = [(xf(p["year"]), ref) for ref, p in papers.items()
                  if p["family"] == name and ref not in big]
-        for x, off, ref in beeswarm(items):
+        # Variable radii need the packer to know each dot's own size, or an 11px
+        # dot and a 2px dot land on the same fixed lattice and overlap.
+        swarm = beeswarm(items, radius=rad_of) if size_mode else beeswarm(items)
+        for x, off, ref in swarm:
             pos[ref] = (x, yf(name) + off)
             bg.append(ref)
     # big -> lane center (default spine) or a wider beeswarm when emphasizing a source
@@ -326,7 +513,8 @@ def main():
         bigs = [ref for ref, p in papers.items() if p["family"] == name and ref in big]
         if emph:
             for x, off, ref in beeswarm([(xf(papers[r]["year"]), r) for r in bigs],
-                                        r=7, step=12, maxoff=42):
+                                        r=7, step=12, maxoff=42,
+                                        radius=(lambda r: rad_of(r, True)) if size_mode else None):
                 pos[ref] = (x, yf(name) + off)
         else:
             for r in bigs:
@@ -338,11 +526,17 @@ def main():
     # e.g. "Gao 2015" under the Huth 2015 circle). Offsets are measured from each
     # label's own dot; tiers fan outward so labels migrate clear of the dot band.
     TIERS = [-18, 19, -33, 34, -49, 50, -66, 67, -84, 85, -103, 104]
-    big_dots = [pos[r] for r in big]              # (x, y) of every big circle
+    # (x, y, r) of every big circle — a label has to clear the dot's real edge,
+    # which under --size-by-citations is anywhere from 4.5px to 11px.
+    big_dots = [(pos[r][0], pos[r][1], rad_of(r, True)) for r in big]
     loff, placed_lbl = {}, []                     # placed_lbl: label bounding boxes
     for name in order:
+        # (x, ref) again: `labeled` is keyed off a set, so sorting on x alone let
+        # two labels at the same x swap places between runs, and greedy tier
+        # placement is order-dependent — the same figure came out with different
+        # label offsets each render.
         lane = sorted(((ref, pos[ref]) for ref in labeled if papers[ref]["family"] == name),
-                      key=lambda t: t[1][0])
+                      key=lambda t: (t[1][0], t[0]))
         for ref, (x, dy) in lane:
             w = len(labeled[ref]) * 6.2 + 8
             # Track the least-bad tier as we go: in a crowded lane every slot can
@@ -353,9 +547,9 @@ def main():
                 ly = dy + o
                 box = (x - w / 2, x + w / 2, ly - 8, ly + 6)
                 pen = sum(_overlap_area(box, b) for b in placed_lbl)
-                pen += sum(60.0 for bx, by in big_dots
+                pen += sum(60.0 for bx, by, br in big_dots
                            if not (abs(bx - x) < 0.5 and abs(by - dy) < 0.5)
-                           and _box_hits_dot(box, bx, by))
+                           and _box_hits_dot(box, bx, by, margin=max(11.0, br + 3)))
                 if pen == 0:
                     pick = o
                     break
@@ -374,6 +568,12 @@ def main():
          f'<text x="10" y="34" font-size="22" font-weight="bold" fill="#222">{esc(args.title)}</text>']
     for j, ln in enumerate(wrap(subtitle, 150)[:2]):
         s.append(f'<text x="10" y="{56+j*18}" font-size="12.5" fill="#555">{esc(ln)}</text>')
+    if size_mode:
+        s.append(f'<g id="sizelegend">'
+                 + size_legend(lambda c: _scale(c), [_cites(p) for p in papers.values()],
+                               W - PADR, PADT - 30, R_MAX,
+                               sum(1 for p in papers.values() if _cites(p) < 0))
+                 + '</g>')
 
     for name in order:
         y, top, c = yf(name), yf(name) - laneH / 2, COLOR[name]
@@ -429,14 +629,29 @@ def main():
                  f'fill="#999">{n_pre} pre-{YMIN}</text>')
 
     data = {}
-    # background dots
-    for ref in bg:
+    # background dots. Under --size-by-citations these vary from 2px to 11px, so
+    # draw the largest FIRST (they go to the back) and give every dot a thin
+    # surface ring — without it two overlapping same-family dots read as one
+    # blob and the size encoding is lost exactly where the swarm is densest.
+    for ref in sorted(bg, key=lambda r: -rad_of(r)) if size_mode else bg:
         p = papers[ref]
         x, y = pos[ref]
-        data[ref] = p
+        rr = rad_of(ref)
+        # An unknown citation count is NOT a count of zero. Sized at the floor it
+        # would be indistinguishable from a genuinely uncited paper, so the figure
+        # would be asserting a number it does not have — on reverse_polish_notation
+        # that is a third of the corpus. Draw those hollow instead.
+        if size_mode and _cites(p) < 0:
+            body = (f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{num(rr)}" fill="none" '
+                    f'stroke="{COLOR[p["family"]]}" stroke-width="1.1" stroke-opacity="0.75"/>')
+        else:
+            ring = ' stroke="#fff" stroke-width="0.9" stroke-opacity="0.85"' if size_mode else ''
+            body = (f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{num(rr)}" '
+                    f'fill="{COLOR[p["family"]]}"{ring}/>')
+        data[ref] = dict(p, ny=round(y, 1))
         s.append(f'<g class="node bg" data-key="{esc(ref)}" tabindex="0"><title>{esc(p["apa"])}</title>'
-                 f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="9" fill="none" pointer-events="all"/>'
-                 f'<circle cx="{x:.0f}" cy="{y:.0f}" r="2.4" fill="{COLOR[p["family"]]}"/></g>')
+                 f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="{num(max(9.0, rr + 2))}" '
+                 f'fill="none" pointer-events="all"/>{body}</g>')
     # editorial arrows + notes (optional)
     for a in spec.get("arrows", []):
         if a.get("from") in pos and a.get("to") in pos:
@@ -454,17 +669,33 @@ def main():
                      f'fill="{nt.get("color","#333")}">{esc(nt["text"])}</text>')
     # big nodes (labeled milestones + any emphasized source) on top; labeled
     # ones also get a leader line + text label
-    for ref in sorted(big, key=lambda r: papers[r]["year"]):
+    # (year, ref): `big` is a SET of str, and Python randomizes string hashes per
+    # process, so sorting on year alone left same-year ties in a different order
+    # on every run — two renders of identical code and data produced different
+    # bytes. Harmless on screen (it only changes which of two overlapping dots
+    # paints on top) but it makes the re-render harness's byte-diff useless.
+    for ref in sorted(big, key=lambda r: (papers[r]["year"], r)):
         p = papers[ref]
         x, y = pos[ref]
-        data[ref] = p
+        data[ref] = dict(p, ny=round(y, 1))
         is_lab = ref in lab
-        rr = (9.5 if is_lab else 8.5) if ref in labeled else 7
+        if size_mode:
+            # Size now means citations for landmarks too; what marks a landmark
+            # is its ring + leader + label. The floor only keeps a low-cited
+            # landmark from being smaller than the ring it has to carry.
+            rr = rad_of(ref, landmark=True)
+        else:
+            rr = (9.5 if is_lab else 8.5) if ref in labeled else 7
         stroke, sw = ("#d4a017", 2.6) if is_lab else ("#fff", 1.2)   # home-lab -> gold ring
         leader = label = ""
         if ref in labeled:
             off = loff[ref]
-            ly1, ly2 = (y - 7, y + off + 1) if off < 0 else (y + 7, y + off - 9)
+            # Under --size-by-citations the dot can be 11px wide, so start the
+            # leader at its real edge; with fixed sizes keep the historical 7px
+            # so unsized figures re-render byte-for-byte identical.
+            edge = (rr + 1.5) if size_mode else 7
+            ly1, ly2 = ((y - edge, y + off + 1) if off < 0
+                        else (y + edge, y + off - 9))
             leader = (f'<line x1="{x:.0f}" y1="{ly1:.0f}" x2="{x:.0f}" y2="{ly2:.0f}" '
                       f'stroke="{COLOR[p["family"]]}" stroke-width="1" opacity="0.65"/>')
             label = (f'<text class="lbl" x="{x:.0f}" y="{y+off:.0f}" text-anchor="middle" '
@@ -472,8 +703,9 @@ def main():
                      f'{esc(labeled[ref])}</text>')
         s.append(f'{leader}<g class="node spine" data-key="{esc(ref)}" tabindex="0">'
                  f'<title>{esc(p["apa"])}</title>'
-                 f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="12" fill="none" pointer-events="all"/>'
-                 f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{rr}" fill="{COLOR[p["family"]]}" '
+                 f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="{num(max(12.0, rr + 3))}" '
+                 f'fill="none" pointer-events="all"/>'
+                 f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{num(rr)}" fill="{COLOR[p["family"]]}" '
                  f'stroke="{stroke}" stroke-width="{sw}"/>{label}</g>')
     s.append('</svg>')
     svg = "".join(s)
@@ -593,8 +825,16 @@ function show(k){const d=DATA[k];if(!d)return;
 // ORDER is every paper sorted by year; WITHIN is the same restricted to one
 // family lane. The figure has hundreds of small dots, so clicking each one is
 // impractical; Next/Prev (and the arrow keys) step through them in time order.
+//
+// The tie-break inside a year is `ny`, the dot's own drawn y. Every paper of a
+// given year shares one x, so a year IS a vertical column; ordering the walk by
+// ny sweeps that column top to bottom. Sorting on the reference string instead
+// (what this did until 2026-09-19) bore no relation to the beeswarm, which fans
+// dots out from the lane centre as 0, +d, -d, +2d, -2d - so Next jumped the
+// highlight up and down the column and the walk read as random.
 let CUR=null, LANEONLY=true;
-const ORDER=Object.keys(DATA).sort((a,b)=>DATA[a].year-DATA[b].year||a.localeCompare(b));
+const ORDER=Object.keys(DATA).sort((a,b)=>DATA[a].year-DATA[b].year
+ ||DATA[a].ny-DATA[b].ny||a.localeCompare(b));
 function seq(){return LANEONLY&&CUR?ORDER.filter(r=>DATA[r].family===DATA[CUR].family):ORDER;}
 function navHTML(k,doi){const q=LANEONLY?ORDER.filter(r=>DATA[r].family===DATA[k].family):ORDER;
  const i=q.indexOf(k);

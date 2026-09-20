@@ -792,6 +792,94 @@ for _v in ("MISMATCH", "NOT-FOUND", "ERROR"):
           verify.gate_code([{"verdict": "OK"}, {"verdict": _v}]), 1)
 
 
+# --- families_figure: dot size proportional to citation count (2026-09-19) ----
+# Size used to be binary — a big dot meant "labeled landmark", a small dot meant
+# everything else — so the figure said nothing about how much a paper was
+# actually cited. --size-by-citations maps the count onto the radius. Citation
+# counts run over four orders of magnitude (0 to ~24k in a real corpus), so a
+# raw-radius mapping is unusable; log compresses the tail, sqrt is
+# area-proportional (the perceptually honest one) against a high-percentile
+# reference so a single outlier cannot flatten everything else.
+_cites = [0, 1, 10, 100, 1000, 10000]
+
+for _mode in ("log", "sqrt"):
+    _f = families_figure.radius_scale(_mode, _cites, 2.0, 11.0)
+    check(f"{_mode}: an uncited paper sits at the floor", round(_f(0), 3), 2.0)
+    check(f"{_mode}: a missing count sits at the floor", round(_f(-1), 3), 2.0)
+    check_true(f"{_mode}: the radius never exceeds the ceiling",
+               all(_f(c) <= 11.0 + 1e-9 for c in _cites + [10 ** 6]))
+    check_true(f"{_mode}: the radius rises with the citation count",
+               all(_f(a) <= _f(b) for a, b in zip(_cites, _cites[1:])))
+
+# The scale has to SEPARATE the mid-range, which is the whole point. A log scale
+# on this corpus must put 100 citations visibly above 10, not bunch both at the
+# floor: the tell that a scale is mis-parameterized is a flat low end.
+_flog = families_figure.radius_scale("log", _cites, 2.0, 11.0)
+check_true("log separates 10 from 100 citations by >= 1px", _flog(100) - _flog(10) >= 1.0)
+check_true("log separates 100 from 1000 citations by >= 1px", _flog(1000) - _flog(100) >= 1.0)
+
+# sqrt against the MAX would flatten a heavy tail (sqrt(100/24178) = 6% of the
+# range). The reference is a high percentile and everything above it clamps.
+_fsq = families_figure.radius_scale("sqrt", [0] * 95 + [50] * 4 + [24178], 2.0, 11.0)
+check("sqrt clamps everything above its reference", round(_fsq(24178), 3), 11.0)
+check_true("sqrt does not flatten the bulk against a lone outlier", _fsq(50) > 6.0)
+
+# Variable radii break the fixed-step beeswarm: it tests |off_i - off_j| against
+# a CONSTANT 2r, so an 11px dot and a 2px dot packed 5.6px apart overlap. With a
+# radius function the packer must test the two circles' OWN radii.
+_items = [(100.0, "a"), (100.0, "b"), (100.0, "c"), (103.0, "d"), (106.0, "e")]
+_rad = {"a": 11.0, "b": 11.0, "c": 2.0, "d": 9.0, "e": 4.0}
+_packed = families_figure.beeswarm(_items, radius=lambda ref: _rad[ref])
+_bad = [(p, q) for i, p in enumerate(_packed) for q in _packed[i + 1:]
+        if ((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2) ** 0.5 < _rad[p[2]] + _rad[q[2]] - 0.01
+        and abs(p[1]) < 52 and abs(q[1]) < 52]
+check("variable-radius beeswarm packs without overlap", _bad, [])
+
+# The default path must be byte-identical to the old fixed-radius packing, or
+# every figure rendered without the flag shifts.
+check("beeswarm without a radius function is unchanged",
+      families_figure.beeswarm(_items),
+      [(100.0, 0, "a"), (100.0, 11.2, "b"), (100.0, -11.2, "c"),
+       (103.0, 22.4, "d"), (106.0, 0, "e")])
+
+# A size encoding the reader cannot decode is decoration. The figure must carry
+# a size legend whenever --size-by-citations is on.
+check_true("the renderer emits a size legend", "sizelegend" in _FFSRC_EARLY)
+
+
+# When no slot in the lane is clear the packer must take the LEAST-buried one.
+# The first draft fell back to `off = 0.0`, which is dead centre — the single
+# worst slot available, right on top of the dot already there.
+_crowd = families_figure.beeswarm([(50.0, "a"), (50.0, "b")], maxoff=5,
+                                  radius=lambda ref: 9.0)
+_boff = dict((ref, off) for _, off, ref in _crowd)
+check("the first dot takes the centre", _boff["a"], 0.0)
+check_true("a buried dot moves as far from the centre as the lane allows",
+           abs(_boff["b"]) == 5 - 0.5, str(_boff))
+# and nothing is ever placed outside the lane it belongs to
+_packed_t = families_figure.beeswarm([(50.0, f"p{i}") for i in range(40)],
+                                     maxoff=20, radius=lambda ref: 9.0)
+check_true("no dot is placed outside the lane",
+           all(abs(off) <= 20 for _, off, _ in _packed_t))
+
+
+
+# --- families_figure: Next/Prev must follow the picture (2026-09-19) ---------
+# The walk-through sorted on (year, reference string). The reference string bears
+# no relation to where the dot was drawn, and the beeswarm fans a year's papers
+# out from the lane centre (0, +d, -d, +2d, -2d), so Next sent the highlight
+# hopping up and down the column: 137 backward steps inside a year-column on the
+# 555-paper cortical-layers corpus. Every paper of one year shares an x, so a
+# year IS a vertical column; the tie-break has to be the dot's own drawn y.
+check_true("the client data carries each dot's drawn y",
+           _FFSRC_EARLY.count("ny=round(y, 1)") == 2)
+_ORDER = _FFSRC_EARLY.split("const ORDER=")[1].split(";")[0]
+check_true("the walk-through breaks year ties on the drawn y, not the ref string",
+           "DATA[a].ny-DATA[b].ny" in _ORDER, _ORDER)
+check_true("the drawn y is tried before the ref string",
+           _ORDER.index("ny") < _ORDER.index("localeCompare"), _ORDER)
+
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
