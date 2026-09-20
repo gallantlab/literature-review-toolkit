@@ -550,6 +550,13 @@ the drawn copy is clamped to the room the lane actually has and ellipsized
 (`claim_lines()`). So write the claim for the reader who hovers, not for the
 40-character column: the figure will show as much as fits and no more.
 
+**The hover panel sits ON the lane legend, not beside it.** Anchored to the label's
+right edge it landed over the start of the plot and hid the earliest papers — on a
+density-warped axis, exactly where the foundational work sits. It is now anchored to
+the label's LEFT edge and sized to the legend band (`r.right - r.left`), minus a
+small inset, with a 240px readability floor for narrow windows. Width is applied
+before `offsetHeight` is read, or the vertical clamp measures the old width.
+
 **An SVG `<g>` is not hoverable — give it a hit target.** A `<g>` has no geometry of
 its own and `<text>` only receives pointer events on the rendered glyph strokes, so a
 handler bound to the lane-label group fires when the cursor is exactly on a letter and

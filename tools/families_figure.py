@@ -553,7 +553,7 @@ HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><titl
  #scope{font-size:11.5px;color:#555;margin:8px 0 12px;}
  #scope label{cursor:pointer;}
  .lanelabel{cursor:help;} .lanelabel:focus{outline:2px solid #1b6ca8;outline-offset:2px;}
- #famtip{position:fixed;z-index:20;width:330px;max-width:46vw;background:#fff;color:#222;
+ #famtip{position:fixed;z-index:20;width:330px;max-width:46vw;/*JS sets the real width*/background:#fff;color:#222;
    border:1px solid #d5d5d5;border-left-width:4px;border-radius:6px;padding:12px 14px;
    box-shadow:0 8px 28px rgba(0,0,0,.17);font-size:12.5px;line-height:1.45;pointer-events:none;}
  #famtip[hidden]{display:none;}
@@ -624,9 +624,18 @@ function showFam(f,el){const d=FAMINFO[f];if(!d)return;const c=FAMCOLOR[f]||'#22
   +(d.claim?'<div class="ft-claim">'+esc(d.claim)+'</div>':'')
   +(d.lineage?'<div class="ft-lab">Lineage</div><div class="ft-lin">'+esc(d.lineage)+'</div>':'');
  famtip.style.borderLeftColor=c;famtip.hidden=false;
- const r=el.getBoundingClientRect(),h=famtip.offsetHeight,w=famtip.offsetWidth;
- let left=r.right+14;if(left+w>window.innerWidth-8)left=Math.max(8,r.left-w-14);
- famtip.style.left=left+'px';
+ // Sit ON the lane legend, at the left edge. Anchored to the label's RIGHT edge
+ // the panel landed over the start of the plot and hid the earliest papers —
+ // which on a density-warped axis is exactly where the foundations sit. Size it
+ // to the legend band so it covers the thing it describes, with a readable floor
+ // and a viewport cap for narrow windows.
+ const r=el.getBoundingClientRect();
+ const INSET=6;                      // small gutter so it reads as a panel, not a block
+ const band=Math.max(0,r.right-r.left);
+ const w=Math.min(Math.max(band-2*INSET,240),Math.round(window.innerWidth*0.46));
+ famtip.style.width=w+'px';
+ const h=famtip.offsetHeight;        // measured AFTER the width is applied
+ famtip.style.left=Math.max(4,Math.min(r.left+INSET,window.innerWidth-w-8))+'px';
  famtip.style.top=Math.max(8,Math.min(r.top,window.innerHeight-h-8))+'px';}
 function hideFam(){famtip.hidden=true;}
 document.querySelectorAll('.lanelabel').forEach(g=>{const f=g.dataset.fam;

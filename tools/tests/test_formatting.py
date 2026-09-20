@@ -617,6 +617,22 @@ check_true("the lane hit target accepts pointer events",
            'pointer-events="all"' in _LANEBLOCK)
 check_true("the lane hit target is invisible", 'fill="none"' in _LANEBLOCK)
 
+# --- families_figure: the hover panel sits ON the legend (2026-09-19) --------
+# The panel was anchored to the lane label's RIGHT edge (r.right + 14), which put
+# it exactly over the start of the plot and hid the earliest papers — the whole
+# left end of the timeline, which on a time-warped axis is where the foundational
+# work lives. It is now anchored to the label's LEFT edge and sized to the legend
+# band, so it covers the legend it belongs to instead of the data.
+check_true("hover panel is not anchored to the label's right edge",
+           "r.right+14" not in _SHELL and "r.right + 14" not in _SHELL)
+check_true("hover panel anchors to the label's left edge", "r.left" in _SHELL)
+check_true("hover panel is sized to the legend band",
+           "r.right-r.left" in _SHELL or "r.right - r.left" in _SHELL)
+# Width must be applied BEFORE offsetHeight is read, or the vertical clamp uses a
+# height measured at the old width and can push the panel off-screen.
+check_true("panel width is set before its height is measured",
+           _SHELL.index("famtip.style.width") < _SHELL.index("famtip.offsetHeight"))
+
 check_true("every tool module is indexed", {"verify.py", "references.py", "families_figure.py"} <= set(_ENT))
 check("phase comes from the module's PHASE constant", _ENT["references.py"]["phase"], "3f")
 check_true("flags come from argparse", "--audit" in _ENT["references.py"]["flags"])
