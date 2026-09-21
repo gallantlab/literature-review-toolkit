@@ -579,6 +579,44 @@ not mechanize. Three things *are* enforced:
 If the review is AI-authored, state the AI author and a verification disclosure
 in the document.
 
+#### The web page, and the bibliography viewer it must carry
+
+The `.docx` is the manuscript; the readable deliverable is a self-contained HTML
+page built by a project-local `build_review_page.py` from the same `rows.json`.
+Two things belong on it, and they are not the same thing:
+
+1. the **works cited** — the numbered list that resolves the in-text citations;
+2. the **searchable bibliography viewer** — `tools/bib_viewer.py`, holding the
+   **whole corpus**, including the references the review never cites, because
+   which papers went uncited is itself evidence about the review's scope.
+
+```python
+import bib_viewer
+block = bib_viewer.render(rows, spec=common.load_json("families.json"),
+                          cited={"C-01": 12, ...},   # ref id -> citation number
+                          author="<model>", author_note="<what the model is>")
+# page CSS += bib_viewer.CSS   ·   page body += block   ·   page JS += bib_viewer.JS
+```
+
+The module groups by theoretical family, gives each entry its abstract-derived
+summary, chips every cited entry with a `ref N` link back to the works-cited list,
+and renders its own **provenance note** naming who wrote the summaries and stating
+that they come from abstracts rather than full texts — a reader who jumps straight
+to the bibliography never sees the masthead disclosure, so the viewer repeats it.
+
+Run it standalone for a corpus with no review attached:
+
+```bash
+python3 ../tools/bib_viewer.py --rows rows.json --families families.json \
+        --out corpus_viewer.html --title "My topic" \
+        --author "<model>" --author-note "<what the model is>"
+```
+
+The filter is interactive, so verify it by **executing** it, never by reading it:
+`node verify_bib_filter.mjs <topic>/<topic>_review.html` runs the page's own script
+against a stub DOM built from its own entries and checks the resulting visibility
+state.
+
 <div class="gallery" markdown>
 
 <figure class="fig" markdown>

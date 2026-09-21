@@ -12,6 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import bib_viewer  # noqa: E402
 import cite_check  # noqa: E402
 import common  # noqa: E402
 import families  # noqa: E402
@@ -953,6 +954,82 @@ check_true("darken actually darkens",
            int(_ink[1:3], 16) < 0xd4 and int(_ink[3:5], 16) < 0xa0, _ink)
 check("darken is a no-op at factor 1.0", families_figure.darken("#d4a017", 1.0), "#d4a017")
 check("darken clamps to black", families_figure.darken("#d4a017", 0.0), "#000000")
+
+
+# ---- bib_viewer -----------------------------------------------------------
+# The viewer is the reader's route from a claim in a review back to the summary
+# that produced it, so its invariants are: every corpus row appears, exactly once;
+# the cited chip is distinguishable from the OpenAlex count beside it; and the
+# provenance note naming the author is present whenever an author is given.
+_spec = {"families": [
+    {"key": "a", "name": "Family A", "claim": "A's claim."},
+    {"key": "b", "name": "Family B", "claim": "B's claim."},
+]}
+_rows = [
+    {"ref": "A-01", "apa": "Alpha, A. (1999). First paper. J.", "doi": "10.1/a",
+     "link": "https://doi.org/10.1/a", "summary": "First summary.", "tag": "classic",
+     "topic": "Topic one", "lane": "A", "search_year": 1999, "cite_openalex": 12,
+     "family": "Family A"},
+    {"ref": "B-01", "apa": "Beta, B. (2020). Second paper. J.", "doi": "10.1/b",
+     "summary": "Second summary.", "tag": "recent-empirical", "topic": "Topic two",
+     "lane": "B", "search_year": 2020, "family": "Family B"},
+    {"ref": "A-02", "apa": "Gamma, G. (1980). Third paper. J.", "summary": "Third summary.",
+     "topic": "Topic one", "lane": "A", "search_year": 1980, "family": "Family A"},
+]
+
+_groups = bib_viewer.group_rows(_rows, _spec)
+check("groups follow the spec's family order", [g[1] for g in _groups], ["Family A", "Family B"])
+check("every row lands in exactly one group", sum(len(g[3]) for g in _groups), len(_rows))
+
+# A family the spec does not know is a build error, not a silently dropped paper.
+try:
+    bib_viewer.group_rows(_rows + [dict(_rows[0], ref="C-01", family="Family C")], _spec)
+    check_true("an unknown family raises", False, "no ValueError")
+except ValueError as exc:
+    check_true("an unknown family raises", "Family C" in str(exc), str(exc))
+
+# With no spec, grouping falls back to the rows' own Topic column.
+check("grouping falls back to topic", [g[1] for g in bib_viewer.group_rows(_rows)],
+      ["Topic one", "Topic two"])
+
+_block = bib_viewer.render(_rows, spec=_spec, cited={"A-01": 7},
+                           author="Claude Opus 5",
+                           author_note="An artificial intelligence developed by Anthropic")
+check("every row is rendered once", _block.count('<li class="bref"'), len(_rows))
+check("only cited rows are marked", _block.count('data-cited="1"'), 1)
+check_true("the cited chip links to the works-cited entry", 'href="#ref-7"' in _block, _block[:0])
+check_true("the chip says 'ref N', not 'cited N'",
+           ">ref 7</a>" in _block and ">cited 7</a>" not in _block)
+check_true("the OpenAlex count stays a separate field", "12 cites" in _block)
+check_true("the provenance note names the author", "Claude Opus 5" in _block and
+           "Where these summaries come from" in _block)
+check_true("the provenance note disclaims full texts",
+           "no figure, table or methods section was read" in _block)
+check_true("a citation map enables the cited-only filter", 'id="bibcited"' in _block)
+check_true("rows sort oldest first within a family",
+           _block.index("Third paper") < _block.index("First paper"))
+# A-01 carries a full link, B-01 only a bare `doi` (which still resolves to a
+# link), A-02 neither — so exactly the two identifiable rows are linked.
+check("a bare doi still links; a row with neither does not",
+      _block.count('class="bref-doi"'), 2)
+check_true("a bare doi is linked through doi.org",
+           'href="https://doi.org/10.1/b"' in _block)
+
+# No citation map: no chips and no cited-only filter, so a standalone corpus
+# viewer does not offer a control that would hide everything.
+_plain = bib_viewer.render(_rows, spec=_spec, author="Claude Opus 5", author_note="An AI")
+check("no chips without a citation map", _plain.count('data-cited="1"'), 0)
+check_true("no cited-only filter without a citation map", 'id="bibcited"' not in _plain)
+
+# No author: no provenance note to make a claim the caller did not authorize.
+check_true("no provenance note without an author",
+           "Where these summaries come from" not in bib_viewer.render(_rows, spec=_spec))
+
+check_true("the standalone page is a complete document",
+           bib_viewer.standalone(_rows, _spec, title="T", author="X", author_note="An AI")
+           .startswith("<!doctype html>"))
+check_true("the standalone page declares a charset",
+           '<meta charset="utf-8">' in bib_viewer.standalone(_rows, _spec, title="T"))
 
 
 # ---- report ---------------------------------------------------------------
