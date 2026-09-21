@@ -583,12 +583,17 @@ in the document.
 
 The `.docx` is the manuscript; the readable deliverable is a self-contained HTML
 page built by a project-local `build_review_page.py` from the same `rows.json`.
-Two things belong on it, and they are not the same thing:
+Two things belong on it:
 
 1. the **works cited** — the numbered list that resolves the in-text citations;
-2. the **searchable bibliography viewer** — `tools/bib_viewer.py`, holding the
-   **whole corpus**, including the references the review never cites, because
-   which papers went uncited is itself evidence about the review's scope.
+2. the **interactive timeline** (`<topic>_families.html`) embedded in an iframe —
+   on every review, without exception. It doubles as the corpus browser: every
+   reference is a node, and clicking one pins `ref · family · topic · APA · DOI ·
+   summary · citation counts` in the side panel.
+
+Do **not** embed a second reference browser beside it. The timeline's side panel is
+already a superset of what a bibliography list shows, so the two duplicate each other;
+the duplication was cut from the first review that shipped with both.
 
 ```python
 import bib_viewer
@@ -598,11 +603,15 @@ block = bib_viewer.render(rows, spec=common.load_json("families.json"),
 # page CSS += bib_viewer.CSS   ·   page body += block   ·   page JS += bib_viewer.JS
 ```
 
-The module groups by theoretical family, gives each entry its abstract-derived
-summary, chips every cited entry with a `ref N` link back to the works-cited list,
-and renders its own **provenance note** naming who wrote the summaries and stating
-that they come from abstracts rather than full texts — a reader who jumps straight
-to the bibliography never sees the masthead disclosure, so the viewer repeats it.
+`bib_viewer.py` is for the case with **no** timeline: a corpus with no review
+attached, or a page that wants the references as text rather than as a plot. It
+groups by theoretical family, gives each entry its abstract-derived summary, and can
+chip cited entries with a `ref N` link back to a works-cited list. It also renders a
+**provenance note** naming who wrote the summaries and stating that they come from
+abstracts rather than full texts — keep that on for a standalone viewer, and pass
+`provenance=False` anywhere a masthead already carries the disclosure. State the
+authorship **once**: repeating it in the masthead, the bibliography and the footer
+reads as anxiety rather than disclosure.
 
 Run it standalone for a corpus with no review attached:
 

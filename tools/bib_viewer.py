@@ -9,9 +9,10 @@ is itself evidence about the review's scope — grouped by theoretical family, w
 live search box, a "cited in this review only" filter, and a chip on each cited
 entry linking back to its numbered works-cited entry.
 
-It also carries its own provenance note. A review written by a model says so on its
-own face AND inside its bibliography, because a reader who jumps straight to the
-corpus never sees the masthead.
+It can also carry a provenance note naming who wrote the summaries and saying they
+come from abstracts rather than full texts. Pass provenance=False from a review page,
+whose masthead already carries that disclosure — a model-written review states its
+authorship ONCE — and leave it on for a viewer that ships standalone.
 
 Use it from a project's `build_review_page.py`:
 

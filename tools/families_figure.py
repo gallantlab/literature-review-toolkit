@@ -855,7 +855,7 @@ HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><titl
  #famtip .ft-lin{color:#444;font-size:12px;margin-top:2px;}
 </style></head><body>
 <header>__XLSXBTN__<div class="sub">Hover a node for its reference; click it to pin the full entry here,
- then walk the timeline with Next/Prev or the \\u2190/\\u2192 arrow keys.
+ then walk the timeline with Next/Prev or the &larr;/&rarr; arrow keys.
  Hover a family's name at left for its claim and lineage, and to spotlight its papers.</div></header>
 <main><div id="figwrap">__SVG__</div>
 <aside id="panel"><div class="hint">Click any node to see its full reference here.</div></aside></main>
