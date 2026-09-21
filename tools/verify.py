@@ -66,8 +66,14 @@ _EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
 
 def _esummary(db, uid):
-    """One NCBI esummary record (PMC or PubMed) as a found-record, or None."""
-    d = http_json(f"{_EUTILS}/esummary.fcgi?db={db}&id={uid}&retmode=json")
+    """One NCBI esummary record (PMC or PubMed) as a found-record, or None.
+
+    The id is percent-encoded for the URL but NOT for the result lookup: NCBI
+    keys `result` by the id as sent, so quoting the key too would miss on any
+    id that actually needed encoding.
+    """
+    uid = str(uid)
+    d = http_json(f"{_EUTILS}/esummary.fcgi?db={db}&id={urllib.parse.quote(uid)}&retmode=json")
     r = (d.get("result") or {}).get(uid)
     if not r or "uid" not in r:
         return None
@@ -80,7 +86,10 @@ def _esummary(db, uid):
 
 
 def lookup_pmc(pmcid):
-    return _esummary("pmc", pmcid.replace("PMC", ""))
+    # Upper-case before stripping: a lower-case "pmc123" does not match "PMC",
+    # so the prefix survived, esummary got a malformed id, and a real paper came
+    # back unverifiable.
+    return _esummary("pmc", pmcid.upper().replace("PMC", ""))
 
 
 def lookup_pubmed_id(pmid):
