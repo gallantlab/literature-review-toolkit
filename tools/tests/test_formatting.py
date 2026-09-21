@@ -783,6 +783,42 @@ check_true("a title ending in an area name (V1) is not a glued footnote", not an
 _d, _n = references.audit("Kay, K. N. (2013). Compressive spatial summation in area 3b. Journal of Vision, 13(2), 1-10.", True)
 check_true("a title ending in 3b is not a glued footnote", not any("glued-footnote" in x for x in _d + _n), str(_d + _n))
 
+# ---- PMC ids: case-insensitive prefix, percent-encoded in the URL -----------
+# A lower-case "pmc123" never matched the "PMC" strip, so the whole string went
+# to esummary as the id; NCBI returned nothing and a real, correctly-cited paper
+# was reported unverifiable. Caught by mvdoc in review of the
+# gallantlab-claude-skills port (2026-05-08) and never ported back here.
+_seen_urls = []
+_orig_vj = verify.http_json
+
+
+def _capture(payload):
+    def _f(url, **kw):
+        _seen_urls.append(url)
+        return payload
+    return _f
+
+
+_PMC_REC = {"result": {"11304553": {"uid": "11304553", "title": "Semantic reconstruction",
+                                    "pubdate": "2023", "authors": [{"name": "Tang J"}],
+                                    "source": "Nat Neurosci"}}}
+verify.http_json = _capture(_PMC_REC)
+_hi = verify.lookup_pmc("PMC11304553")
+_seen_urls.clear()
+_lo = verify.lookup_pmc("pmc11304553")
+check("a lower-case pmc prefix resolves like the upper-case form", _lo, _hi)
+check_true("the pmc prefix is stripped whatever its case", "id=11304553&" in _seen_urls[0], _seen_urls[0])
+check_true("a real record is still returned (the result key is not quoted)", _lo is not None)
+
+# The id is interpolated into a URL, so it is percent-encoded there — but the
+# `result` dict is keyed by the id as sent, so the key must stay unquoted.
+verify.http_json = _capture({"result": {}})
+_seen_urls.clear()
+verify.lookup_pubmed_id("37127759 x")
+check_true("a stray character in an id is percent-encoded in the URL",
+           "id=37127759%20x&" in _seen_urls[0], _seen_urls[0])
+verify.http_json = _orig_vj
+
 # ---- verify is a gate: exit 0 only when every verdict is OK -----------------
 # It used to always exit 0, so `verify.py && references.py ...` sailed past a
 # run full of NOT-FOUNDs; the other two gates already failed loud.
