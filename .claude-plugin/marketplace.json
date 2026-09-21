@@ -1,0 +1,21 @@
+{
+  "name": "literature-review-toolkit",
+  "owner": {
+    "name": "Gallant Lab",
+    "url": "https://gallantlab.org"
+  },
+  "plugins": [
+    {
+      "name": "literature-review-toolkit",
+      "source": {
+        "source": "github",
+        "repo": "gallantlab/literature-review-toolkit"
+      },
+      "description": "Drive an LLM agent through a structured academic literature review — search, verify, canonicalize references, count citations, cross-reference, and assemble an annotated bibliography.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jack L. Gallant"
+      }
+    }
+  ]
+}
