@@ -18,6 +18,7 @@ import common  # noqa: E402
 import families  # noqa: E402
 import families_figure  # noqa: E402
 import gen_docs  # noqa: E402
+import prose_audit  # noqa: E402
 import references  # noqa: E402
 import review_paper  # noqa: E402
 import sentence_case as sc  # noqa: E402
@@ -1030,6 +1031,53 @@ check_true("the standalone page is a complete document",
            .startswith("<!doctype html>"))
 check_true("the standalone page declares a charset",
            '<meta charset="utf-8">' in bib_viewer.standalone(_rows, _spec, title="T"))
+
+
+# ---- prose_audit: measuring a review's readability (2026-09-22) ------------
+# Every case is a real miscount from the pass that cut a 555-reference review's
+# mean sentence from 31 to 24 words.
+
+# A sentence ending in a numeral is a sentence end. Guarding trailing digits (to
+# protect decimals) glued two real sentences into one 54-word phantom; decimals
+# need no guard because '0.1 mm' has no space after the period.
+check("a numeral ends a sentence",
+      len(prose_audit.sentences("Latencies are shortest in layers 4C and 6. CSD begins there.")), 2)
+check("a decimal does not end a sentence",
+      len(prose_audit.sentences("Localization is good to 0.1 mm at best.")), 1)
+
+# 'et al.' is the abbreviation that matters: unguarded, it cuts almost every
+# citation-bearing sentence of an APA-cited review in half.
+check("et al. does not end a sentence",
+      len(prose_audit.sentences("Nandy et al. found a laminar profile. It replicated.")), 2)
+check("e.g. does not end a sentence",
+      len(prose_audit.sentences("Some layers (e.g. 4C) are unoriented.")), 1)
+
+# A flattened HTML table reads as one enormous sentence — a real one measured
+# 153 words and swamped the section it was reported in.
+_tbl = "<p>Short prose here.</p><table><tr><td>a</td><td>b</td></tr></table>"
+check_true("tables are dropped before measuring", "a" not in prose_audit.detag(_tbl))
+check_true("table cells kept when asked", "a" in prose_audit.detag(_tbl, drop_tables=False))
+
+# Citation markers must not be counted as prose words, and entities must resolve.
+check("markers are not words",
+      prose_audit.detag("<p>Layer 4 is the input layer[[R-01|R-02]].</p>"),
+      "Layer 4 is the input layer.")
+check("entities are unescaped", prose_audit.detag("<p>1909&ndash;2026</p>"), "1909–2026")
+
+# Blocks are read by static parse, never by importing the project's script, and
+# a section keeps its slug so a finding can be mapped back to a section.
+_page = os.path.join(os.path.dirname(__file__), "_tmp_review_page.py")
+with open(_page, "w", encoding="utf-8") as fh:
+    fh.write('BODY = [\n("A title", "sec-demo", """<p>' + ("word " * 40)
+             + 'and so on[[R-01]]. A second sentence[[R-02]].</p>"""),\n]\n'
+             'PAGE = """<!doctype html><style>p{color:red}</style>"""\n')
+_blocks = prose_audit.page_blocks(_page)
+check("section prose is named by its slug", sorted(_blocks), ["BODY:sec-demo"])
+check_true("the page template is not counted as prose",
+           not any("doctype" in v for v in _blocks.values()))
+check("citations are read from the markers",
+      prose_audit.cites_in(_blocks["BODY:sec-demo"], False), {"R-01", "R-02"})
+os.remove(_page)
 
 
 # ---- report ---------------------------------------------------------------

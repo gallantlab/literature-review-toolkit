@@ -666,6 +666,40 @@ method/region lanes. The title should convey the question, the answer, and why i
 in-text citation is **APA author–date** (`(Huth et al., 2016)`) and MUST name a paper that exists
 in `rows.json`, so the reference list backs it.
 
+**Concision pass (required before delivering; `tools/prose_audit.py`).** A model-written review
+is rarely wrong and often unreadable, and the defect is always the same one: four or five findings
+chained through semicolons into a single 60–120 word sentence, each clause carrying its own
+citation. Every fact is right, the citations all resolve, and no reader can follow it. `cite_check.py`
+cannot see this, because it only asks whether the citations resolve.
+
+Measure before rewriting, because "wordy" is a number:
+
+```bash
+cp build_review_page.py /tmp/before.py         # or: cp content.json /tmp/before.json
+python3 tools/prose_audit.py --page build_review_page.py            # diagnose
+#   ... revise ...
+python3 tools/prose_audit.py --page build_review_page.py --baseline /tmp/before.py   # GATE
+```
+
+Aim for a **mean sentence of ~24 words** with almost nothing over 50; a first draft typically
+lands near 31 with dozens of 50-plus sentences. The rewrite is mechanical once the long sentences
+are listed: give each finding its own sentence and cut the semicolon chains. On a 555-reference
+review this moved the mean 31 → 24 and sentences of 50+ words 54 → 8, for a 3.8% word saving —
+the gain is in followability, not length, and the two should not be confused.
+
+**A concision pass silently drops citations, so it needs its own gate.** Rewriting a
+five-clause sentence into three is exactly how a reference falls out of the works cited, and
+nothing downstream notices: the renderer prints what it is given and the reference list is built
+only from what remains cited. `prose_audit.py --baseline` compares the distinct-citation set
+before and after and exits 1 if any reference was lost. Keep the pre-revision copy outside the
+project (it is a temporary, not a deliverable).
+
+**Two sections resting on the same references are telling the same story twice.** `prose_audit.py`
+reports block pairs sharing 8+ citations. On the cortical-layers review the humans/species section
+and the laminar-fMRI comparison shared **35** — the fMRI case was argued in full in both places.
+Folding one into the other cut 372 words and, because every one of its 27 references was cited
+elsewhere too, lost nothing from the works cited. Check that before cutting, not after.
+
 **Respect the temporal order of ideas — distil the intellectual history, do not force refs into
 the narrative (contract rule 5; confirmed by user 2026-06-13).** The single most common failure of an
 AI-written review is crediting the wrong paper for an idea: it picks whichever citation fits the
@@ -1146,6 +1180,13 @@ The real gap was one layer down, in the appearance.
   assert zero cross-theme dup DOIs and zero field↔lab collisions yourself.
 
 ### On writing the review (Phase 7)
+- **The draft will be accurate and unreadable; budget a concision pass.** The failure is
+  compression, not vocabulary — a filler-word scan over one 10,800-word draft found essentially
+  nothing to cut, while 54 sentences ran past 50 words. Run `prose_audit.py`, work down the
+  long-sentence list it prints, and re-run it with `--baseline` so the pass cannot drop a reference.
+- **Edit the emitter, never the rendered page.** The prose lives in `build_review_page.py` /
+  `content.json`; a fix applied to the HTML or the `.docx` is gone at the next render and, worse,
+  leaves the page disagreeing with the script that claims to produce it.
 - **Order ideas by publication date, not by your narrative.** The drafting model reliably presents
   a later paper as an idea's origin because that ref fits the sentence it wants to write. The rule,
   the four inversion patterns, the real misses caught 2026-06-13, and the required pre-delivery
@@ -1369,6 +1410,7 @@ it is stale); the per-tool detail is in `tools/README.md` and `docs/tools.md`.
 | `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |
 | `bib_viewer.py` | 7 | Render the searchable bibliography viewer every review page embeds. | `--author` `--author-note` `--families` `--out` `--rows` `--subtitle` `--title` |
 | `cite_check.py` | 7 | Phase 7 gate — every in-text citation must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
+| `prose_audit.py` | 7 | Phase 7 — measure a review's prose and prove a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |
 | `review_paper.py` | 7 | Phase 7 — build a review ARTICLE (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `lab_corpus.py` | L1 | Lab mode — Phase L1: ingest a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
@@ -1415,7 +1457,9 @@ they're scaffolding to keep the LLM judgment work fast.
     gate it with tools/cite_check.py, then render with tools/review_paper.py
     (APA-7 refs from rows.json). If AI-authored, state the AI author + a
     verification disclosure. REQUIRED before delivery: run the priority audit
-    (origin claims must cite the EARLIEST paper, oldest-first) — see Phase 7.
+    (origin claims must cite the EARLIEST paper, oldest-first), and the
+    concision pass with tools/prose_audit.py (keep a pre-revision copy and
+    re-run with --baseline: a rewrite must not drop a citation) — see Phase 7.
 10. Phase 8: report to user.
 11. Phase 4 (PDF download) is OPTIONAL. Only run if the user explicitly
     asks for PDFs.

@@ -579,6 +579,42 @@ not mechanize. Three things *are* enforced:
 If the review is AI-authored, state the AI author and a verification disclosure
 in the document.
 
+#### Then make it readable — `prose_audit.py`
+
+The draft will be accurate and hard to follow. The defect is compression: four or
+five findings chained through semicolons into one 60–120 word sentence, each clause
+with its own citation. `cite_check.py` cannot see it, because every citation
+resolves. Measure it instead of arguing about it:
+
+```bash
+cp build_review_page.py /tmp/before.py      # keep the pre-revision copy OUT of the project
+python3 ../tools/prose_audit.py --page build_review_page.py
+#   ... rewrite the sentences it lists ...
+python3 ../tools/prose_audit.py --page build_review_page.py --baseline /tmp/before.py
+```
+
+It reads either shape a review comes in — `--page build_review_page.py` (prose with
+`[[REF]]` markers) or `--content content.json` (the `.docx` route, APA author-date) —
+and reports words, mean sentence length and the long sentences per block.
+
+Aim for a **mean sentence near 24 words**, with almost nothing over 50. A first draft
+typically lands at 31. Rewriting is mechanical once the offenders are listed: one
+finding per sentence, and cut the semicolon chains.
+
+Two things the tool is really there for:
+
+- **`--baseline` is a gate.** Rewriting a five-clause sentence into three is exactly
+  how a reference falls quietly out of the works cited, and nothing downstream
+  notices. It compares the distinct-citation set before and after and exits 1 on any
+  loss.
+- **It finds arguments told twice.** Block pairs sharing 8+ citations are reported.
+  On one review, two sections shared 35 references — the same case was made in both.
+  Folding one into the other cut 372 words and lost no reference, because every one
+  of them was cited elsewhere as well. Verify that before cutting.
+
+Long sentences are reported, never gated: a parallel, list-like sentence can
+legitimately run long, and that call is editorial.
+
 #### The web page, and the bibliography viewer it must carry
 
 The `.docx` is the manuscript; the readable deliverable is a self-contained HTML
