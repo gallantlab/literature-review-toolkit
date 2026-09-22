@@ -1,0 +1,18 @@
+{
+  "name": "literature-review-toolkit",
+  "version": "0.1.0",
+  "description": "Drive an LLM agent through a structured academic literature review — search, verify, canonicalize references, count citations, cross-reference, and assemble an annotated bibliography.",
+  "author": {
+    "name": "Jack L. Gallant"
+  },
+  "repository": "https://github.com/gallantlab/literature-review-toolkit",
+  "homepage": "https://gallantlab.org/literature-review-toolkit/",
+  "license": "MIT",
+  "keywords": [
+    "literature-review",
+    "bibliography",
+    "citations",
+    "academic",
+    "research"
+  ]
+}
