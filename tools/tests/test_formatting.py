@@ -407,6 +407,20 @@ check("reference_list sorts with accents folded (Miller before Millière)",
       [a[:7] for a, _ in _RL], ["Miller,", "Millièr", "Zeidan,"])
 check("reference_list adds no period after ?", _RL[2][0], "Zeidan, F. (2015). Does it work?")
 check("reference_list keeps the first row's link", _RL[0][1], "")
+# APA-7 §9.44-9.46: the same authors sort by year, and a sole author precedes
+# that author's multi-author works. Sorting on the whole string letters-only
+# ignored the year and let titles decide (Anobile 2016 printed before 2014).
+_RL2 = review_paper.reference_list([
+    {"apa": "Anobile, G., & Burr, D. C. (2016). Number as a primary attribute.", "link": ""},
+    {"apa": "Anobile, G., & Burr, D. C. (2014). Separate mechanisms.", "link": ""},
+    {"apa": "Attneave, F. (1959). Applications of information theory.", "link": ""},
+    {"apa": "Attneave, F., & Arnoult, M. D. (1956). The quantitative study.", "link": ""},
+    {"apa": "Attneave, F. (1954). Some informational aspects.", "link": ""},
+    {"apa": "Attneave, F. (1957). Physical determinants.", "link": ""},
+])
+check("reference_list orders same authors by year, sole author first",
+      [re.search(r"\((\d{4})\)", a).group(1) for a, _ in _RL2],
+      ["2014", "2016", "1954", "1957", "1959", "1956"])
 
 # spreadsheet.py must not crash on a `source` value it has never seen — corpora
 # already disagree on the tag vocabulary (anteced vs search for the same pass).

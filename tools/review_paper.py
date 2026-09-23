@@ -48,9 +48,17 @@ PHASE = "7"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 
 def _apa_sort_key(apa):
-    # accent-folded so Millière sorts after Miller (dropping the accented letter
-    # outright, as this once did, put it before)
-    return re.sub(r"[^a-z]", "", common.fold(apa))
+    # APA-7 §9.44-9.46: authors letter by letter, then year, then title. Split at
+    # the "(year)" so the year is compared as a year: sorting the whole string
+    # letters-only let titles decide between one author's papers. A sole author
+    # sorts before that author's multi-author works because "attneavef" is a
+    # prefix of "attneavefarnoultmd". Accent-folded so Millière follows Miller.
+    def letters(s):
+        return re.sub(r"[^a-z]", "", common.fold(s))
+    m = re.match(r"(.*?)\s*\((\d{4})([a-z]?)[^)]*\)(.*)", apa)
+    if not m:
+        return (letters(apa), "9999", "", "")
+    return (letters(m.group(1)), m.group(2), m.group(3), letters(m.group(4)))
 
 
 def reference_list(rows):

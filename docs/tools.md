@@ -1,19 +1,17 @@
 # Tools reference
 
 Every script lives in
-[`tools/`](https://github.com/gallantlab/literature-review-toolkit/tree/main/tools).
-Each is small, standalone, and meant to be **read and adapted** — scaffolding,
-not a framework. They share one helper module (`common.py`: HTTP with backoff,
-JSON I/O, DOI/arXiv parsing, the APA builder **and the APA parser** every tool
-reads references back with, the CrossRef/arXiv record readers). Run any with
-`--help`.
+[`tools/`](https://github.com/gallantlab/literature-review-toolkit/tree/main/tools),
+is standalone, and is meant to be read and adapted. They share one helper module,
+`common.py`, which provides HTTP with backoff, JSON I/O, DOI and arXiv parsing,
+the APA builder and parser, and the CrossRef and arXiv record readers. Run any
+script with `--help`.
 
 ## Index
 
-The table below is **generated** from the modules themselves — each script's
-docstring, its `PHASE` constant, and the flags its own `--help` reports — by
-`python3 tools/gen_docs.py`, and CI fails if it is stale. The same block appears
-in `tools/README.md` and `PLAYBOOK.md`, so the three cannot disagree.
+`tools/gen_docs.py` generates this table from each script's docstring, `PHASE`
+constant and `--help` flags, and CI fails if it is stale. The same table appears
+in `tools/README.md` and `PLAYBOOK.md`.
 
 <!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
 | Script | Phase | Purpose | Flags |
@@ -36,58 +34,53 @@ in `tools/README.md` and `PLAYBOOK.md`, so the three cannot disagree.
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
 <!-- END GENERATED TOOL INDEX -->
 
-## What each tool decides — the part that is judgment
+## What each tool refuses to guess
 
-The index says what a tool *is*; these notes say what it *refuses to guess*.
-
-- **`verify.py`** returns `OK` / `MISMATCH` / `NOT-FOUND` / `ERROR`, and the
-  last two are different verdicts: `ERROR` means a lookup could not complete
-  (re-run it), `NOT-FOUND` means every lookup completed and nothing matched
-  (chase it — likely fabricated). arXiv ids are prefetched in batches so the
-  API's rate limit cannot turn real papers into false NOT-FOUNDs. It accepts a
-  hand-built citations list **or `rows.json` directly (`--rows`)**.
-- **`references.py`** rebuilds every `apa` from its verified DOI/arXiv id;
-  `--audit` is a **hard gate** (exit 1 on any defect) that also *warns* on
-  near-duplicate rows and on multi-word surnames that may be a mis-split given
-  name — both need a human verdict. `--repair` fixes pure string damage
-  (markup, Unicode hyphens, `?.`) **offline**, so a retrofit never re-fetches and
-  never wipes post-canon hand fixes. Canon and repair stamp each row with
-  `canonical_at`, which the write guard in `common.write_rows` honors.
-- **`sentence_case.py`** proposes strict APA-7 sentence case and a human
-  reviews; per-project proper nouns go in `--proper`, and `--vocab` reviews a
-  large corpus by distinct token change rather than by title.
-- **`spreadsheet.py`** auto-adds the `Cite` and `Family` columns when rows carry
-  them; an unknown `source` value renders white with a warning rather than
-  aborting the build.
-- **`citations.py`** uses OpenAlex (primary) + Semantic Scholar (secondary),
-  reconciles OpenAlex undercounts against S2, and never touches Google Scholar
-  (no API, CAPTCHA).
-- **`xref.py`** builds the cross-citation table from the corpus's own CrossRef
-  reference lists; `--internal-out` emits within-corpus in-degree for the
-  figure's landmark selection. Accepts `rows.json` directly (`--rows`).
-- **`families.py`** validates an agent-proposed, human-approved family
-  taxonomy (exhaustive / exclusive; hard limit 2–9 families, 3–8 recommended)
-  and stamps `family` onto rows. Do not cluster embeddings to make families.
-- **`families_figure.py`** selects and labels landmark dots **automatically**
-  (most-cited per family, within-corpus in-degree, home-lab papers when opted
-  in) and prints how many the label cap dropped. Arrows and notes stay editorial
+- **`verify.py`** returns `OK`, `MISMATCH`, `NOT-FOUND` or `ERROR`. `ERROR` means
+  a lookup could not complete (re-run it); `NOT-FOUND` means every lookup
+  completed and nothing matched (likely fabricated). arXiv ids are fetched in
+  batches so rate limits cannot produce false NOT-FOUNDs. Accepts a citation list
+  or `rows.json` (`--rows`).
+- **`references.py`** rebuilds every reference from its verified DOI or arXiv id.
+  `--audit` exits 1 on any defect and warns on near-duplicate rows and possibly
+  mis-split surnames, which need a human verdict. `--repair` fixes string damage
+  (markup, Unicode hyphens, `?.`) offline, without re-fetching or undoing hand
+  fixes. Both stamp rows with `canonical_at`, which `common.write_rows` refuses
+  to overwrite.
+- **`sentence_case.py`** proposes APA-7 sentence case for a human to review.
+  Project proper nouns go in `--proper`; `--vocab` reviews a large corpus by
+  distinct word change rather than title by title.
+- **`spreadsheet.py`** adds the `Cite` and `Family` columns when rows carry them.
+  An unknown `source` renders white with a warning instead of failing.
+- **`citations.py`** uses OpenAlex, corrects its undercounts against Semantic
+  Scholar, and never queries Google Scholar (no API).
+- **`xref.py`** builds the cross-citation table from the corpus's CrossRef
+  reference lists. `--internal-out` writes within-corpus citation counts for
+  the figure's landmark selection. Accepts `rows.json` (`--rows`).
+- **`families.py`** validates an agent-proposed, human-approved grouping: every
+  paper in exactly one family, 2–9 families (3–8 recommended). Never build
+  families by clustering embeddings.
+- **`families_figure.py`** chooses landmarks automatically (most cited per
+  family, most cited within the corpus, home-lab papers when opted in) and
+  prints how many labels the cap dropped. Arrows and notes stay editorial
   (`--spec`).
-- **`cite_check.py`** is the Phase-7 gate: every in-text citation must name a
-  row (exit 1 otherwise); an author-year matching two rows is warned, and APA-7
-  §8.19 (name more authors) is the fix.
-- **`review_paper.py`** renders the `.docx` mechanics only; its reference list
-  is `reference_list(rows)` — the one implementation any HTML page should reuse.
-- **`lab_corpus.py`** ingests a lab's corpus from OpenAlex; author-id
-  disambiguation is the #1 correctness risk and cuts both ways (merged and
-  split ids). Enrich abstracts before classifying.
+- **`bib_viewer.py`** renders a searchable, family-grouped bibliography for a
+  corpus with no lineage figure, with a note on who wrote the summaries.
+- **`cite_check.py`** exits 1 if an in-text citation matches no row, and warns
+  when one author-year matches two (name more authors, APA-7 §8.19).
+- **`prose_audit.py`** reports sentence length per block; `--baseline` exits 1 if
+  a revision lost a citation.
+- **`review_paper.py`** renders the `.docx` only. Its reference list comes from
+  `reference_list(rows)`, which any HTML page should reuse.
+- **`lab_corpus.py`** ingests a lab's corpus from OpenAlex. Author-id
+  disambiguation is the main risk: ids can merge different people or split one
+  person. Fetch abstracts before classifying.
 - **`download.py` / `reconcile_downloads.py`** are opt-in (Phase 4). The
-  reconciler's primary strategy is filename ↔ DOI substring, then author + year
-  + title overlap on the first page; it refuses to move when uncertain.
+  reconciler matches filename to DOI, then author, year and title on the first
+  page, and refuses to move a file when unsure.
 - **`gen_docs.py`** regenerates the index above; `--check` is what CI runs.
 
 !!! tip "Read the PLAYBOOK alongside the tools"
-    The
     [`PLAYBOOK.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/PLAYBOOK.md)
-    is the operating manual the agent follows — it documents the order, the
-    guardrails, and the hard-won lessons (mojibake handling, compound-surname
-    fixes, OpenAlex undercount tells, and more) that the scripts encode.
+    is the procedure the agent follows: phase order, guardrails, and the lessons
+    the scripts encode.

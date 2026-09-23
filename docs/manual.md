@@ -1,43 +1,32 @@
 # Operator manual
 
-The complete end-to-end document for running a review: setup, the rules that
-don't bend, every phase with its command and its gate, how to read what comes
-out, and what to do when a step fails.
-
-!!! info "This is the one page to work from"
-    Install, every phase with its command and its gate, how to read the outputs,
-    and what to do when a step fails. [Examples](examples.md) shows finished runs;
-    the [Tools reference](tools.md) carries the per-script index. The authoritative
-    procedure the agent itself follows is
-    [`PLAYBOOK.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/PLAYBOOK.md).
+This page covers everything needed to run a review: setup, the rules, each phase
+with its command and its gate, how to read the outputs, and what to do when a
+step fails. [Examples](examples.md) shows finished runs. The
+[Tools reference](tools.md) lists every script and flag. The agent itself follows
+[`PLAYBOOK.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/PLAYBOOK.md),
+which is the authoritative procedure.
 
 ---
 
 ## 1. What the toolkit is for
 
-A literature review has a handful of points where a person genuinely has to
-decide something, and a great deal of work in between that has a **ground
-truth** — a DOI either resolves to the paper you cited or it does not.
+A literature review mixes two kinds of work. A few steps need human judgment:
+what to search, how to group the papers, how to write them up. Everything else
+has a ground truth: a DOI either resolves to the cited paper or it does not.
 
-The toolkit's whole premise is to split those apart. **The agent supplies
-judgment; the scripts supply ground truth.** Wherever a fact can be checked it is
-checked automatically, every time, behind a gate that fails the build rather than
-your reader.
+The toolkit separates the two. **The agent supplies judgment; the scripts supply
+ground truth.** Every checkable fact is checked automatically, behind a gate that
+fails the build instead of misleading the reader. This matters because search
+agents fabricate roughly **1 in 4** citations. They invent DOIs, swap first
+authors, invert findings, and occasionally attach the wrong author list to a real
+paper. Nothing downstream trusts an unverified reference.
 
-This matters because of one number: search agents fabricate roughly **1 in 4**
-citations — wrong first authors, invented or mis-copied DOIs, inverted findings,
-and occasionally an entirely wrong author list for a paper that genuinely exists.
-Nothing downstream is allowed to trust an unverified reference.
+**Target size.** Aim for 50–70 high-impact and recent papers per topic. Corpora of
+400–650 papers work, but several figure defaults then need retuning
+([§9.4](#94-the-figure-hides-landmarks-or-looks-wrong)).
 
-**Target size.** Aim for ~50–70 high-impact and recent papers per topic,
-classified and summarized. Large corpora (400–650 papers) work, but several
-defaults are tuned for the smaller case and need retuning — see
-[§9.4](#94-the-figure-hides-landmarks-or-looks-wrong).
-
-### 1.1 The pipeline at a glance
-
-Two front ends converge on a shared verify → canonicalize → count →
-cross-reference → (group → figure → write) backbone.
+### 1.1 The pipeline
 
 ```mermaid
 flowchart TD
@@ -79,24 +68,20 @@ flowchart TD
     class V,C gate;
 ```
 
-<small>Yellow = a human decision. Green = a guarded, ground-truth step that runs
-automatically but fails the build if something is wrong.</small>
-
-**1** scope · **2** search · **2b** antecedents *(required)* · **3** verify
-*(critical)* · **3f** canonicalize · **4** PDFs *(opt-in)* · **5** spreadsheet ·
-**5b** citation counts · **6** cross-citation · **6b** families *(opt)* · **7**
-review article *(opt)* · **8** hand-off.
+<small>**Two front ends feed one verified backbone.** Topic mode (left) starts from
+a question; lab mode (right) starts from a lab's publications. Both enter
+verification (③), and every later phase is shared. Yellow boxes are human
+decisions. Green boxes are gates: they run automatically and stop the pipeline on
+any error. Papers added by the cross-citation pass (⑥) loop back through
+verification, so no reference reaches a deliverable unchecked.</small>
 
 ### 1.2 The three decisions that are yours
 
-Everything else is mechanized. You only *decide* three things, and the last two
-are optional:
-
-| # | You decide… | Phase | Why it's yours |
+| # | You decide | Phase | Why it is yours |
 |---|---|---|---|
-| 1 | **Scope** — topic and span (or which lab corpus) | 1 / L1–L2 | Only you know the question. |
-| 2 | **Families** *(optional)* | 6b | You approve the grouping *before* it labels every paper. |
-| 3 | **The write-up** *(optional)* | 7 | Prose is judgment; the toolkit won't fake it. |
+| 1 | **Scope**: topic and span, or which lab corpus | 1 / L1–L2 | Only you know the question. |
+| 2 | **Families** *(optional)* | 6b | You approve the grouping before any paper is labeled. |
+| 3 | **The write-up** *(optional)* | 7 | Prose is judgment; the toolkit does not fake it. |
 
 ---
 
@@ -114,53 +99,27 @@ brew install poppler          # macOS
 # or: sudo apt-get install poppler-utils
 ```
 
-The tools are plain standalone Python 3 scripts with a tiny dependency footprint
-(`xlsxwriter` for the spreadsheet, `python-docx` for the review). They are meant
-to be **read and adapted** — scaffolding, not a framework. Run any with `--help`.
+The tools are standalone Python 3 scripts. The only dependencies are
+`xlsxwriter` (spreadsheet) and `python-docx` (review article). Each script is
+meant to be read and adapted. Run any with `--help`.
 
-### 2.2 Identify yourself to the APIs
+### 2.2 Environment variables
 
-NCBI and CrossRef ask callers to supply a contact email; it buys politeness
-limits instead of throttling.
+| Variable | Required | Purpose |
+|---|---|---|
+| `LITREVIEW_EMAIL` | yes | Contact email that NCBI and CrossRef require; it buys polite rate limits. Or pass `--email` to each tool. |
+| `S2_API_KEY` | no | Avoids Semantic Scholar rate limits (HTTP 429) on large corpora. Without it, S2 coverage is partial and OpenAlex undercounts go uncaught. |
+| `LITREVIEW_LAB_AUTHOR` | no | Comma-separated surnames whose papers the figure stars as home-lab work. Off by default. See [§7.2](#72-the-lineage-figure). |
 
 ```bash
 export LITREVIEW_EMAIL=you@institution.edu
 ```
 
-…or pass `--email you@institution.edu` to each invocation.
-
-??? tip "Optional: `S2_API_KEY` for Semantic Scholar"
-    Citation counts (Phase 5b) query OpenAlex first and Semantic Scholar as a
-    cross-check. S2's free endpoints rate-limit (HTTP 429) anonymous callers on
-    large corpora, and sometimes 400 on a batch where one malformed id poisons
-    the whole request. With a key, export it:
-
-    ```bash
-    export S2_API_KEY=your-key-here
-    ```
-
-    Without one, accept partial S2 coverage — OpenAlex stands alone, but you lose
-    the cross-check that catches its undercounts.
-
-??? tip "Optional: `LITREVIEW_LAB_AUTHOR` for home-lab starring"
-    Landmark selection can star your own group's papers. It is **off by default**
-    so the toolkit is neutral for anyone who clones it. Opt in per project with
-    `--lab-author Surname` (repeatable), or once for your shell:
-
-    ```bash
-    export LITREVIEW_LAB_AUTHOR=Gallant,Huth
-    ```
-
-    The flag overrides the env var. Rows with `source == "lab"` are always starred
-    regardless. `--lab-color '#c1121f'` sets the ring and its label to your own
-    color instead of the default gold — **quote it**, or the shell eats the `#`
-    as a comment.
-
 ### 2.3 Where things live
 
-Each review is **its own subdirectory** under a bibliography root, with the
-toolkit cloned once beside them. The JSON files are the source of truth; the
-`.xlsx` is rendered from them.
+Each review is its own subdirectory under a bibliography root, with the toolkit
+cloned once beside them. The JSON files are the source of truth; the `.xlsx` is
+rendered from them.
 
 ```text
 <bibliography_root>/
@@ -168,7 +127,7 @@ toolkit cloned once beside them. The JSON files are the source of truth; the
 ├── visual_cerebellum/                      <- one review, one subdir
 │   ├── visual_cerebellum_bibliography.xlsx     <-- THE DELIVERABLE
 │   ├── topic_definition.md                 (scope you and the agent agreed on)
-│   ├── rows.json                           (the LIVE table — all renders come from it)
+│   ├── rows.json                           (the live table; everything renders from it)
 │   ├── verify_report.json                  (Phase 3 verdicts)
 │   ├── citation_counts.json                (Phase 5b, cached)
 │   ├── xref_visual_cerebellum.json         (Phase 6 frequency table)
@@ -181,13 +140,14 @@ toolkit cloned once beside them. The JSON files are the source of truth; the
 └── attention/                              <- a different topic, separate subdir
 ```
 
-### 2.4 How you'll drive it
+### 2.4 How you drive it
 
 === "With an agent (intended)"
 
     Open Claude Code in the bibliography root and describe the review in plain
-    English. The agent reads `PLAYBOOK.md`, picks a slug, creates the
-    subdirectory, runs the phases, and reports when done.
+    English. The agent reads `PLAYBOOK.md`, creates the subdirectory, runs the
+    phases, and reports when done. It asks about scope only when the request is
+    ambiguous.
 
     ```text
     i want a literature review on the anatomical connections between the visual
@@ -201,249 +161,210 @@ toolkit cloned once beside them. The JSON files are the source of truth; the
     and let's iterate on a lineage figure.
     ```
 
-    It confirms scope only when something is genuinely ambiguous.
-
 === "By hand"
 
     Every phase is one script. You supply the search results as `rows.json`; the
     toolkit does the verification and bookkeeping. The commands are in
-    [§5](#5-the-shared-backbone) below, in order.
+    [§5](#5-the-shared-backbone), in order.
 
 ---
 
 ## 3. The operating contract
 
-Eight rules. Everything else in this manual elaborates them; when in doubt, obey
-this list.
+Eight rules. The rest of this manual elaborates them.
 
 | # | Rule | Phase |
 |---|---|---|
-| 1 | **Verify EVERY citation** before it enters a deliverable. No exceptions, preprints included. | 3 |
-| 2 | **Every reference is canonical** — rebuilt from its verified DOI. Never ship an agent-typed or database-typed string. `--audit` is a hard gate. | 3f |
-| 3 | **One row per DOI.** Global dedup; a paper appears once in `rows.json`. | all |
-| 4 | **Run the antecedents pass on every review**, both modes. Without it the field looks ten years old. | 2b |
-| 5 | **Audit the temporal order of ideas** before delivering any written review. Origin claims cite the *earliest* deserving paper. | 7 |
-| 6 | **`rows.json` is the live table after Phase 3f.** Edit it by hand; never re-run the row-emitter. | — |
-| 7 | **Don't ask before fetching** from PubMed/PMC/CrossRef/OpenAlex/Unpaywall/arXiv/publishers — read-only academic GETs. Every link is a bare `https://doi.org/<doi>`, never a libproxy URL. | — |
+| 1 | **Verify every citation** before it enters a deliverable, preprints included. | 3 |
+| 2 | **Every reference is canonical**: rebuilt from its verified DOI, never typed by an agent or copied from a database. `--audit` is a hard gate. | 3f |
+| 3 | **One row per DOI.** A paper appears once in `rows.json`. | all |
+| 4 | **Run the antecedents pass on every review**, in both modes. Without it the field looks ten years old. | 2b |
+| 5 | **Audit the temporal order of ideas** before delivering a written review. Origin claims cite the earliest deserving paper. | 7 |
+| 6 | **After Phase 3f, `rows.json` is the live table.** Edit it by hand; never re-run the script that first emitted it. | — |
+| 7 | **Fetch without asking** from PubMed, PMC, CrossRef, OpenAlex, Unpaywall, arXiv and publishers; these are read-only GETs. Every link is a bare `https://doi.org/<doi>`, never a library-proxy URL. | — |
 | 8 | **PDFs are opt-in.** Default no. | 4 |
 
-!!! danger "Rule 6 is the one that bites hardest"
-    After canonicalization, re-running whatever emitted `rows.json` is
-    **destructive** — it wipes the canonical `apa` strings and the citation
-    counts. Canon and repair stamp each row with `canonical_at`, and
-    `common.write_rows` refuses to overwrite a canonical table, but a project
-    script that writes the file directly can still do the damage. Edit
-    `rows.json` in place for any later change.
-
-**Default tier criteria.** Pre-2021: only highly cited or foundational work.
-2022+: promiscuous, no citation-count gate — too recent to have accrued cites.
-The boundary is "today minus ~5 years"; advance it as the calendar moves.
+!!! danger "Rule 6 causes the most damage"
+    Re-running the original row emitter after canonicalization wipes the
+    canonical references and the citation counts. `common.write_rows` refuses to
+    overwrite a table stamped `canonical_at`, but a project script that writes
+    the file directly bypasses that guard. Edit `rows.json` in place.
 
 ---
 
 ## 4. Choosing a front end
 
-One tool, two front ends. They differ only in where the corpus comes from; from
-verification onward they are identical.
+The two modes differ only in where the corpus comes from. From verification on,
+they are identical.
 
 | | **Topic mode** | **Lab mode** |
 |---|---|---|
-| Start from | a question | a lab's publication corpus |
-| Direction | search *outward* | derive themes *inward*, then place them in the field |
+| Starts from | a question | a lab's publications |
+| Direction | searches outward | derives themes, then places them in the field |
 | Front-end phases | 1 scope → 2 search → 2b antecedents | L1 ingest → L2 prune → L3 themes → L4c contextualize |
-| Answers | "What's known about X?" | "What has this lab done, and where does it sit?" |
+| Answers | "What is known about X?" | "What has this lab done, and where does it sit?" |
 
-### 4.1 Topic mode front end
+### 4.1 Topic mode
 
-**Phase 1 — scope (your decision).** Agree the question and its span: field,
-species or method restrictions, how far back. Write it to `topic_definition.md`
-so later phases and the antecedents search stay anchored to it.
+**Phase 1: scope (your decision).** Agree on the question and its span: field,
+species or method restrictions, and how far back. Write it to
+`topic_definition.md`, which anchors every later search.
 
-**Phase 2 — search.** Run a search pass using
-[`tools/search_prompt_template.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/search_prompt_template.md),
-returning papers as `rows.json`. **Links must be DOI URLs.**
+**Phase 2: search.** Run a search with
+[`tools/search_prompt_template.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/search_prompt_template.md)
+and save the results as `rows.json`. Links must be DOI URLs. By default, papers
+older than about five years need to be highly cited or foundational; newer papers
+have no citation threshold, because they have not had time to accrue citations.
+Move the boundary forward as the calendar moves.
 
 !!! tip "Give each search lane an explicit verification duty"
-    A lane brief that spells out the duty — read the author list off the landing
-    page, confirm the DOI resolves to the *right* paper, read the abstract before
-    summarizing — drops fabrication from the usual ~25% to near zero. On a
-    555-paper corpus built this way, Phase 3 returned **535 OK, 2 MISMATCH, 0
-    NOT-FOUND, and zero fabrications.** It is the single highest-leverage thing
-    you can put in a search prompt.
+    Tell each lane to read the author list off the landing page, confirm that the
+    DOI resolves to the right paper, and read the abstract before summarizing.
+    This cuts fabrication from about 25% to near zero. A 555-paper corpus built
+    this way returned 535 OK, 2 MISMATCH and 0 NOT-FOUND in Phase 3.
 
-!!! warning "Expect a third of your seed titles not to exist"
-    If you seed lanes with remembered landmark titles, label them explicitly as
-    *unverified suggestions*. Roughly 30–40% of memory-recalled titles are not
-    real papers; agents told the seeds may be wrong substitute genuine work, and
-    agents told otherwise invent something to match.
+!!! warning "Expect a third of remembered seed titles not to exist"
+    If you seed lanes with landmark titles recalled from memory, label them as
+    unverified. Roughly 30–40% are not real papers. An agent told the seeds may be
+    wrong substitutes genuine work; an agent not told invents a paper to match.
 
-**Phase 2b — antecedents (required).** The forward search is recency-biased and
-anchored on the topic's *current* framing, so it misses the roots. A separate
-pass reaches back along three axes:
+**Phase 2b: antecedents (required).** The forward search favors recent papers and
+the topic's current framing, so it misses the field's roots. A second pass
+searches three kinds of roots:
 
-1. **Measurement / methodology origins** — where the tools came from.
-2. **Foundational empirical results** — older neurophysiology, psychophysics.
-3. **Theory / computational framework** — the ideas the field is built on.
+1. **Methods**: where the measurement tools came from.
+2. **Foundational results**: older physiology, psychophysics and behavior.
+3. **Theory**: the ideas the field is built on.
 
-Reuse the search template with the tier flipped to favor classics, then fold the
-results into the existing themes (no new lanes unless you ask). Pre-2000
-classics, books and chapters often have **no DOI** — keep them as hand-written
-canonical APA and exclude them from citation counting.
+Reuse the search template with the tier flipped to favor classics, and fold the
+results into the existing lanes. Pre-2000 classics, books and chapters often have
+no DOI. Keep those as hand-written APA and exclude them from citation counting.
 
-### 4.2 Lab mode front end
+### 4.2 Lab mode
 
 ```bash
 python3 ../tools/lab_corpus.py --search "Jack Gallant"           # find the OpenAlex id
 python3 ../tools/lab_corpus.py --author A5056348548 --out lab_papers.json
 ```
 
-**L1 — ingest.** Pulls a PI's works from OpenAlex; pass several `--author` ids
-for PI plus key members to widen coverage.
+**L1: ingest.** Pulls a PI's works from OpenAlex. Pass several `--author` ids (PI
+plus key members) to widen coverage.
 
-**L2 — prune (your decision).** Author disambiguation is the **#1 correctness
-risk** in lab mode and cuts both ways: OpenAlex folds in same-name authors, and
-also splits one person across several ids. Review the ingested list and drop the
-false positives before anything is themed.
+**L2: prune (your decision).** Author disambiguation is the main correctness risk
+in lab mode, and it fails in both directions: OpenAlex merges same-name authors
+into one id and splits one person across several. Remove false positives before
+anything is themed.
 
-**L3 — derive themes.** The agent derives the lab's research themes and how
-emphasis shifted over time. OpenAlex's topic metadata alone is not enough —
-enrich abstracts first. The themes become the lanes the rest of the pipeline uses.
+**L3: derive themes.** The agent derives the lab's research themes and how their
+emphasis changed over time. OpenAlex topic metadata is not enough; fetch
+abstracts first. The themes become the lanes for the rest of the pipeline.
 
-**L4c — contextualize.** Not a lighter pass: it runs the topic-mode front end
-(Phases 2–6) *once per theme*, with the identical guardrails.
+**L4c: contextualize.** Runs the full topic-mode front end (Phases 2–6) once per
+theme, with the same guardrails.
 
-<div class="gallery" markdown>
-
-<figure class="fig" markdown>
-![Lab corpus themes over time](assets/figures/lab_trajectory.png){ loading=lazy }
-<figcaption>L3 output — a lab's research themes and how their emphasis shifted across decades.</figcaption>
-</figure>
-
-<figure class="fig" markdown>
-![Lab work placed in the context of the broader field](assets/figures/lab_in_context.png){ loading=lazy }
-<figcaption>The contextualized lineage figure — the lab's papers (highlighted) placed within the surrounding literature.</figcaption>
-</figure>
-
-</div>
-
-!!! note "Lab-mode antecedents include the lab's own pre-paradigm work"
-    An inclusion filter like "human fMRI only" must not silently drop the lab's
-    own foundational work — e.g. macaque physiology predating its current human
-    paradigm. Those are re-entered as lab-sourced and starred.
+The lab's own early work counts as an antecedent. An inclusion filter such as
+"human fMRI only" must not drop, for example, macaque physiology that predates
+the lab's human program; re-enter those papers as lab-sourced. See the
+[lab-mode example](examples.md#lab-mode-the-gallant-lab-in-context) for the
+resulting figures.
 
 ---
 
 ## 5. The shared backbone
 
-From here both modes are identical. Commands assume you are inside a topic
-subdirectory with the toolkit at `../tools/`.
+Both modes run these phases. Commands assume you are in a topic subdirectory with
+the toolkit at `../tools/`.
 
-### 5.1 Phase 3 — verify every citation
+### 5.1 Phase 3: verify every citation
 
 ```bash
 python3 ../tools/verify.py --rows rows.json --out verify_report.json
 ```
 
-Checks every citation against PubMed / PMC / CrossRef and the arXiv API. Each
-gets one of four verdicts, and **the last two are not interchangeable**:
+Checks every citation against PubMed, PMC, CrossRef and arXiv, and exits 0 only
+when every verdict is `OK`.
 
-| Verdict | Meaning | What you do |
+| Verdict | Meaning | Action |
 |---|---|---|
-| `OK` | the record matches the claim | nothing |
-| `MISMATCH` | the record resolves but disagrees on author/year/title | fix or drop the row |
-| `NOT-FOUND` | every lookup completed and nothing matched | chase it — likely fabricated |
-| `ERROR` | a lookup could not complete (rate limit, network) | **re-run it** |
+| `OK` | the record matches the claim | none |
+| `MISMATCH` | the record resolves but disagrees on author, year or title | fix or drop the row |
+| `NOT-FOUND` | every lookup completed and nothing matched | chase it; likely fabricated |
+| `ERROR` | a lookup could not complete (rate limit, network) | re-run |
 
-!!! danger "Never believe a non-OK verdict on the first pass"
-    A dropped connection used to surface as `MISMATCH`, which reads as "the agent
-    got it wrong" when it actually means "the network got it wrong". Re-run every
-    non-OK verdict before acting on it. A throttled DOI lookup is also not
-    rescued by the title-search fallback: if the authoritative lookup errored and
-    the fallback record does not match, the verdict is `ERROR`, never `MISMATCH`.
+!!! danger "Re-run every non-OK verdict before acting on it"
+    Network failures can masquerade as bad citations. When the DOI lookup errors
+    and the title-search fallback does not match, the verdict is `ERROR`, not
+    `MISMATCH`, but check anyway: a second run often clears it.
 
-`verify.py` is a gate — it exits 0 only when every verdict is `OK`.
-
-### 5.2 Phase 3f — canonicalize every reference
+### 5.2 Phase 3f: canonicalize every reference
 
 ```bash
 python3 ../tools/references.py --rows rows.json --out rows.json
-python3 ../tools/references.py --rows rows.json --audit    # exits non-zero on any defect
+python3 ../tools/references.py --rows rows.json --audit    # exits 1 on any defect
 
 # then, in a reviewed pass, sentence-case the titles:
 python3 ../tools/sentence_case.py --rows rows.json --proper proper_nouns.json --vocab
 python3 ../tools/sentence_case.py --rows rows.json --proper proper_nouns.json --apply
 ```
 
-Rebuilds every reference from its **verified** DOI/arXiv id into canonical
-APA-7: full author lists, nobiliary particles, real venue names (including
-bioRxiv/PsyArXiv), HTML-unescaping. The journal DOI is preferred over an arXiv
-preprint as the version of record.
+`references.py` rebuilds every reference from its verified DOI or arXiv id into
+APA-7: full author lists, name particles, real venue names (including bioRxiv and
+PsyArXiv), and unescaped HTML. A journal DOI replaces an arXiv preprint as the
+version of record. Only a DOI-less book or report keeps a hand-written reference.
 
-!!! success "The audit is a build gate"
-    `--audit` exits non-zero on any imperfect reference. It also *warns* on
-    near-duplicate rows and on multi-word surnames that may be a mis-split given
-    name — both need a human verdict, so read the warnings even when the gate
-    passes. Only a genuinely DOI-less book or report may keep a hand-written APA
-    string.
+`--audit` is a hard gate. It also warns about near-duplicate rows and multi-word
+surnames that may be mis-split given names. Both need a human verdict, so read
+the warnings even when the gate passes. `--repair` fixes string damage (markup,
+Unicode hyphens, `?.`) offline, without re-fetching or undoing hand fixes.
 
 !!! warning "Non-English titles are skipped by default"
-    The sentence-case pass lowercases German nouns, so a German or French title
-    would come out wrecked. `sentence_case.py` detects and skips them, printing
-    which refs it skipped; `--include-foreign` overrides. Note that `von` and
-    `de` are **not** language markers — they appear in personal names and in
-    English titles ("Karl von Frisch", "fin-de-siècle") — and neither is `man`
-    ("including man").
+    Sentence case would lowercase German nouns, so `sentence_case.py` detects and
+    skips non-English titles and lists them; `--include-foreign` overrides.
 
-`--repair` retrofits an old corpus **offline** (markup, Unicode hyphens, `?.`),
-so it never re-fetches and never wipes post-canon hand fixes.
+After this phase, `rows.json` is the live table (contract rule 6).
 
-**After this phase, `rows.json` is the live table.**
+### 5.3 Phase 4: PDFs (opt-in)
 
-### 5.3 Phase 4 — PDFs (opt-in)
+Off unless you ask. `download.py` tries arXiv, then Unpaywall, then EuropePMC.
+`reconcile_downloads.py` files PDFs you downloaded by hand. It matches filename
+to DOI first, then author, year and title on the first page, and refuses to move
+any file it is unsure of.
 
-Off unless you ask. `download.py` fetches arXiv → Unpaywall → EuropePMC;
-`reconcile_downloads.py` files manually-downloaded PDFs, matching by filename ↔
-DOI substring first, then author + year + title overlap on the first page, and
-refusing to move anything it is unsure about.
-
-### 5.4 Phase 5 — build the spreadsheet
+### 5.4 Phase 5: build the spreadsheet
 
 ```bash
 python3 ../tools/spreadsheet.py --rows rows.json --out my_topic_bibliography.xlsx
 ```
 
-The core deliverable. See [§7.1](#71-the-spreadsheet) for the columns and colors.
+This is the core deliverable. [§7.1](#71-the-spreadsheet) explains the columns
+and colors.
 
-### 5.5 Phase 5b — citation counts
+### 5.5 Phase 5b: citation counts
 
 ```bash
 python3 ../tools/citations.py --rows rows.json --out citation_counts.json
 # then re-run spreadsheet.py to add the Cite columns
 ```
 
-OpenAlex (primary, ~95% coverage by DOI) reconciled against Semantic Scholar.
-Google Scholar has no API and CAPTCHAs after 10–20 requests, so it is not usable.
+OpenAlex is the primary source (about 95% coverage by DOI); Semantic Scholar is
+the cross-check. Google Scholar has no API and blocks scripted access, so it is
+not used. Counts are a snapshot: record the `--asof` date, and do not expect the
+two sources to agree.
 
-!!! warning "Spot-check landmark counts before delivering"
-    OpenAlex's *batch* filter can return a low-count stub for a DOI that also has
-    a merged primary work — Tolman 1948 came back as 1 from the batch and 6,656
-    from the canonical single-work endpoint. `citations.py` keeps the max per DOI
-    and re-queries the single-work endpoint when OpenAlex looks implausibly low
-    next to S2, but **a famous old paper showing single digits is the tell** that
-    one slipped through.
+!!! warning "A famous old paper with a single-digit count is an undercount"
+    OpenAlex's batch endpoint sometimes returns a stub record. Tolman (1948) came
+    back as 1 from the batch and 6,656 from the single-work endpoint.
+    `citations.py` re-queries when OpenAlex looks implausibly low next to S2, but
+    spot-check the landmarks before delivering.
 
-!!! warning "A published DOI is not automatically the version of record"
-    Before promoting a preprint row to a journal DOI, query the candidate's
-    OpenAlex count. Curran/Proceedings.com DOIs for printed NeurIPS volumes
-    (`10.52202/*`) resolve and appear in CrossRef title searches, but they are
-    shadow records — swapping to them cut counts 3–4× on a real corpus while
-    adding nothing. ACL Anthology (`10.18653/*`), IEEE/CVF (`10.1109/*`) and true
-    journal DOIs are genuine upgrades.
+!!! warning "Not every journal DOI is the version of record"
+    Before replacing a preprint's DOI, check the candidate's OpenAlex count.
+    Proceedings.com DOIs for printed NeurIPS volumes (`10.52202/*`) resolve but
+    are shadow records; switching to them cut counts three- to fourfold on a real
+    corpus. ACL Anthology (`10.18653/*`), IEEE/CVF (`10.1109/*`) and journal DOIs
+    are genuine upgrades.
 
-Counts are a snapshot — record the `--asof` date, and don't expect the two
-columns to match.
-
-### 5.6 Phase 6 — cross-citation pass
+### 5.6 Phase 6: cross-citation pass
 
 ```bash
 python3 ../tools/xref.py --rows rows.json --exclude existing_dois.json \
@@ -451,37 +372,40 @@ python3 ../tools/xref.py --rows rows.json --exclude existing_dois.json \
         --internal-out internal_citations.json
 ```
 
-Mines the corpus's own reference lists via CrossRef into a frequency table: which
-papers does *your* corpus cite most? Frequently-cited papers you missed are
-strong candidates. Pick the high-value ones, append them to `rows.json`, and send
-the batch **back through Phases 3 + 3f + 5**.
+`xref.py` tallies the corpus's own reference lists (from CrossRef) to find papers
+the corpus cites often but does not contain. It usually finds 25–35 per topic.
+Append the high-value ones to `rows.json` and send the batch back through Phases
+3, 3f and 5.
 
-- ≥4 citations across ~40 papers is a strong signal; ≥3 is borderline.
-- The pass typically finds **25–35 papers per topic** the initial search missed.
-- CrossRef coverage varies by publisher — Nature, Cell, OUP and JNeurosci are
-  excellent; some smaller journals deposit no references at all.
-- `--internal-out` emits within-corpus in-degree, which the figure needs for its
-  second landmark criterion. Emit it now even if you are unsure about Phase 6b.
+- Four or more citations across about 40 papers is a strong signal; three is
+  borderline.
+- CrossRef coverage varies by publisher. Nature, Cell, OUP and J Neurosci deposit
+  complete reference lists; some smaller journals deposit none.
+- `--internal-out` records how often each paper is cited within the corpus. The
+  figure uses this to choose landmarks, so emit it even if Phase 6b is uncertain.
 
-!!! warning "Ids must stay unique across merges"
+!!! warning "Keep ids unique across merges"
     Assert `len(refs) == len(set(refs))` after merging, and attach citation counts
-    **only after ids are final** — otherwise counts silently cross-contaminate.
+    only after ids are final. Otherwise counts attach to the wrong papers.
 
 ---
 
-## 6. The optional deliverables
+## 6. Optional phases and hand-off
 
-### 6a. Phase 6b — families and the lineage figure
+### 6.1 Phase 6b: families and the lineage figure
 
-**Your decision #2.** Two judgment gates with a human checkpoint between them.
+A **family** groups papers by what they are fundamentally *for*: the theoretical
+claim they support. It is orthogonal to the Topic column, which records method or
+sub-area. A good family unites papers that read differently and splits papers
+that read alike.
 
 ```bash
-# 1. propose — the agent reads the corpus and proposes a grouping
+# 1. propose: the agent reads the corpus and proposes a grouping
 python3 ../tools/families.py --rows rows.json --digest
 
-# 2. CONFIRM — you approve or edit just the ~6 family definitions
+# 2. CONFIRM: you approve or edit the family definitions (your decision #2)
 
-# 3. assign + validate + stamp
+# 3. assign, validate and stamp
 python3 ../tools/families.py --rows rows.json --assign families_input.json \
         --out families.json
 
@@ -491,165 +415,117 @@ python3 ../tools/families_figure.py --rows rows.json --families families.json \
         --out-prefix my_topic_families --title "My topic — theoretical families"
 ```
 
-A **family** is a conceptual axis orthogonal to the Topic column: Topic captures
-method or sub-area, families capture what each paper is fundamentally *for*. A
-good family unites textually dissimilar papers and splits similar ones.
+Step 2 is the cheap checkpoint. Editing six definitions costs nothing; reassigning
+300 papers does not.
 
 !!! danger "Do not cluster embeddings to make families"
-    That yields surface-similarity groups, not theoretical ones. `families.py`
-    enforces exhaustive and exclusive assignment, with a hard limit of 2–9
-    families (3–8 recommended); imbalance — one family holding >60%, or a
-    singleton — is a stderr *warning*, so read it.
+    Clustering finds surface similarity, not shared theory. `families.py`
+    requires every paper to belong to exactly one family and allows 2–9 families
+    (3–8 recommended). It warns when one family holds more than 60% of papers or
+    has a single member.
 
-!!! tip "Step 2 is the cheap, high-leverage checkpoint"
-    Iterating on six definitions is free; redoing the assignment of 300 papers is
-    not. Confirm the definitions before anything is labeled.
+**Write each family's `claim` and `lineage` for a reader who sees nothing else.**
+Readers open the figure, not `families.md`. The figure shows the full text when
+the reader hovers a lane title, and truncates the copy drawn beside the lane.
+Build lineages from papers already in `rows.json`, using the canonical surname
+and year; a lineage recalled from memory can be wrong in the same ways a citation
+can.
 
-**Write the `claim` and `lineage` as if they are the only description the reader
-will ever see**, because they usually are — a reader opens the figure, not
-`families.md`. Both are surfaced on the lane title: in the HTML as a styled
-panel, and in the exported `.svg`/`.png`/`.pdf` as a native SVG `<title>`, since
-no script runs there. The drawn copy beside the lane is clamped to the room the
-lane has and ellipsized, so write for the reader who hovers, not for the
-40-character column.
+**Record the exact render arguments** in `figure_render_args.txt` beside the
+figure, so it can be reproduced, retuned or re-rendered in bulk.
 
-!!! warning "Lineages are content, and need the same discipline as citations"
-    A lineage composed from memory can be wrong exactly the way a citation can.
-    Compose them from rows already in the corpus — grep `rows.json` after canon
-    and use the canonical lead surname and year — rather than recalling a chain.
-
-<figure class="fig" markdown>
-![Lineage figure with six families on a warped timeline](assets/figures/lineage_complexity.png){ loading=lazy }
-<figcaption>
-`complexity_representation` — six families on a CDF-warped timeline
-(`--time-warp 0.85`) that compresses sparse early decades and expands the dense
-recent years, with dot size carrying each paper's citation count.
-</figcaption>
-</figure>
-
-**Record the exact arguments** in `figure_render_args.txt` beside the figure. It
-is what lets the figure be reproduced, retuned, or re-rendered in bulk later.
-
-??? tip "Tuning for a large corpus"
-    The defaults (`--motif-min 3`, `--max-labels 28`) are tuned for a ~50-paper
-    review. On 110–650 papers, retune per corpus and check the *contents* of the
-    dropped list, not just its length. Useful flags:
+??? tip "Tuning the figure for a large corpus"
+    The label defaults (`--motif-min 3`, `--max-labels 28`) suit a 50-paper
+    review. For 110–650 papers, retune per corpus and read the list of dropped
+    labels, not just its length.
 
     | Flag | Effect |
     |---|---|
-    | `--time-warp 0.85` | density-equalizing x-axis — compresses sparse early decades, expands dense recent years |
-    | `--min-year 1909` | clamp the axis start; older papers pin to the left edge |
-    | `--motif-min N` | a paper cited by ≥N corpus siblings is a landmark |
-    | `--max-labels N` | cap total labels; set it *above* the qualified set so it never binds |
-    | `--per-family N` | label the top-N most-cited per family (default 4) |
-    | `--emphasize-source lab` | draw every row of one source as a big dot |
-    | `--lab-author Surname` | ring and star the home lab's papers (repeatable; off by default) |
-    | `--lab-color '#c1121f'` | the ring's color — quote the `#` |
+    | `--time-warp 0.85` | density-equalizing x-axis: compresses sparse early decades, expands dense recent years |
+    | `--min-year 1909` | clamps the axis start; older papers pin to the left edge |
+    | `--motif-min N` | a paper cited by at least N corpus papers is a landmark |
+    | `--max-labels N` | caps total labels; set it above the qualifying set so it never binds |
+    | `--per-family N` | labels the N most-cited papers per family (default 4) |
+    | `--emphasize-source lab` | draws every row from one source as a large dot |
+    | `--lab-author Surname` | rings and stars the home lab's papers (repeatable; off by default) |
+    | `--lab-color '#c1121f'` | sets the ring color; quote it, or the shell treats `#` as a comment |
     | `--spec figure_spec.json` | editorial overlay: manual labels, arrows, notes, lane order |
 
-    **Raising a cap must never remove a label that was already shown.** Raising
-    `--motif-min` shrinks the qualified *pool*, not just the cap — at
-    `--motif-min 10` one corpus lost Smolensky 1990 and Schuck 2016, papers the
-    old, more tightly capped figure was already displaying. Measure the
-    before/after label sets and pick the highest threshold with **zero removals**.
+    **Raising a threshold must not remove a label already shown.** A higher
+    `--motif-min` shrinks the pool of qualifying papers, not just the cap. Compare
+    label sets before and after, and choose the highest threshold that removes
+    nothing.
 
-### 6b. Phase 7 — the review article
+### 6.2 Phase 7: the review article
 
 ```bash
-# author the prose into content.json — and run the PRIORITY AUDIT first
+# author the prose into content.json, after the priority audit
 python3 ../tools/cite_check.py --rows rows.json --content content.json   # gate
 python3 ../tools/review_paper.py --rows rows.json --content content.json \
         --figure my_topic_families.png --out My_Topic_review.docx
 ```
 
-**Your decision #3.** The agent authors the prose — the one step the toolkit does
-not mechanize. Three things *are* enforced:
+The agent writes the prose (your decision #3). Three safeguards apply:
 
-- **A mandatory priority audit** runs first: an independent pass checking that
-  every origin claim cites the **earliest** paper that earned priority, not
-  whichever reference fits the sentence. On one 396-paper review it returned five
-  priority inversions and four factual errors, including a mechanistic claim
-  attributed to two papers that had not run the experiment.
-- **`cite_check.py` gates the render** — every in-text citation must name a row
-  in `rows.json` (exit 1 otherwise). An author-year matching two rows is warned;
-  APA-7 §8.19 (name more authors) is the fix.
-- **The reference list is pulled canonically from `rows.json`**, so it cannot
-  drift from the verified bibliography.
+- **Priority audit.** Before rendering, an independent pass checks that every
+  origin claim cites the earliest paper that earned priority, not whichever
+  reference fits the sentence. On one 396-paper review it found five priority
+  inversions and four factual errors.
+- **Citation gate.** `cite_check.py` exits 1 if any in-text citation does not
+  match a row in `rows.json`. If one author-year matches two rows, name more
+  authors (APA-7 §8.19).
+- **Canonical reference list.** `review_paper.py` builds the reference list from
+  `rows.json`, so it cannot drift from the verified bibliography.
 
-If the review is AI-authored, state the AI author and a verification disclosure
-in the document.
+An AI-authored review states its author and how it was verified, once, in the
+masthead.
 
-#### Then make it readable — `prose_audit.py`
+#### Make the prose readable
 
-The draft will be accurate and hard to follow. The defect is compression: four or
-five findings chained through semicolons into one 60–120 word sentence, each clause
-with its own citation. `cite_check.py` cannot see it, because every citation
-resolves. Measure it instead of arguing about it:
+First drafts are accurate but compressed: four or five findings chained through
+semicolons into one 60–120 word sentence. `cite_check.py` cannot detect this,
+because every citation resolves. `prose_audit.py` measures it.
 
 ```bash
-cp build_review_page.py /tmp/before.py      # keep the pre-revision copy OUT of the project
+cp build_review_page.py /tmp/before.py      # keep the pre-revision copy outside the project
 python3 ../tools/prose_audit.py --page build_review_page.py
 #   ... rewrite the sentences it lists ...
 python3 ../tools/prose_audit.py --page build_review_page.py --baseline /tmp/before.py
 ```
 
-It reads either shape a review comes in — `--page build_review_page.py` (prose with
-`[[REF]]` markers) or `--content content.json` (the `.docx` route, APA author-date) —
-and reports words, mean sentence length and the long sentences per block.
+The tool reads a review page script (`--page`, `[[REF]]` markers) or a
+`content.json` (`--content`, APA author-date citations). It reports words, mean
+sentence length and long sentences per block. Aim for a mean near 24 words, with
+almost nothing over 50; first drafts typically average 31. Fix each listed
+sentence by giving each finding its own sentence.
 
-Aim for a **mean sentence near 24 words**, with almost nothing over 50. A first draft
-typically lands at 31. Rewriting is mechanical once the offenders are listed: one
-finding per sentence, and cut the semicolon chains.
+- **`--baseline` is a gate.** Splitting sentences is how a reference silently
+  falls out of the works cited. The flag compares the set of cited references
+  before and after and exits 1 on any loss.
+- **It flags arguments made twice.** Block pairs that share eight or more
+  citations are reported. Before merging two such sections, confirm that every
+  reference in the removed one is cited elsewhere.
 
-Two things the tool is really there for:
+Long sentences are reported, not gated: a list-like sentence can legitimately run
+long.
 
-- **`--baseline` is a gate.** Rewriting a five-clause sentence into three is exactly
-  how a reference falls quietly out of the works cited, and nothing downstream
-  notices. It compares the distinct-citation set before and after and exits 1 on any
-  loss.
-- **It finds arguments told twice.** Block pairs sharing 8+ citations are reported.
-  On one review, two sections shared 35 references — the same case was made in both.
-  Folding one into the other cut 372 words and lost no reference, because every one
-  of them was cited elsewhere as well. Verify that before cutting.
+#### The review web page
 
-Long sentences are reported, never gated: a parallel, list-like sentence can
-legitimately run long, and that call is editorial.
+The `.docx` is the manuscript. The readable deliverable is a self-contained HTML
+page, built by a project-local `build_review_page.py` from the same `rows.json`.
+It carries two things:
 
-#### The web page, and the bibliography viewer it must carry
+1. the **numbered works cited**, which resolve the in-text citations;
+2. the **interactive lineage figure** (`<topic>_families.html`) in an iframe, on
+   every review. It doubles as the corpus browser: clicking a paper shows its
+   reference, family, topic, DOI, summary and citation counts.
 
-The `.docx` is the manuscript; the readable deliverable is a self-contained HTML
-page built by a project-local `build_review_page.py` from the same `rows.json`.
-Two things belong on it:
+Do not add a second reference browser; the figure's panel already shows
+everything it would.
 
-1. the **works cited** — the numbered list that resolves the in-text citations;
-2. the **interactive timeline** (`<topic>_families.html`) embedded in an iframe —
-   on every review, without exception. It doubles as the corpus browser: every
-   reference is a node, and clicking one pins `ref · family · topic · APA · DOI ·
-   summary · citation counts` in the side panel.
-
-Do **not** embed a second reference browser beside it. The timeline's side panel is
-already a superset of what a bibliography list shows, so the two duplicate each other;
-the duplication was cut from the first review that shipped with both.
-
-```python
-import bib_viewer
-block = bib_viewer.render(rows, spec=common.load_json("families.json"),
-                          cited={"C-01": 12, ...},   # ref id -> citation number
-                          author="<model>", author_note="<what the model is>")
-# page CSS += bib_viewer.CSS   ·   page body += block   ·   page JS += bib_viewer.JS
-```
-
-`bib_viewer.py` is for the case with **no** timeline: a corpus with no review
-attached, or a page that wants the references as text rather than as a plot. It
-groups by theoretical family, gives each entry its abstract-derived summary, and can
-chip cited entries with a `ref N` link back to a works-cited list. It also renders a
-**provenance note** naming who wrote the summaries and stating that they come from
-abstracts rather than full texts — keep that on for a standalone viewer, and pass
-`provenance=False` anywhere a masthead already carries the disclosure. State the
-authorship **once**: repeating it in the masthead, the bibliography and the footer
-reads as anxiety rather than disclosure.
-
-Run it standalone for a corpus with no review attached:
+For a corpus with no figure, `bib_viewer.py` renders a searchable bibliography
+grouped by family, with a note stating who wrote the summaries and that they come
+from abstracts:
 
 ```bash
 python3 ../tools/bib_viewer.py --rows rows.json --families families.json \
@@ -657,30 +533,17 @@ python3 ../tools/bib_viewer.py --rows rows.json --families families.json \
         --author "<model>" --author-note "<what the model is>"
 ```
 
-The filter is interactive, so verify it by **executing** it, never by reading it:
-`node verify_bib_filter.mjs <topic>/<topic>_review.html` runs the page's own script
-against a stub DOM built from its own entries and checks the resulting visibility
-state.
+It can also be embedded in a page (`bib_viewer.render()`, plus `bib_viewer.CSS`
+and `bib_viewer.JS`); pass `provenance=False` where the masthead already carries
+the disclosure. Verify the viewer's filter by running it, not by reading it:
+`node verify_bib_filter.mjs <page>.html` executes the page's script against a
+stub DOM and checks what is visible.
 
-<div class="gallery" markdown>
+### 6.3 Phase 8: hand off
 
-<figure class="fig" markdown>
-![Review title page with abstract and AI disclosure](assets/examples/example_review_title.png){ loading=lazy }
-<figcaption>Title page — abstract, intro, and the explicit AI-authorship disclosure note.</figcaption>
-</figure>
-
-<figure class="fig" markdown>
-![Canonical APA-7 reference list page](assets/examples/example_review_refs.png){ loading=lazy }
-<figcaption>The reference list — canonical APA-7, pulled straight from the verified corpus.</figcaption>
-</figure>
-
-</div>
-
-### Phase 8 — hand off
-
-The deliverables are the `.xlsx` (always), plus the figure and `.docx` if you ran
-those phases. **Keep the JSON files with the deliverable** — they are the audit
-trail and the source of truth for any later re-run.
+Deliver the `.xlsx`, plus the figure and review if you ran those phases. **Keep
+the JSON files with the deliverable.** They are the audit trail and the input to
+any later re-run.
 
 ---
 
@@ -690,220 +553,195 @@ trail and the source of truth for any later re-run.
 
 One row per paper. Columns: `Topic · Ref# · APA reference · Link · Summary · Tag ·
 Family · Cite (OpenAlex) · Cite (S2) · Verify note · PDF (local) · Xref`. The
-`Family`, `Cite` and `Verify note` columns appear automatically once any row
-carries them. `Link` is always the bare DOI URL.
+`Family`, `Cite` and `Verify note` columns appear once any row carries them.
+`Link` is always the bare DOI URL.
 
-Rows are **color-coded by origin**:
+Row color records where each paper came from:
 
 <p>
-<span class="swatch source"></span> cited in your source doc &nbsp;·&nbsp;
+<span class="swatch source"></span> cited in your source document &nbsp;·&nbsp;
 <span class="swatch search"></span> agent search &nbsp;·&nbsp;
 <span class="swatch anteced"></span> antecedents pass &nbsp;·&nbsp;
 <span class="swatch xref"></span> cross-citation pass &nbsp;·&nbsp;
 <span class="swatch lab"></span> the lab's own papers (lab mode)
 </p>
 
-An unknown `source` value renders white with a warning rather than aborting the
-build.
-
-A live slice of a real bibliography (`complexity_representation`, 190 rows):
+An unknown source renders white, with a warning.
 
 <div markdown>
 --8<-- "docs/_includes/bib_table.html"
 </div>
 
-<small>The `Link` column (not shown above) is always the DOI URL
-(`https://doi.org/<doi>`).</small>
+<small>**Six rows from a finished bibliography.** Taken from
+`complexity_representation` (190 papers), with the `Link` column omitted. Each row
+pairs a canonical APA-7 reference with a one-sentence summary written from the
+abstract, the paper's family, and its citation counts from OpenAlex (OA) and
+Semantic Scholar (S2). Cream rows came from the agent's search; green rows were
+added by the cross-citation pass. The two count columns agree closely,
+and a blank marks a paper that one source could not find.</small>
 
 ### 7.2 The lineage figure
 
-The `.html` is self-contained — no network, no dependencies. Open it in a browser
-and present it fullscreen.
+The `.html` file is self-contained: no network, no dependencies. Open it in a
+browser.
+
+<figure class="fig" markdown>
+![Lineage figure: six families of papers on how the brain represents complexity, 1948 to 2026](assets/figures/lineage_complexity.png){ loading=lazy }
+<figcaption markdown>
+**A lineage figure shows which ideas a field is built on and when each appeared.**
+The corpus is `complexity_representation`: 190 verified papers on how the brain
+represents complexity. Each horizontal lane is one theoretical family, labeled at
+left with its claim. Each dot is a paper placed by publication year; dot area is
+proportional to citation count (legend, top right), and a hollow dot has no count.
+Labeled dots are landmarks, chosen automatically by citation count and by how
+often the corpus itself cites them. Ringed, starred dots are home-lab papers. The
+x-axis is warped (`--time-warp 0.85`) so that the sparse decades before 1995 take
+less room than the dense recent years. The early lanes (information, compression,
+capacity) rest on landmarks from the 1950s; the geometry lane starts only in the mid-2000s,
+and the integration lane holds few papers. The figure therefore shows which
+families are mature and which are new, before any paper is read.
+</figcaption>
+</figure>
 
 | What you see | What it means |
 |---|---|
 | **A horizontal lane** | one theoretical family |
-| **A dot** | one paper, positioned by year |
-| **Dot size** | its citation count, with `--size-by-citations` (see below) |
-| **A hollow dot** | *no citation count available* — not a count of zero |
-| **A labeled dot with a leader line** | an auto-selected landmark |
-| **A colored ring and a ★** | a home-lab paper (only when opted in; gold by default, set with `--lab-color`) |
+| **A dot** | one paper, placed by year |
+| **Dot size** | citation count (with `--size-by-citations`) |
+| **A hollow dot** | no citation count available; not a count of zero |
+| **A labeled dot** | an automatically selected landmark |
+| **A ring and a ★** | a home-lab paper (only when opted in) |
 
 | What you do | What happens |
 |---|---|
-| **Hover a dot** | its full reference |
-| **Click a dot** | side panel: citation, summary, counts, live DOI link |
-| **Hover or focus a lane title** | that family's claim, lineage and paper count, while its papers are spotlighted |
-| **Next / Prev, or ← →** | step through papers in year order |
-| **"stay in this family"** | confine the walk to one lane, or release it to the whole corpus |
-| **⬇ Download table** | the embedded `.xlsx`, if `--xlsx` was passed |
+| **Hover a dot** | shows its full reference |
+| **Click a dot** | opens a panel with the reference, summary, counts and a DOI link |
+| **Hover or focus a lane title** | shows the family's claim, lineage and paper count, and highlights its papers |
+| **Next / Prev, or ← →** | steps through papers in year order, top to bottom within each year |
+| **"stay in this family"** | confines the walk to one lane |
+| **⬇ Download table** | downloads the embedded `.xlsx`, if `--xlsx` was passed |
 
-!!! note "Dot size is citation count, area-proportional"
-    `--size-by-citations sqrt` is the standard setting. Counts span four orders
-    of magnitude (0 to ~80,000 in a real corpus), so the scale normalizes against
-    the **95th percentile and clamps above it** — otherwise one runaway classic
-    flattens everything else. `log` is also available but reads flat: it puts a
-    100-citation paper at ~67% of the radius range. A size legend is drawn
-    automatically.
+**Dot size.** `--size-by-citations sqrt` makes dot area proportional to citation
+count. Counts span four orders of magnitude, so the scale tops out at the 95th
+percentile and clamps anything above it; otherwise one classic would shrink every
+other dot. (`log` is available but makes most dots look alike.) Citation count
+also depends on age, so recent papers draw small. Say so when presenting the
+figure.
 
-    **Read it with the age confound in mind.** Citation count is partly a
-    function of how long a paper has been out, so the right-hand edge of any
-    timeline goes small. That is honest about counts, but it visually demotes the
-    newest work — say so when you present the figure.
+**Landmarks.** Selection is automatic; do not hand-build a label overlay. A paper
+is a landmark if it is among its family's `--per-family` most cited, if at least
+`--motif-min` corpus papers cite it (requires `--internal`), or if it is a
+home-lab paper. Each run prints how many labels the cap dropped. Only arrows and
+notes are editorial (`--spec`).
 
-The walk-through steps **down each year's column in order**: every paper of one
-year shares an x position, so a year is a vertical column, and Next/Prev sweeps it
-top to bottom rather than hopping around it.
-
-Landmark selection is **automatic** — do not hand-build a labels overlay. A paper
-is a landmark if *any* of: it is among the top `--per-family` most-cited in its
-family; it is cited by ≥ `--motif-min` of the corpus's own papers (needs
-`--internal`); or it is a home-lab paper. Only arrows and notes are editorial
-(`--spec`). The number of labels dropped by the cap is printed on every run.
-
-!!! note "Highlighting your own lab's papers"
-    Which lab gets starred has always been a parameter, and is **off by default**
-    so the toolkit is neutral for anyone who clones it: `--lab-author Surname`
-    (repeatable) or `LITREVIEW_LAB_AUTHOR=Smith,Jones`. Rows carrying
-    `source == "lab"` — what lab mode produces — are always starred.
-
-    The ring's *color* is `--lab-color`, defaulting to gold. A ring that is the
-    same color as the dot it outlines is invisible, and the default gold is also
-    the fifth family's lane color, so a lab paper in family 5 silently lost its
-    highlight. An unset default now moves itself out of the way and says so; an
-    explicitly chosen color is honored but still warned about.
+**Home-lab papers.** Starring is off by default, so the toolkit stays neutral.
+Turn it on with `--lab-author Surname` (repeatable) or `LITREVIEW_LAB_AUTHOR`.
+Rows with `source == "lab"`, which lab mode produces, are always starred.
+`--lab-color` sets the ring color. The default gold matches the fifth family's
+lane color, so when it would collide, the figure picks another color and says so.
 
 ### 7.3 The review article
 
-A `.docx` with an abstract, the authored prose, the figure, an explicit
-AI-authorship disclosure, and a canonical APA-7 reference list pulled straight
-from `rows.json`.
+A `.docx` with an abstract, the authored prose, the figure, an AI-authorship
+disclosure, and a canonical APA-7 reference list built from `rows.json`. See the
+[example pages](examples.md#a-finished-review-article).
 
 ---
 
 ## 8. Extending or re-running a review
 
-To add papers to a finished review: append the new rows to `rows.json`, then run
-**Phases 3 → 3f → 5** on the batch. Re-run 5b and 6 if you want counts and
-cross-citations refreshed. Never re-run the row-emitter (contract rule 6).
+**To add papers**, append the new rows to `rows.json` and run Phases 3, 3f and 5
+on them. Re-run 5b and 6 to refresh counts and cross-citations. Never re-run the
+original row emitter (contract rule 6).
 
-To re-render a figure after a toolkit change, re-run the command recorded in that
-corpus's `figure_render_args.txt`, then **diff the label set** against the
-previous `.svg`. Re-rendering is supposed to pick up a rendering change, not
-re-pick the landmarks — if labels moved, find out why before shipping.
+**To re-render a figure** after a toolkit change, re-run the command in
+`figure_render_args.txt`, then compare the label set with the previous `.svg`. A
+re-render should change the drawing, not the landmarks; if labels moved, find out
+why before shipping.
 
-!!! tip "Prove the renderer is deterministic before trusting that diff"
-    If a verification step's guarantee is "re-rendering changes nothing", render
-    **twice with unchanged code** first. Any diff there is a bug in the renderer,
-    not a change in your data. (This is not hypothetical: landmark selection once
-    used a `set` of reference strings, and Python randomizes string hashes per
-    process, so identical code and data produced different bytes on every run and
-    the whole byte-diff safety net was reading noise.)
+!!! tip "Confirm the renderer is deterministic first"
+    Render twice with unchanged code and data. Any difference is a renderer bug,
+    and it would make every later comparison meaningless.
 
 ---
 
 ## 9. When something goes wrong
 
-### 9.1 Network failures that look alike and are not
+### 9.1 Network failures that look alike
 
-Three distinct failures present as "the fetch broke". Telling them apart saves
-hours, because **two of the three are made worse by backing off**.
+Three different failures all look like "the fetch broke". Backing off fixes only
+the first.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| 429s, failures spread across many URLs, improving with delay | genuine **throttling** | raise `--sleep`; set `S2_API_KEY` |
-| `IncompleteRead` / `RemoteDisconnected` on *particular* DOIs, failing identically every time at the same byte count, while small records sail through | **truncated uncompressed body** | send `Accept-Encoding: gzip` — `common.http` now does. Backoff never fixes this |
-| One URL fails every time under `urllib` but fetches fine under `curl` | **stack incompatibility** | `common.curl_get`, tried at the first network failure |
+| HTTP 429s, spread across many URLs, easing with delay | throttling | raise `--sleep`; set `S2_API_KEY` |
+| `IncompleteRead` on particular large records, failing at the same byte count every time | truncated uncompressed response | request gzip; `common.http` already does |
+| One URL fails under `urllib` but works under `curl` | client incompatibility | `common.curl_get`, which the tools try automatically |
 
-!!! danger "A retry loop that will not converge means the failure CLASS is wrong"
-    Escalating `--sleep` against a truncating transfer just truncates again.
-    `curl -sS --compressed` on one failing URL is the ten-second check that tells
-    you which of the three you have.
+If retries never converge, you have the wrong diagnosis. Running
+`curl -sS --compressed` on one failing URL tells you which case applies.
 
 ### 9.2 The audit gate fails
 
-`references.py --audit` exits 1 on any imperfect reference. Read what it names —
-an empty venue, a missing year, a malformed initial, a footnote digit glued to
-the last title word. Fix the row in `rows.json` and re-run. Do **not** relax the
-gate; it is the last thing standing between a broken reference and your reader.
+`references.py --audit` names each defect: an empty venue, a missing year, a
+malformed initial, a footnote digit glued to the title. Fix the row in
+`rows.json` and re-run. Do not relax the gate.
 
-Two classes are worth knowing because they are wrong *in the source*, not in your
-corpus:
+Sometimes the source is wrong, not your corpus:
 
-- **CrossRef truncates some records** — two-author papers reduced to one,
-  subtitles dropped, a section heading deposited as the title. Compare against
-  the publisher landing page when a title looks odd.
-- **A DOI in wide circulation can be wrong.** PubMed and CrossRef swap Felleman
-  & Van Essen 1991 with that issue's preface, and 19 papers in one corpus cited
-  the preface DOI by mistake. A `MISMATCH` sometimes means the *world* is wrong.
+- **CrossRef truncates some records**: an author list cut to one name, a
+  subtitle dropped, a section heading deposited as the title. Compare with the
+  publisher's landing page.
+- **A widely used DOI can be wrong.** PubMed and CrossRef confuse Felleman & Van
+  Essen (1991) with that issue's preface, and 19 papers in one corpus cited the
+  preface DOI. A `MISMATCH` sometimes means the literature is wrong.
 
-### 9.3 Verification returns NOT-FOUND on real papers
+### 9.3 Verification returns NOT-FOUND for real papers
 
-Usually arXiv rate-limiting. Ids are prefetched in batches (`id_list`, many per
-call) precisely so the API's limit cannot turn real preprints into false
-`NOT-FOUND`s — but if you see a cluster, re-run before chasing them as
-fabrications. Remember `ERROR` ≠ `NOT-FOUND`.
+Usually arXiv rate limiting. `verify.py` batches arXiv lookups to prevent this,
+but if a cluster of preprints comes back NOT-FOUND, re-run before treating them
+as fabrications.
 
 ### 9.4 The figure hides landmarks or looks wrong
 
-- **Labels missing.** The cap bound. The run prints "N qualified, M labeled, K
-  dropped" — read the dropped **list**, not the count. Checking the count alone
-  is how one figure came to be hiding Mountcastle 1957, Woolsey 1970 and Nandy
-  2017 at `--max-labels 36`.
-- **Everything bunched at the left.** Use `--time-warp 0.85` and `--min-year`.
-- **The claim overruns the next family's title.** Fixed — the drawn claim is
-  clamped to its lane — but it means your claim is long; the full text is one
-  hover away, so this is fine.
-- **A third of the dots are hollow.** That corpus has poor citation-count
-  coverage. It is reporting the gap honestly rather than drawing those papers as
-  uncited. Check coverage before reading anything into the sizes.
+- **Labels missing.** The cap bound. Each run prints "N qualified, M labeled, K
+  dropped"; read the dropped list, not just the count.
+- **Dots bunched at the left.** Use `--time-warp 0.85` and `--min-year`.
+- **A family's claim is cut off.** The drawn copy is truncated to fit its lane;
+  the full text appears on hover.
+- **Many hollow dots.** The corpus has poor citation-count coverage. Check
+  coverage before reading anything into dot sizes.
 
 ### 9.5 Counts look implausible
 
-See [§5.5](#55-phase-5b-citation-counts). A famous old paper with single-digit
-OpenAlex is an undercount, not a finding. Cross-check the S2 column.
+A famous old paper with a single-digit OpenAlex count is an undercount; compare
+the S2 column. See [§5.5](#55-phase-5b-citation-counts).
 
 ---
 
 ## 10. Reference card
 
-### Environment
+### Rate limits
 
-| Variable | Purpose |
+| API | Limit |
 |---|---|
-| `LITREVIEW_EMAIL` | contact email in the API User-Agent (or `--email`) |
-| `S2_API_KEY` | avoids Semantic Scholar 429s on large corpora |
-| `LITREVIEW_LAB_AUTHOR` | comma-separated surnames to star as home-lab papers |
-
-### Rate limits worth knowing
-
-- **arXiv API** ~1 req/3 s; bursts trigger 429.
-- **NCBI eutils** 3 req/s without a key, 10 with. Use a 0.4 s sleep.
-- **CrossRef** polite pool with `mailto:` is unlimited; without, ~50/s.
-- **Unpaywall** 100k req/day per email.
+| arXiv | about 1 request per 3 s; bursts return 429 |
+| NCBI E-utilities | 3 requests/s without a key, 10 with; use a 0.4 s sleep |
+| CrossRef | polite pool (with `mailto:`) is unthrottled; otherwise about 50/s |
+| Unpaywall | 100,000 requests per day per email |
 
 ### Cost and time
 
-For ~40 search-added plus ~30 cross-citation papers, the no-PDF workflow takes an
-agent roughly **1–2M tokens** and **5–10 minutes** wall-clock. Phase 6 (the
-CrossRef cross-citation pass) is the slowest step at 3–5 minutes. Phase 4 adds
-10–20 minutes.
+For about 40 searched plus 30 cross-citation papers, without PDFs, an agent uses
+roughly **1–2M tokens** and **5–10 minutes**. The cross-citation pass (Phase 6) is
+the slowest step, at 3–5 minutes. PDF download (Phase 4) adds 10–20 minutes.
 
-### Every tool, every flag
+### Tools and flags
 
-The [Tools reference](tools.md) carries the full index — generated from the
-modules themselves, so it cannot drift — plus notes on what each tool refuses to
-guess. Run any script with `--help`.
+The [Tools reference](tools.md) lists every script and flag, generated from the
+code. Run any script with `--help`.
 
-### If you change the toolkit
+### Changing the toolkit
 
-Update the matching page under `docs/` in the same change, run
-`python3 tools/gen_docs.py`, and run the three checks CI runs:
-
-```bash
-ruff check .
-python3 tools/tests/test_formatting.py
-python3 tools/gen_docs.py --check
-```
-
-See [Maintaining this site](maintaining.md).
+Update the affected docs page in the same change. See
+[Maintaining this site](maintaining.md).

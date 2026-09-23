@@ -1,111 +1,96 @@
 # literature-review-toolkit
 
-**Scaffolding to drive a Claude (or other LLM) agent through a structured
-literature review — and keep it honest.**
+**Scripts that let an LLM agent run a literature review without fabricating
+references.**
 
-The agent does the judgment work: choosing what to search, what matters, how to
-group it, and (optionally) how to write it up. These scripts handle the API
-calls, the verification, and the bookkeeping — the parts an LLM is *worst* at and
-where a single fabricated author or off-by-one DOI quietly poisons a review.
+The agent decides what to search, what matters, how to group it, and optionally
+how to write it up. The scripts handle the API calls, verification and
+bookkeeping: the work LLMs do worst, where one invented author or wrong DOI
+quietly corrupts a review.
 
 <div class="hero" markdown>
 
 <figure class="fig" markdown>
-![Lineage figure: how the brain represents complexity](assets/figures/lineage_complexity.png){ loading=lazy }
-<figcaption>
-A finished lineage figure (Phase&nbsp;6b) — 190 verified papers grouped into six
-theoretical families on a density-warped timeline from Shannon&nbsp;1948 to today,
-each dot sized by how often the paper has been cited. Landmark papers are
-auto-labeled. Every dot is a verified, canonically formatted reference in the
-spreadsheet.
+![Lineage figure: six families of papers on how the brain represents complexity, 1948 to 2026](assets/figures/lineage_complexity.png){ loading=lazy }
+<figcaption markdown>
+**A finished lineage figure.** 190 verified papers on how the brain represents
+complexity, grouped into six theoretical families (lanes) on a timeline from
+1948 to 2026. Dot area shows citation count; labeled dots are landmarks the
+toolkit chose automatically. Every dot is a verified, canonically formatted
+reference in the accompanying spreadsheet, so the figure can be trusted as a map
+of the literature.
 </figcaption>
 </figure>
 
 </div>
 
-## The core idea: judgment vs. mechanics
+## Judgment versus ground truth
 
-A literature review has a few points where a **human** genuinely has to decide
-something. Everything between those points has a *ground truth* — a DOI either
-resolves to the paper you cited or it doesn't — so it should be **mechanized and
-guarded, not left to the agent's memory.**
+A review needs human judgment at only three points. Everything between them has
+a ground truth (a DOI either resolves to the cited paper or it does not), so the
+toolkit checks it by script instead of trusting the agent's memory.
 
 <div class="cards" markdown>
 
 <div class="card" markdown>
 <span class="big">1</span>
 ### Scope
-You decide the topic and the span of the search (Phase&nbsp;1) — or, in **lab
-mode**, you point it at a lab's publication corpus.
+You choose the topic and how far back to search, or, in **lab mode**, which
+lab's publications to start from.
 </div>
 
 <div class="card" markdown>
 <span class="big">2</span>
 ### Families *(optional)*
-You approve or edit the agent's proposed theoretical grouping **before** it
-labels every paper (Phase&nbsp;6b).
+You approve the agent's proposed theoretical grouping before any paper is
+labeled.
 </div>
 
 <div class="card" markdown>
 <span class="big">3</span>
 ### The write-up *(optional)*
-If you want a narrative review, the agent authors the prose — the one judgment
-step the toolkit does **not** mechanize (Phase&nbsp;7).
+The agent writes the narrative review. This is the one judgment step the toolkit
+does not mechanize.
 </div>
 
 </div>
 
-In between, the mechanical steps run automatically but are **guarded**:
+Between those points, every step runs automatically behind a gate:
 
-- A required **antecedents pass** searches the topic's methodological,
-  empirical, and theoretical roots — the forward search is recency-biased and
-  misses them.
-- **Every citation is verified** against PubMed / PMC / CrossRef / arXiv. Search
-  agents fabricate roughly **1 in 4** — wrong first authors, inverted findings,
-  invented or mis-copied DOIs, even an entirely wrong author list for a real
-  paper.
-- **Every reference is rebuilt** from its verified DOI into canonical APA-7,
-  behind a hard audit gate. No agent-typed or database-typed reference text is
-  trusted.
-- **Citation counts** are fetched, reconciled against a second database, and
-  schema-checked; cross-citation mining and dedup run; the spreadsheet is
-  rebuilt from JSON each time.
+- **Antecedents.** A required second search finds the field's methodological,
+  empirical and theoretical roots, which a forward search misses.
+- **Verification.** Every citation is checked against PubMed, PMC, CrossRef and
+  arXiv. Search agents fabricate roughly **1 in 4**.
+- **Canonical references.** Every reference is rebuilt from its verified DOI into
+  APA-7, and an audit fails the build on any defect.
+- **Citation counts.** Counts come from OpenAlex, checked against Semantic
+  Scholar.
 
-!!! quote "The principle"
-    The agent supplies judgment; the scripts supply ground truth. Wherever a
-    fact can be checked, it is checked — automatically, every time, with a gate
-    that fails the build rather than your reader.
-
-## What you get out
-
-The **core deliverable is one `.xlsx` file** — an annotated, verified, fully
-formatted bibliography. Two optional deliverables sit on top of it, both rendered
-from the same verified data:
+## What you get
 
 <div class="cards" markdown>
 
 <div class="card" markdown>
 ### :material-table: Spreadsheet
-The always-on deliverable. One row per paper: canonical APA-7 reference, summary,
-tag, family, and citation counts — color-coded by where the paper came from.
+The core deliverable. One row per paper: canonical reference, summary, tag,
+family and citation counts, colored by where the paper came from.
 </div>
 
 <div class="card" markdown>
-### :material-chart-timeline-variant: Lineage figure *(opt)*
-An interactive HTML figure (plus SVG/PNG/PDF) grouping the corpus into
-theoretical families on a density-warped timeline, with dot size carrying
-citation count.
+### :material-chart-timeline-variant: Lineage figure *(optional)*
+An interactive HTML figure, plus SVG, PNG and PDF, that lays out the families on
+a timeline.
 </div>
 
 <div class="card" markdown>
-### :material-file-document-edit: Review article *(opt)*
-An AI-authored narrative review `.docx` — prose by the agent, references pulled
-canonically from the verified corpus, with a mandatory priority audit.
+### :material-file-document-edit: Review article *(optional)*
+An AI-authored narrative review (`.docx` and a web page), with its references
+drawn from the verified corpus.
 </div>
 
 </div>
 
-## Two ways in
+## Two modes
 
 === "Topic mode"
 
@@ -117,25 +102,23 @@ canonically from the verified corpus, with a mandatory priority audit.
 
 === "Lab mode"
 
-    Start from a lab's full publication corpus, derive its research themes and how
-    they shifted over time, then search outward to place that work in the field.
+    Start from a lab's publications, derive its research themes, then search
+    outward to place that work in the field.
 
     > *"Review the Gallant lab's human-imaging work in the context of the broader
     > field."*
 
-Both share the same verify → canonicalize → count → families → figure → review
-machinery. See [Choosing a front end](manual.md#4-choosing-a-front-end).
+From verification on, both modes run the same pipeline. See
+[Choosing a front end](manual.md#4-choosing-a-front-end).
 
 ## Next steps
 
-- **[Operator manual](manual.md)** — the complete document: install, the rules
-  that don't bend, every phase with its command and its gate, how to read the
-  outputs, and what to do when a step fails.
-- **[Examples](examples.md)** — two complete worked reviews, plus a gallery of
-  finished lineage figures.
+- **[Operator manual](manual.md)**: install, rules, every phase with its command
+  and gate, how to read the outputs, and troubleshooting.
+- **[Examples](examples.md)**: a finished review in each mode and a gallery of
+  lineage figures.
 
 !!! note "AI disclosure"
-    This toolkit is designed to be driven by an LLM agent, and the optional review
-    articles it produces are AI-authored (with an explicit disclosure note in every
-    document). The verification machinery exists precisely because LLM output cannot
-    be trusted on matters of fact without checking.
+    The toolkit is designed to be driven by an LLM agent, and the review articles
+    it produces are AI-authored, with a disclosure in each. The verification
+    machinery exists because LLM output cannot be trusted on matters of fact.

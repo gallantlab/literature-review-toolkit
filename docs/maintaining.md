@@ -1,73 +1,84 @@
 # Maintaining this site
 
-Notes for whoever edits the docs next — human or agent.
+Notes for whoever edits these docs next, human or agent.
 
-!!! warning "Keep the docs in sync with the toolkit"
-    This site is a **superset of `README.md` + `PLAYBOOK.md`**, not a fork. When
-    you change the toolkit — add/rename a tool, change a phase, alter a command or
-    flag, add a guardrail/lesson — **update the affected page under `docs/` in the
-    same change.** The pages that drift fastest:
+!!! warning "Change the docs in the same commit as the toolkit"
+    This site covers everything in `README.md` and `PLAYBOOK.md`. When you add or
+    rename a tool, change a phase, a command or a flag, or add a guardrail,
+    update the affected page under `docs/` in the same change. `docs/manual.md`
+    drifts fastest: it holds the phase commands, the guardrails and the pipeline
+    diagram.
 
-    - `docs/manual.md` — phase commands, guardrails, the Mermaid flow and the
-      phases-at-a-glance line all live here now
+## The generated tool index
 
-    The tool index in `docs/tools.md` (and its copies in `tools/README.md` and
-    `PLAYBOOK.md`) is **generated** from the modules — script, phase, docstring
-    sentence, flags — by `python3 tools/gen_docs.py`. After adding a tool or a
-    flag, run it; `python3 tools/gen_docs.py --check` is what CI runs, and it
-    fails on a stale copy. Only the notes around the index are hand-written.
+The index in `docs/tools.md`, `tools/README.md` and `PLAYBOOK.md` is generated
+from the modules (docstring, `PHASE` constant, `--help` flags) by
+`python3 tools/gen_docs.py`. Run it after adding a tool or flag. Only the text
+around the index is hand-written.
 
-## Tests and lint
+## Checks
 
-`.github/workflows/tests.yml` runs on every push and pull request:
-`ruff check .` (config in `pyproject.toml`: one import per line, 110 columns),
-`python3 tools/tests/test_formatting.py` (the regression suite — every case is a
-defect that once reached a delivered bibliography), and `tools/gen_docs.py
---check`. Run all three locally before pushing.
+`.github/workflows/tests.yml` runs three checks on every push and pull request.
+Run them locally before pushing:
 
-## How it's built and deployed
+```bash
+ruff check .                              # config in pyproject.toml
+python3 tools/tests/test_formatting.py    # each case is a defect that once shipped
+python3 tools/gen_docs.py --check         # fails if a tool index is stale
+```
 
-- **Engine:** MkDocs + Material. Config: [`mkdocs.yml`](https://github.com/gallantlab/literature-review-toolkit/blob/main/mkdocs.yml). Content: `docs/`.
-- **Deploy:** [`.github/workflows/docs.yml`](https://github.com/gallantlab/literature-review-toolkit/blob/main/.github/workflows/docs.yml)
-  runs on every push to `main` that touches `docs/**`, `mkdocs.yml`, or the
-  workflow. It runs `mkdocs build --strict` (a broken link or missing file
-  **fails the build**) and publishes to GitHub Pages.
-- **Live URL:** <https://gallantlab.org/literature-review-toolkit/> — the
-  `gallantlab` org serves project Pages under its **custom domain**, so
-  `site_url` in `mkdocs.yml` is `gallantlab.org`, **not** `github.io`. Don't
-  "correct" it back.
-- **Repo is public** — that's what lets free GitHub Pages serve it.
+## Build and deploy
 
-## Preview locally
+- **Engine:** MkDocs with the Material theme. Config:
+  [`mkdocs.yml`](https://github.com/gallantlab/literature-review-toolkit/blob/main/mkdocs.yml).
+  Content: `docs/`.
+- **Deploy:**
+  [`.github/workflows/docs.yml`](https://github.com/gallantlab/literature-review-toolkit/blob/main/.github/workflows/docs.yml)
+  runs on every push to `main` that touches `docs/**`, `mkdocs.yml` or the
+  workflow. It runs `mkdocs build --strict`, which fails on a broken link or
+  missing file, and publishes to GitHub Pages. The repo must stay public for
+  free Pages hosting.
+- **URL:** <https://gallantlab.org/literature-review-toolkit/>. The `gallantlab`
+  org serves Pages under its custom domain, so `site_url` is `gallantlab.org`,
+  not `github.io`. Do not change it.
+
+Preview locally:
 
 ```bash
 pip install -r docs/requirements.txt
-mkdocs serve            # http://127.0.0.1:8000, live-reload
-mkdocs build --strict   # what CI runs; fix anything it flags before pushing
+mkdocs serve            # http://127.0.0.1:8000, live reload
+mkdocs build --strict   # what CI runs
 ```
 
-## Where the figures come from
+## Figures
 
-All example figures are **real outputs from actual reviews**, copied into
-`docs/assets/`:
+Every figure is real output from a finished review, copied into `docs/assets/`:
 
-- `assets/figures/lineage_*.png` — families figures (`families_figure.py` output)
-  from various review subdirectories.
-- `assets/figures/lab_*.png` — the `gallant_lab` lab-mode trajectory + in-context
-  figures.
-- `assets/examples/example_review_*.png` — pages of a review `.docx`, rendered via
-  LibreOffice → PDF → `pdftoppm`, then trimmed with ImageMagick.
+| File | Source |
+|---|---|
+| `assets/figures/lineage_*.png` | `families_figure.py` output from each review directory |
+| `assets/figures/lab_*.png` | the `gallant_lab` trajectory and in-context figures |
+| `assets/examples/example_review_*.png` | pages of a review `.docx`, rendered with LibreOffice → PDF → `pdftoppm` and trimmed with ImageMagick |
 
-To refresh them, re-copy the source PNG (or re-render the `.docx`/`.xlsx`) and
-overwrite the file in `docs/assets/` — the filenames are referenced from the
-Markdown, so keep them stable.
+To refresh the review pages, render the `.docx` with `review_paper.py`, then:
 
-## The spreadsheet preview table
+```bash
+/Applications/LibreOffice.app/Contents/MacOS/soffice --headless --convert-to pdf review.docx
+pdftoppm -r 150 -png -f 1 -l 1 review.pdf page       # and the "References" page
+magick page-01.png -trim -bordercolor white -border 20 -resize 1000x example_review_title.png
+```
 
-The color-coded bibliography table in the [manual](manual.md#71-the-spreadsheet)
-is **not** a screenshot — it's HTML generated from a real `rows.json` and
-pulled in as a snippet (`--8<-- "docs/_includes/bib_table.html"`). To regenerate
-it from a different review, build an HTML `<table class="bib-preview">` with rows
-classed `row-search` / `row-xref` / `row-source` (the color classes live in
-`docs/stylesheets/extra.css`) and overwrite `docs/_includes/bib_table.html`. That
-partial is excluded from the published site via `exclude_docs` in `mkdocs.yml`.
+On macOS, `soffice` is not on `PATH`, and it hangs inside a sandbox that blocks
+macOS system services. To refresh any figure, overwrite the file in place; the
+Markdown references the filenames. When a figure changes, check its caption:
+captions state paper counts, dates and findings read off the figure.
+
+## The spreadsheet preview
+
+The bibliography table in the [manual](manual.md#71-the-spreadsheet) is HTML, not
+a screenshot. It lives in `docs/_includes/bib_table.html` and is pulled in with
+`--8<-- "docs/_includes/bib_table.html"`; `exclude_docs` in `mkdocs.yml` keeps
+the partial from being published on its own. To regenerate it, write a
+`<table class="bib-preview">` from a real `rows.json`, with rows classed
+`row-search`, `row-xref` or `row-source` (colors in
+`docs/stylesheets/extra.css`).
