@@ -37,7 +37,7 @@ ROOT = os.path.dirname(HERE)
 TARGETS = ["docs/tools.md", "tools/README.md", "PLAYBOOK.md"]
 BEGIN = "<!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->"
 END = "<!-- END GENERATED TOOL INDEX -->"
-SKIP = {"gen_docs.py", "__init__.py"}
+SKIP = {"gen_docs.py", "version.py", "__init__.py"}   # maintainer tools, not review tools
 # (file, regex whose one group is the stated version)
 VERSION_TARGETS = [
     (".claude-plugin/plugin.json", r'"version": "(\d+\.\d+\.\d+)"'),

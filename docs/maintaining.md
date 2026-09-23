@@ -22,45 +22,6 @@ The home page's "AI disclosure" section and the footer link to it state that the
 toolkit and these docs were written largely by Claude, and that what the toolkit
 produces is AI-generated. Keep both when editing.
 
-## The version number
-
-The docs show the toolkit's version, which nobody types by hand:
-`tools/version.py` computes it from the git history. Each non-merge commit is one
-bump, judged from the work it does and declared in the commit message:
-
-| Trailer | When | Effect |
-|---|---|---|
-| `Version-Bump: major` | breaks existing projects: a flag removed or renamed, a `rows.json` field changed, an output format changed | MAJOR + 1; MINOR and PATCH reset |
-| `Version-Bump: minor` | adds a capability: a new tool, flag or phase | MINOR + 1; PATCH reset |
-| `Version-Bump: patch` | fixes, docs, refactors | PATCH + 1 |
-| `Version-Bump: none` | nothing a user would notice | no change |
-
-A commit without the trailer, which includes every commit before 1.13.0, is
-judged by size: 400 or more changed lines is minor, anything smaller is patch.
-Size never produces a major bump. Lines that only state the version are not
-counted, so stamping the version never changes it.
-
-The history starts from MAJOR 1, a constant in `version.py`. It is 1 rather than
-0 because by 1.13.0 the toolkit had been in development for six months, released
-publicly many times, and used in production. `python3 tools/version.py --explain`
-lists every commit, how its bump was decided, and the version after it.
-
-`gen_docs.py` stamps the version into `plugin.json`, `marketplace.json`, the
-skill's `SKILL.md`, the site footer (`copyright` in `mkdocs.yml`), the home page
-and the README. Uncommitted changes count as the next commit, so **run it last,
-just before committing, with the bump the commit will declare, and commit
-everything it saw:**
-
-```bash
-python3 tools/gen_docs.py --bump minor
-git commit -a    # message ends with the trailer:  Version-Bump: minor
-```
-
- CI recomputes the version from the full history (the tests workflow
-checks out with `fetch-depth: 0`) and fails if any stamped copy differs. Merge
-pull requests with a merge commit or a rebase; a squash merge replaces the
-counted commits with one, which changes the version.
-
 ## Checks
 
 `.github/workflows/tests.yml` runs three checks on every push and pull request.
@@ -69,7 +30,7 @@ Run them locally before pushing:
 ```bash
 ruff check .                              # config in pyproject.toml
 python3 tools/tests/test_formatting.py    # each case is a defect that once shipped
-python3 tools/gen_docs.py --check         # fails if a tool index or version string is stale
+python3 tools/gen_docs.py --check         # fails if a generated block is stale
 ```
 
 ## Build and deploy

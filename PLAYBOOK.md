@@ -56,15 +56,7 @@ tool, a phase, a command/flag, a guardrail or lesson — update the matching pag
 under `docs/` in the same change** (fastest to drift: `docs/manual.md`, which
 carries every phase command, guardrail and flag). The tool index in `docs/tools.md`, `tools/README.md` and
 this file is **generated** — run `python3 tools/gen_docs.py` after adding a tool
-or a flag. The same script stamps the **version**, which is never typed by hand:
-`tools/version.py` computes it from the commit history, counting uncommitted changes as the
-next commit. **Every commit declares its bump, judged from the work**, with a trailer in the
-message — `Version-Bump: major` (breaks existing projects: removed/renamed flags, a `rows.json`
-field or output format changed), `minor` (a new tool, flag or phase), `patch` (fixes, docs,
-refactors) or `none`. Commits without one fall back to size (400+ lines minor, else patch).
-Run `python3 tools/gen_docs.py --bump <level>` last, just before committing, and put the
-same level in the trailer.
-`.github/workflows/tests.yml` fails on a stale copy of either, and also runs
+or a flag; `.github/workflows/tests.yml` fails on a stale copy, and also runs
 `ruff check .` and `tools/tests/test_formatting.py`. The site auto-deploys via
 `.github/workflows/docs.yml` on push to `main` (build runs `mkdocs build
 --strict`). Full editing/figure/snippet details live in `docs/maintaining.md`.
@@ -1445,7 +1437,6 @@ it is stale); the per-tool detail is in `tools/README.md` and `docs/tools.md`.
 | `review_paper.py` | 7 | Phase 7 — build a review ARTICLE (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `lab_corpus.py` | L1 | Lab mode — Phase L1: ingest a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
-| `version.py` | — | Compute the toolkit's version from its git commits: how many, and how much work. | `--bump` `--committed` `--explain` |
 <!-- END GENERATED TOOL INDEX -->
 
 Notes the index cannot carry:
