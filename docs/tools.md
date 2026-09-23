@@ -61,10 +61,13 @@ in `tools/README.md` and `PLAYBOOK.md`.
 - **`families.py`** validates an agent-proposed, human-approved grouping: every
   paper in exactly one family, 2–9 families (3–8 recommended). Never build
   families by clustering embeddings.
-- **`families_figure.py`** chooses landmarks automatically (most cited per
-  family, most cited within the corpus, home-lab papers when opted in) and
-  prints how many labels the cap dropped. Arrows and notes stay editorial
-  (`--spec`).
+- **`families_figure.py`** draws the timeline offered on every review. Its
+  defaults are the standard settings: dots sized by citation count, internal
+  citations read from beside `rows.json`, and the arguments recorded in
+  `figure_render_args.txt` when that file is missing (never overwritten).
+  Landmarks are chosen automatically (most cited per family, most cited within
+  the corpus, home-lab papers when opted in), and each run prints how many
+  labels the cap dropped. Arrows and notes stay editorial (`--spec`).
 - **`bib_viewer.py`** renders a searchable, family-grouped bibliography for a
   corpus with no lineage figure, with a note on who wrote the summaries.
 - **`cite_check.py`** exits 1 if an in-text citation matches no row, and warns

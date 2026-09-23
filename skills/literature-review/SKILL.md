@@ -2,9 +2,9 @@
 name: literature-review
 license: MIT
 metadata:
-  version: 1.13.0
+  version: 1.14.0
   author: Jack L. Gallant
-description: Structured academic literature review — search a topic and its antecedents, verify every citation against PMC/PubMed/CrossRef/arXiv, rebuild references into canonical APA form, count citations, cross-reference the set, and assemble an annotated xlsx bibliography, optionally grouped into theoretical families with a lineage figure. Use whenever the user asks for a lit review or literature review, wants to build or audit a bibliography, survey the literature on a topic, verify or canonicalize a list of citations, check which references cite which, gather citation counts, trace the intellectual lineage of a field, or review a lab's own corpus in the context of its field. PDF acquisition is opt-in and never runs by default.
+description: Structured academic literature review — search a topic and its antecedents, verify every citation against PMC/PubMed/CrossRef/arXiv, rebuild references into canonical APA form, count citations, cross-reference the set, and assemble an annotated xlsx bibliography, then offer an interactive lineage timeline of its theoretical families on every review. Use whenever the user asks for a lit review or literature review, wants to build or audit a bibliography, survey the literature on a topic, verify or canonicalize a list of citations, check which references cite which, gather citation counts, trace the intellectual lineage of a field, or review a lab's own corpus in the context of its field. PDF acquisition is opt-in and never runs by default.
 ---
 
 # Literature review
@@ -61,6 +61,9 @@ missing email is an `argparse` error (exit 2), not a silent degradation.
 - **Three human decision points.** A review has exactly three places where a person
   decides; everything between them runs automatically, behind guardrails rather than
   attention. The playbook marks them. Do not sail past one.
+- **Always offer the timeline.** After the cross-citation pass, propose the families
+  and pitch the lineage timeline without waiting to be asked; the user uses the
+  families, changes them, or skips the timeline (PLAYBOOK Phase 6b).
 - **Verification is not optional.** `verify.py` exits non-zero unless every verdict
   is OK. A non-zero exit is a stop, not a warning to note and move on.
 - **PDF downloading is opt-in.** Phase 4 never runs by default. Only invoke

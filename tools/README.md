@@ -220,9 +220,10 @@ python3 tools/xref.py --rows rows.json --out xref.json --exclude existing_dois.j
 
 ## Phase 6b: `families.py`
 
-Validates a theoretical grouping and stamps it onto the rows. The agent proposes
-families and assigns papers (see `family_prompt_template.md`), and a human
-approves the definitions; this script does the deterministic half.
+Validates a theoretical grouping and stamps it onto the rows. On every review the
+agent proposes families and pitches the timeline built from them (see
+`family_prompt_template.md`); the user uses the families, changes them, or skips
+the timeline. This script does the deterministic half.
 
 ```bash
 python3 tools/families.py --rows rows.json --digest                  # corpus digest for the proposal
@@ -245,25 +246,32 @@ similarity.
 
 ## Phase 6b: `families_figure.py`
 
-Renders the lineage figure: a self-contained interactive `.html`, a standalone
-`.svg`, and `.png` and `.pdf` if `rsvg-convert` or `inkscape` is installed.
+Renders the lineage timeline, which the agent offers on every review: a
+self-contained interactive `.html`, a standalone `.svg`, and `.png` and `.pdf` if
+`rsvg-convert` or `inkscape` is installed.
 
 ```bash
 python3 tools/families_figure.py --rows rows.json --families families.json \
-        --internal internal_citations.json --size-by-citations sqrt \
         --out-prefix mytopic_families --title "My topic — theoretical families"
 ```
+
+The defaults are the standard settings, so this short command is the standard
+render: dots sized by citation count, `internal_citations.json` read from beside
+`rows.json`, and the exact arguments written to `figure_render_args.txt` when that
+file is missing. An existing file holds hand-written tuning notes and is never
+overwritten; the script warns when a render is not recorded in it.
 
 Each family is a lane; each paper is a dot placed by year. Hovering a dot shows
 its reference, clicking shows its summary, counts and DOI, and hovering a lane
 title shows the family's claim and lineage.
 
 - **Landmarks are automatic:** the most cited per family (`--per-family`,
-  default 4), papers cited by at least `--motif-min` corpus papers (needs
-  `--internal`), and home-lab papers. `--max-labels` (default 28) caps the total.
+  default 4), papers cited by at least `--motif-min` corpus papers (from
+  `internal_citations.json`, or `--internal`), and home-lab papers. `--max-labels` (default 28) caps the total.
   Each run prints how many labels the cap dropped.
-- **Dot size:** `--size-by-citations sqrt` makes area proportional to citation
-  count, normalized at the 95th percentile; papers with no count draw hollow.
+- **Dot size:** area is proportional to citation count by default
+  (`--size-by-citations sqrt`), normalized at the 95th percentile; papers with no
+  count draw hollow. `log` compresses harder; `none` gives binary dots.
   `--size-range` sets the radius range in pixels.
 - **Long time spans:** `--time-warp 0–1` compresses sparse early decades;
   `--min-year` clamps the axis start.

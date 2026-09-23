@@ -1,7 +1,9 @@
 # Thematic-families prompt — TEMPLATE (Phase 6b)
 
-Two steps with a human checkpoint between them. The orchestrator can do this
-directly, or dispatch a sub-agent with structured output. `tools/families.py`
+Run on every review: the families are what the lineage timeline is drawn from,
+and the timeline is always offered. Two steps with a human checkpoint between
+them. The orchestrator can do this directly, or dispatch a sub-agent with
+structured output. `tools/families.py`
 then validates + renders. Feed the corpus via `tools/families.py --digest`
 (compact) or the raw `rows.json`.
 
@@ -27,8 +29,9 @@ Propose **{N_MIN}-{N_MAX} families** that satisfy ALL of:
 - **Roughly MECE** — every paper has one dominant home; few or no orphans.
 - **Balanced enough to be useful** — no family swallowing >60% or left a singleton.
 
-Return ONLY this JSON and then WAIT for the user to approve or revise the
-definitions before assigning anything:
+Return ONLY this JSON. The orchestrator then pitches the timeline to the user with
+these definitions and WAITS: the user uses them, revises them, or skips the
+timeline (in which case Step 2 never runs). Assign nothing before that answer:
 ```json
 { "principle": "one sentence naming the axis",
   "families": [
@@ -38,7 +41,7 @@ definitions before assigning anything:
   ] }
 ```
 
-## Step 2 — Assign every paper  (after the definitions are approved)
+## Step 2 — Assign every paper  (after the user accepts the definitions)
 
 Using the **frozen** family list below, assign EVERY paper to exactly one family
 (its dominant commitment). Work through the corpus in order; do not skip any ref.

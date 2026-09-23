@@ -52,7 +52,7 @@ flowchart TD
     S["⑤ Build spreadsheet (.xlsx)"]
     CC["⑤b Citation counts<br/>OpenAlex + Semantic Scholar"]
     X["⑥ Cross-citation pass<br/>(mine + add high-value papers)"]
-    F["⑥b Families (optional)<br/>you approve the grouping"]
+    F["⑥b Families<br/>always offered: use, edit or skip"]
     FIG["⑥b Lineage figure<br/>(interactive HTML + svg/png/pdf)"]
     W["⑦ Review article (optional)<br/>authored + priority audit"]
     H["⑧ Hand off"]
@@ -73,14 +73,16 @@ a question; lab mode (right) starts from a lab's publications. Both enter
 verification (③), and every later phase is shared. Yellow boxes are human
 decisions. Green boxes are gates: they run automatically and stop the pipeline on
 any error. Papers added by the cross-citation pass (⑥) loop back through
-verification, so no reference reaches a deliverable unchecked.</small>
+verification, so no reference reaches a deliverable unchecked. The timeline is
+offered on every review; the direct path from ⑥ to hand-off is taken only when you
+skip it.</small>
 
 ### 1.2 The three decisions that are yours
 
 | # | You decide | Phase | Why it is yours |
 |---|---|---|---|
 | 1 | **Scope**: topic and span, or which lab corpus | 1 / L1–L2 | Only you know the question. |
-| 2 | **Families** *(optional)* | 6b | You approve the grouping before any paper is labeled. |
+| 2 | **Families and the timeline** | 6b | The agent always offers the timeline and proposes its families; you use them, change them, or skip the timeline. |
 | 3 | **The write-up** *(optional)* | 7 | Prose is judgment; the toolkit does not fake it. |
 
 ---
@@ -382,41 +384,46 @@ Append the high-value ones to `rows.json` and send the batch back through Phases
 - CrossRef coverage varies by publisher. Nature, Cell, OUP and J Neurosci deposit
   complete reference lists; some smaller journals deposit none.
 - `--internal-out` records how often each paper is cited within the corpus. The
-  figure uses this to choose landmarks, so emit it even if Phase 6b is uncertain.
+  timeline uses this to choose landmarks, and reads it from beside `rows.json`.
 
 !!! warning "Keep ids unique across merges"
     Assert `len(refs) == len(set(refs))` after merging, and attach citation counts
     only after ids are final. Otherwise counts attach to the wrong papers.
 
----
+### 5.7 Phase 6b: families and the timeline (always offered)
 
-## 6. Optional phases and hand-off
-
-### 6.1 Phase 6b: families and the lineage figure
-
-A **family** groups papers by what they are fundamentally *for*: the theoretical
-claim they support. It is orthogonal to the Topic column, which records method or
-sub-area. A good family unites papers that read differently and splits papers
-that read alike.
+The lineage timeline is usually the most useful thing a review produces, so the
+agent offers it on every review without being asked. The timeline is drawn from
+families. A **family** groups papers by what they are fundamentally *for*: the
+theoretical claim they support. It is orthogonal to the Topic column, which
+records method or sub-area. A good family unites papers that read differently and
+splits papers that read alike.
 
 ```bash
 # 1. propose: the agent reads the corpus and proposes a grouping
 python3 ../tools/families.py --rows rows.json --digest
 
-# 2. CONFIRM: you approve or edit the family definitions (your decision #2)
+# 2. PITCH: the agent offers the timeline and shows the family definitions.
+#    You use them, change them, or skip the timeline (your decision #2).
 
 # 3. assign, validate and stamp
 python3 ../tools/families.py --rows rows.json --assign families_input.json \
         --out families.json
 
-# 4. render
+# 4. render the timeline
 python3 ../tools/families_figure.py --rows rows.json --families families.json \
-        --internal internal_citations.json --size-by-citations sqrt \
         --out-prefix my_topic_families --title "My topic — theoretical families"
 ```
 
-Step 2 is the cheap checkpoint. Editing six definitions costs nothing; reassigning
-300 papers does not.
+Step 2 is the only stop. Editing six definitions costs nothing; reassigning 300
+papers does not. If you skip the timeline, the phase ends there: no `Family` column
+and no figure. Otherwise steps 3 and 4 run without stopping.
+
+The render's defaults are the standard settings: dots sized by citation count,
+`internal_citations.json` read from beside `rows.json`, and the exact arguments
+written to `figure_render_args.txt` if that file does not exist yet. An existing
+file holds tuning notes, so it is never overwritten; the script says when a render
+is not recorded there. Add `--time-warp 0.85` when the corpus spans many decades.
 
 !!! danger "Do not cluster embeddings to make families"
     Clustering finds surface similarity, not shared theory. `families.py`
@@ -430,9 +437,6 @@ the reader hovers a lane title, and truncates the copy drawn beside the lane.
 Build lineages from papers already in `rows.json`, using the canonical surname
 and year; a lineage recalled from memory can be wrong in the same ways a citation
 can.
-
-**Record the exact render arguments** in `figure_render_args.txt` beside the
-figure, so it can be reproduced, retuned or re-rendered in bulk.
 
 ??? tip "Tuning the figure for a large corpus"
     The label defaults (`--motif-min 3`, `--max-labels 28`) suit a 50-paper
@@ -456,7 +460,11 @@ figure, so it can be reproduced, retuned or re-rendered in bulk.
     label sets before and after, and choose the highest threshold that removes
     nothing.
 
-### 6.2 Phase 7: the review article
+---
+
+## 6. Optional phases and hand-off
+
+### 6.1 Phase 7: the review article
 
 ```bash
 # author the prose into content.json, after the priority audit
@@ -540,9 +548,10 @@ the disclosure. Verify the viewer's filter by running it, not by reading it:
 `node verify_bib_filter.mjs <page>.html` executes the page's script against a
 stub DOM and checks what is visible.
 
-### 6.3 Phase 8: hand off
+### 6.2 Phase 8: hand off
 
-Deliver the `.xlsx`, plus the figure and review if you ran those phases. **Keep
+Deliver the `.xlsx` and the timeline (or note that it was skipped), plus the
+review if you ran Phase 7. **Keep
 the JSON files with the deliverable.** They are the audit trail and the input to
 any later re-run.
 
@@ -608,7 +617,7 @@ families are mature and which are new, before any paper is read.
 |---|---|
 | **A horizontal lane** | one theoretical family |
 | **A dot** | one paper, placed by year |
-| **Dot size** | citation count (with `--size-by-citations`) |
+| **Dot size** | citation count |
 | **A hollow dot** | no citation count available; not a count of zero |
 | **A labeled dot** | an automatically selected landmark |
 | **A ring and a ★** | a home-lab paper (only when opted in) |
@@ -622,16 +631,16 @@ families are mature and which are new, before any paper is read.
 | **"stay in this family"** | confines the walk to one lane |
 | **⬇ Download table** | downloads the embedded `.xlsx`, if `--xlsx` was passed |
 
-**Dot size.** `--size-by-citations sqrt` makes dot area proportional to citation
-count. Counts span four orders of magnitude, so the scale tops out at the 95th
+**Dot size.** By default (`--size-by-citations sqrt`), dot area is proportional to
+citation count. Counts span four orders of magnitude, so the scale tops out at the 95th
 percentile and clamps anything above it; otherwise one classic would shrink every
-other dot. (`log` is available but makes most dots look alike.) Citation count
+other dot. (`log` is available but makes most dots look alike; `none` gives binary dots.) Citation count
 also depends on age, so recent papers draw small. Say so when presenting the
 figure.
 
 **Landmarks.** Selection is automatic; do not hand-build a label overlay. A paper
 is a landmark if it is among its family's `--per-family` most cited, if at least
-`--motif-min` corpus papers cite it (requires `--internal`), or if it is a
+`--motif-min` corpus papers cite it (from `internal_citations.json`), or if it is a
 home-lab paper. Each run prints how many labels the cap dropped. Only arrows and
 notes are editorial (`--spec`).
 

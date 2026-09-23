@@ -600,6 +600,42 @@ check_true("a truncated claim says so", _cl[-1].endswith("\u2026"), repr(_cl[-1]
 # A budget of zero must yield nothing rather than raising or drawing one line.
 check("a zero budget draws no claim", families_figure.claim_lines(_long, 42, 0), [])
 
+# The timeline is a standard deliverable (offered on every review), so its standard
+# settings are the defaults: dots sized by citations, internal citations picked up
+# from beside rows.json, and the exact arguments recorded without clobbering notes.
+_ffa = families_figure.build_parser().parse_args(
+    ["--rows", "r.json", "--families", "f.json", "--out-prefix", "x"])
+check("figure: dots are sized by citations by default", _ffa.size_by_citations, "sqrt")
+check("figure: --size-by-citations none restores binary dots",
+      families_figure.build_parser().parse_args(
+          ["--rows", "r", "--families", "f", "--out-prefix", "x", "--size-by-citations", "none"]
+      ).size_by_citations, "none")
+_ffd = tempfile.mkdtemp()
+check("figure: no internal_citations.json beside rows means none",
+      families_figure.resolve_internal(None, os.path.join(_ffd, "rows.json")), None)
+open(os.path.join(_ffd, "internal_citations.json"), "w").write("{}")
+check("figure: internal_citations.json beside rows is picked up",
+      families_figure.resolve_internal(None, os.path.join(_ffd, "rows.json")),
+      os.path.join(_ffd, "internal_citations.json"))
+check("figure: an explicit --internal wins", families_figure.resolve_internal("mine.json", "rows.json"),
+      "mine.json")
+_argv = ["--rows", "rows.json", "--families", "families.json", "--out-prefix", "t_families",
+         "--title", "My topic — families", "--time-warp", "0.85"]
+check("figure: recorded args parse from both file formats",
+      families_figure.recorded_argvs(
+          "# note\nfamilies_figure.py --rows rows.json --families families.json "
+          "--out-prefix t_families --title 'My topic — families' --time-warp 0.85\n"
+          "python3 ../literature-review-toolkit/tools/families_figure.py \\\n"
+          "  --rows rows.json --families families.json \\\n  --out-prefix other\n"),
+      [_argv, ["--rows", "rows.json", "--families", "families.json", "--out-prefix", "other"]])
+_ffr = os.path.join(_ffd, "figure_render_args.txt")
+check("figure: args file written when absent", families_figure.record_args(_argv, _ffd), "written")
+check("figure: the written file round-trips", families_figure.recorded_argvs(open(_ffr).read()), [_argv])
+open(_ffr, "w").write("# hand-written tuning notes\nfamilies_figure.py --rows rows.json --out-prefix old\n")
+check("figure: a different render is reported, never overwritten",
+      (families_figure.record_args(_argv, _ffd), open(_ffr).read().startswith("# hand-written")),
+      ("unrecorded", True))
+
 # --- families_figure: label placement never gives up blindly (2026-09-19) -----
 # Placement tries 12 vertical tiers and, if every one is taken, used to fall back
 # to TIERS[-1] unconditionally — registering a box that overlaps a label already

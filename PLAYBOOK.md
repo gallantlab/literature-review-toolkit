@@ -1,10 +1,10 @@
 # Literature Review Agent Playbook
 
-**Purpose.** Build or extend a bibliography for an academic review topic, and
-optionally render it as a figure and a written review. This is ONE tool with two
-front-ends — **topic mode** (start from a query) and **lab mode** (start from a
-lab's corpus) — that share the entire downstream pipeline; only the front-end
-differs. Per topic, aim for ~50-70 high-impact and recent papers, classified and
+**Purpose.** Build or extend a bibliography for an academic review topic, offer
+its lineage timeline on every review, and optionally write it up as a review.
+This is ONE tool with two front-ends — **topic mode** (start from a query) and
+**lab mode** (start from a lab's corpus) — that share the entire downstream
+pipeline; only the front-end differs. Per topic, aim for ~50-70 high-impact and recent papers, classified and
 summarized. Decide the mode first (Phase 0), then gather that mode's inputs.
 
 ## Operating contract — the rules that don't bend
@@ -88,7 +88,8 @@ same way. There are no mode-specific shortcuts.
 topic's methodological, empirical, and theoretical roots; do not skip it.
 
 Both then converge on the shared pipeline: **Phase 3 verify → 3f canonicalize refs → 5 spreadsheet →
-5b citation counts → 6 cross-citation → 6b families → 7 review article (optional) → 8 hand-off.** Lab mode's
+5b citation counts → 6 cross-citation → 6b families + timeline (offered every time; the user may
+decline) → 7 review article (optional) → 8 hand-off.** Lab mode's
 outward/contextualize layer (**L4c**) is not a lighter pass — it *runs the
 topic-mode front-end (Phases 2–6) once per theme*, with the identical
 verify/count/dedup guardrails. Topic mode is the next section; lab mode is under
@@ -107,7 +108,8 @@ verify/count/dedup guardrails. Topic mode is the next section; lab mode is under
    whenever rows carry them.
 2. `citation_counts.json` — per-paper OpenAlex + Semantic Scholar counts (Phase 5b)
 3. `families.json` + `families.md`, and `<topic>_families.{html,svg,png,pdf}` —
-   the theoretical grouping and its interactive figure (Phase 6b, optional)
+   the theoretical grouping and its interactive timeline (Phase 6b, offered on every
+   review; absent only if the user declined it)
 4. Cross-reference index at `xref_<topic_slug>.json` (after Phase 6)
 5. **Only if Phase 7 was opted into:** a narrative review article `<Topic>_review.docx`
    (prose authored into `content.json`, rendered with `tools/review_paper.py`; APA-7 reference
@@ -495,16 +497,19 @@ unwieldy; less and you've under-mined.
 PDF download, append to spreadsheet (with the green color and Xref column
 populated).
 
-### Phase 6b — Thematic families (OPTIONAL)
+### Phase 6b — Families and the timeline (offered on EVERY review)
 
-Group the finished bibliography into a few **theoretical families** — a
-conceptual axis *orthogonal to the Topic column* (Topic captures method/sub-area;
-families capture what each paper is fundamentally *for*). Adds a `Family` column
-and a `families.md` (grouped tables + a family×topic cross-tab). Run after the
-bibliography is assembled, verified, and counted.
+The lineage timeline is the deliverable users find most useful, so **always offer
+it — do not wait to be asked.** It needs the papers grouped into a few **theoretical
+families** — a conceptual axis *orthogonal to the Topic column* (Topic captures
+method/sub-area; families capture what each paper is fundamentally *for*). Adds a
+`Family` column, a `families.md` (grouped tables + a family×topic cross-tab), and the
+timeline. Run it as soon as the bibliography is assembled, verified, and counted.
 
-This phase has **two judgment gates with a human checkpoint between them**; the
-rest is mechanical, owned by `tools/families.py`:
+The user's one decision is at step 2, and it covers the timeline too: **use the
+proposed families, change them, or skip the timeline.** Everything after that runs
+without stopping; the mechanical part is owned by `tools/families.py` and
+`tools/families_figure.py`:
 
 1. **Propose** (agent, reading the corpus via `tools/families.py --digest`):
    propose ~3-8 families, each `{key, name, claim, lineage}`, and state the one
@@ -513,9 +518,12 @@ rest is mechanical, owned by `tools/families.py`:
    similar ones. **Do NOT cluster embeddings** to make families; that yields
    surface-similarity groups, not theoretical ones. Use the prompt in
    `tools/family_prompt_template.md`.
-2. **Confirm** — show the user *just the ~6 family definitions* for approval/edit.
-   This is the cheap, high-leverage checkpoint: iterating on six definitions is
-   free; redoing the assignment is not.
+2. **Pitch** — offer the timeline and show *just the ~6 family definitions* it would
+   be drawn from (name + one-line claim each). Ask the user to pick one of three:
+   **use these**, **change them** (iterate on the definitions until they approve), or
+   **skip the timeline** (then stop Phase 6b: no `Family` column, no figure, and say
+   so at hand-off). This is the cheap, high-leverage checkpoint: iterating on six
+   definitions is free; redoing the assignment is not.
 3. **Assign** — against the frozen spec, assign every paper to one family
    (dominant commitment). Assign in batches for large corpora; never one rushed
    250-paper pass. Write `families_input.json`
@@ -531,17 +539,21 @@ rest is mechanical, owned by `tools/families.py`:
    `citation_counts.json`) + `families.md`, and `spreadsheet.py` auto-adds the
    `Family` column on the next rebuild. Re-run only when the taxonomy changes.
 
-**The figure is an interactive HTML** (not a static png), produced by
-`tools/families_figure.py` from `rows.json` + `families.json`:
+5. **Render the timeline** — an interactive HTML (not a static png), produced by
+   `tools/families_figure.py` from `rows.json` + `families.json`. The standard settings
+   are its defaults: dots sized by citation count, `internal_citations.json` (from the
+   Phase-6 `xref.py --internal-out`) read from beside `rows.json`, and the exact
+   arguments written to `figure_render_args.txt` when that file is missing (an existing
+   one holds tuning notes and is never overwritten; the tool says when a render is not
+   recorded in it):
 
 ```bash
-# first emit the within-review citation graph (criterion 2 below); reuses the xref pass:
-python3 tools/xref.py --rows rows.json --out xref_<topic>.json \
-        --exclude xref_exclude.json --internal-out internal_citations.json --email you@inst.edu
 python3 tools/families_figure.py --rows rows.json --families families.json \
-        --internal internal_citations.json --size-by-citations sqrt \
         --out-prefix <topic>_families --title "<Topic> — theoretical families"
 ```
+
+   Add `--time-warp 0.85` when the corpus spans many decades (it usually does after the
+   antecedents pass), and read the "qualified / labeled / dropped" line it prints.
 
 It writes a self-contained `.html` (family lanes with their defining sentences,
 every paper as a dot beeswarm-packed by year, landmark studies as big labeled dots;
@@ -550,15 +562,16 @@ family's NAME for a panel giving that family's claim and its full lineage** whil
 papers are spotlighted) plus a standalone `.svg` and — if `rsvg-convert`/`inkscape`
 is present — `.png` + `.pdf` for slides/papers. This replaces the old static figure.
 
-**Size the dots by citation count (`--size-by-citations sqrt`) — standard since
-2026-09-19.** Without it dot size is binary (big = labeled landmark, small = the
-rest) and the figure says nothing about how much a paper is actually cited. `sqrt`
+**Dots are sized by citation count (`--size-by-citations sqrt`) — standard since
+2026-09-19 and the default since 1.14.0.** `--size-by-citations none` gives binary dots
+(big = labeled landmark, small = the rest), which say nothing about how much a paper
+is actually cited. `sqrt`
 is area-proportional and is the one to use; `log` reads flat. Both normalize against
 the 95th percentile and clamp above it, because counts span four orders of magnitude
 and one runaway classic otherwise flattens the rest. Landmark status moves entirely
 onto the ring, leader line and label. Papers with no citation count draw HOLLOW, not
 at the floor — "unknown" is not "zero" (see Lessons). The figure gains a size legend
-automatically. Record the flag in the corpus's `figure_render_args.txt`.
+automatically.
 
 **Next/Prev walks each year's column top to bottom.** All papers of one year share an
 x, so a year is a vertical column; the walk-through tie-breaks on the dot's own drawn
@@ -603,8 +616,8 @@ write a good `claim` and `lineage` into the family spec and the figure surfaces 
 labeled as a landmark (big dot) if ANY of: (1) it is among the **most-cited in its
 family** (top `--per-family`, default 4, by max(OpenAlex, S2)); (2) it is **foundational
 within this review** — cited by ≥ `--motif-min` (default 3) of the corpus's own papers
-(this is criterion (2) and needs `internal_citations.json` from `xref.py --internal-out`;
-silently skipped if absent — so always pass `--internal`); or (3) it is a **home-lab
+(this is criterion (2) and needs `internal_citations.json` from `xref.py --internal-out`,
+read from beside `rows.json` automatically; skipped if absent — so emit it in Phase 6); or (3) it is a **home-lab
 paper** — an author surname listed in `--lab-author` or the `LITREVIEW_LAB_AUTHOR` env
 var, or a row with `source=="lab"` — these are **starred (★) and gold-ringed** so the
 lab's own work stands out. Total labels are capped at `--max-labels` (default 28); what
@@ -657,8 +670,9 @@ expect a good arrow set auto-generated.
 
 Turn the finished corpus into a narrative **review article** as a `.docx`. Run only when
 the user asks for a written review (not for the bibliography itself). Prerequisites: Phase 3f
-(canonical `apa`) and 5b (counts) are done; ideally Phase 6b families + figure exist too, since
-the families are the natural section structure.
+(canonical `apa`) and 5b (counts) are done. Phase 6b's families and timeline normally exist too
+(they are offered on every review): the families are the natural section structure, and the
+timeline is the review's figure.
 
 **Authorship and honesty (non-negotiable when an LLM writes it).** If the article is
 AI-authored, say so plainly. Put the model's name in `authors`, add an `author_note` that
@@ -772,6 +786,8 @@ correctly. Worked example: `distributed_conceptual_network/` (`write_review.py` 
 
 Tell the user:
 - Total rows in spreadsheet, broken down (source / search / xref).
+- The timeline (`<topic>_families.html`, open it in a browser) and its families — or,
+  if the user skipped it, that it was offered and declined.
 - Any verification corrections you made (e.g. fabricated PMCIDs, wrong
   first authors).
 - **Only if Phase 4 was run:** PDFs downloaded vs. failed, and the path to
@@ -1466,9 +1482,11 @@ they're scaffolding to keep the LLM judgment work fast.
 8. Phase 5b: citation counts (tools/citations.py); attach to rows, rebuild.
 9. Phase 6: cross-citation pass (tools/xref.py); verify and append xref
    batch via Phases 3 + 5 again.
-9b. Phase 6b (OPTIONAL): thematic families — propose → confirm with user →
-    assign → tools/families.py validates/stamps/renders; tools/families_figure.py
-    draws the figure and auto-labels landmarks (only arrows/notes are editorial).
+9b. Phase 6b (ALWAYS OFFER): families + timeline — propose families, then pitch the
+    timeline: the user uses them, changes them, or skips the timeline. If not skipped:
+    assign → tools/families.py validates/stamps → tools/families_figure.py draws the
+    timeline with its standard defaults and auto-labels landmarks (only arrows/notes
+    are editorial).
 9c. Phase 7 (OPTIONAL): review article — author prose into content.json,
     gate it with tools/cite_check.py, then render with tools/review_paper.py
     (APA-7 refs from rows.json). If AI-authored, state the AI author + a

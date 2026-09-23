@@ -3,7 +3,7 @@
 **Scripts that let an LLM agent run a literature review without fabricating
 references.**
 
-Version 1.13.0 ([how it is computed](maintaining.md#the-version-number)) · MIT license · [AI disclosure](#ai-disclosure)
+Version 1.14.0 ([how it is computed](maintaining.md#the-version-number)) · MIT license · [AI disclosure](#ai-disclosure)
 
 The agent decides what to search, what matters, how to group it, and optionally
 how to write it up. The scripts handle the API calls, verification and
@@ -43,9 +43,9 @@ lab's publications to start from.
 
 <div class="card" markdown>
 <span class="big">2</span>
-### Families *(optional)*
-You approve the agent's proposed theoretical grouping before any paper is
-labeled.
+### Families and the timeline
+The agent always offers the timeline and proposes the families it would use. You
+use them, change them, or skip the timeline.
 </div>
 
 <div class="card" markdown>
@@ -79,9 +79,10 @@ family and citation counts, colored by where the paper came from.
 </div>
 
 <div class="card" markdown>
-### :material-chart-timeline-variant: Lineage figure *(optional)*
-An interactive HTML figure, plus SVG, PNG and PDF, that lays out the families on
-a timeline.
+### :material-chart-timeline-variant: Lineage timeline
+Offered on every review. An interactive HTML figure, plus SVG, PNG and PDF, that
+lays out the families on a timeline: often the most useful thing a review
+produces.
 </div>
 
 <div class="card" markdown>

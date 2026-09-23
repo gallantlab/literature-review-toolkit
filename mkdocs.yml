@@ -2,14 +2,14 @@ site_name: literature-review-toolkit
 site_description: >-
   Scaffolding to drive an LLM agent through a structured, verifiable literature
   review — search, verify, canonicalize, count, cross-reference, and assemble a
-  single annotated spreadsheet, then optionally a lineage figure and an
-  AI-authored narrative review.
+  single annotated spreadsheet and an interactive lineage timeline, then
+  optionally an AI-authored narrative review.
 site_url: https://gallantlab.org/literature-review-toolkit/
 repo_url: https://github.com/gallantlab/literature-review-toolkit
 repo_name: gallantlab/literature-review-toolkit
 edit_uri: edit/main/docs/
 copyright: >-
-  Version 1.13.0 · MIT license · Gallant Lab, UC Berkeley ·
+  Version 1.14.0 · MIT license · Gallant Lab, UC Berkeley ·
   Code and documentation written largely by Claude (Anthropic);
   <a href="https://gallantlab.org/literature-review-toolkit/#ai-disclosure">AI disclosure</a>
 

@@ -2,8 +2,11 @@
 """Phase 6b — render the interactive HTML lineage figure of the theoretical families.
 
 Self-contained single .html (inline SVG + CSS + JS, no deps, no network) plus a
-standalone .svg and, if rsvg-convert/inkscape is present, .png + .pdf. Replaces
-the old static matplotlib figure.
+standalone .svg and, if rsvg-convert/inkscape is present, .png + .pdf. The timeline
+is offered on every review, so the standard settings are the defaults: dots sized
+by citation count, internal_citations.json picked up from beside rows.json, and the
+exact arguments recorded in figure_render_args.txt (created if missing, never
+overwritten).
 
 Open in a browser, present fullscreen. Hover any node -> full reference
 (tooltip); click -> side panel with citation + a live DOI link; hover or focus a
@@ -25,8 +28,8 @@ LANDMARKS are auto-selected and labeled (big dots) — no hand-made overlay need
 A paper is a landmark if ANY of:
   (1) it is among the most-cited in its family (top --per-family by max(OpenAlex, S2)),
   (2) it is foundational *within this review* — cited by >= --motif-min of the corpus's
-      own papers (needs --internal internal_citations.json from `xref.py --internal-out`;
-      silently skipped if not supplied),
+      own papers (needs internal_citations.json from `xref.py --internal-out`, read from
+      beside rows.json unless --internal names another; skipped if there is none),
   (3) it is a home-lab paper — an author surname listed in --lab-author or the
       LITREVIEW_LAB_AUTHOR env var (home-lab favoring is OFF by default), or a row
       with source == "lab" — these are starred (★) and ringed in --lab-color
@@ -40,10 +43,10 @@ is reported on every run; raise --max-labels or --motif-min if it is large.
 Pass --spec with a "labels" map to override auto-selection entirely (manual curation wins);
 --no-auto-landmarks turns labeling off.
 
-DOT SIZE is binary by default — big = labeled landmark, small = everything else —
-so the figure says nothing about how much a paper is actually cited.
---size-by-citations {log,sqrt} replaces that with a continuous scale and adds a
-size legend; landmark status then rides entirely on the ring, leader and label.
+DOT SIZE encodes citation count by default (--size-by-citations sqrt), with a size
+legend; landmark status rides on the ring, leader and label. `--size-by-citations
+none` gives the older binary dots (big = labeled landmark, small = everything else),
+which say nothing about how much a paper is cited.
 Counts span four orders of magnitude in a real corpus (0 to ~24k), so both modes
 normalize against the 95th percentile and clamp above it; `sqrt` is
 area-proportional and separates the heavy tail, `log` compresses harder and
@@ -51,8 +54,7 @@ reads flatter. Read the result with the obvious caveat in mind: citation count
 is partly an AGE variable, so the right-hand edge of any timeline will be small.
 
   python3 tools/families_figure.py --rows rows.json --families families.json \
-          --out-prefix mytopic_families --title "My topic — theoretical families" \
-          --internal internal_citations.json   # optional, from xref.py --internal-out
+          --out-prefix mytopic_families --title "My topic — theoretical families"
 
 OPTIONAL editorial overlay (--spec figure_spec.json), all keys optional:
   { "labels":  {"<ref>": "short label", ...},     # which papers to label (overrides milestones)
@@ -71,6 +73,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -343,7 +346,52 @@ def claim_lines(claim, width, max_lines):
     return lines
 
 
-def main():
+ARGS_FILE = "figure_render_args.txt"
+
+
+def resolve_internal(given, rows_path):
+    """The within-corpus citation file for landmark criterion (2): the one passed,
+    else `internal_citations.json` beside rows.json (what `xref.py --internal-out`
+    writes in Phase 6), else None."""
+    if given:
+        return given
+    cand = os.path.join(os.path.dirname(os.path.abspath(rows_path)), "internal_citations.json")
+    return cand if os.path.exists(cand) else None
+
+
+def recorded_argvs(text):
+    """Every families_figure.py invocation in a figure_render_args.txt, as the
+    argument list after the script name. Reads both formats in use: one command per
+    line, or one command continued across lines with backslashes."""
+    text = re.sub(r"\\\n", " ", text)
+    out = []
+    for line in text.splitlines():
+        if line.strip().startswith("#") or "families_figure.py" not in line:
+            continue
+        toks = shlex.split(line)
+        i = max(k for k, t in enumerate(toks) if t.endswith("families_figure.py"))
+        out.append(toks[i + 1:])
+    return out
+
+
+def record_args(argv, folder):
+    """Record this render's exact arguments, so the figure can be reproduced.
+    Writes figure_render_args.txt when it is missing ('written'). An existing file
+    carries hand-written tuning notes and is never overwritten: if it does not
+    already hold this exact render, say so ('unrecorded') so it can be added by
+    hand. Returns 'recorded' when it is already there."""
+    path = os.path.join(folder, ARGS_FILE)
+    if not os.path.exists(path):
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("# Exact arguments of this render, written by families_figure.py.\n"
+                    "# Re-run verbatim to reproduce the figure; add tuning notes above.\n"
+                    "families_figure.py " + shlex.join(argv) + "\n")
+        return "written"
+    with open(path, encoding="utf-8") as f:
+        return "recorded" if argv in recorded_argvs(f.read()) else "unrecorded"
+
+
+def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rows", required=True)
@@ -371,7 +419,8 @@ def main():
                     help="auto-landmarks: a paper cited by >= this many corpus siblings is a landmark "
                          "(needs --internal)")
     ap.add_argument("--internal", help="auto-landmarks: {ref: internal_indegree} JSON from "
-                    "`xref.py --internal-out` — enables criterion (2), within-review centrality")
+                    "`xref.py --internal-out` — enables criterion (2), within-review centrality. "
+                    "Default: internal_citations.json beside --rows, if present")
     ap.add_argument("--lab-author", action="append", default=[],
                     help="auto-landmarks: home-lab author surname(s) to star as landmarks "
                          "(repeatable). OFF by default; also settable via the "
@@ -383,17 +432,24 @@ def main():
                          "If the color is also one of the family lane colors the ring "
                          "would be invisible on that lane, so an unset default is moved "
                          "out of the way automatically and an explicit one is warned about.")
-    ap.add_argument("--size-by-citations", choices=("log", "sqrt"), default=None,
+    ap.add_argument("--size-by-citations", choices=("sqrt", "log", "none"), default="sqrt",
                     metavar="SCALE",
-                    help="size every dot by its citation count instead of by landmark "
-                         "status: 'log' compresses the heavy tail (best for a corpus "
-                         "spanning 0-20k citations), 'sqrt' is area-proportional. Both "
-                         "normalize against the 95th percentile and clamp above it, and "
-                         "the figure gains a size legend. Landmarks stay distinguished "
-                         "by their ring and label. Default: off (binary big/small dots).")
+                    help="size every dot by its citation count: 'sqrt' (default) is "
+                         "area-proportional, 'log' compresses the heavy tail and reads "
+                         "flatter. Both normalize against the 95th percentile, clamp above "
+                         "it, and add a size legend; landmarks stay distinguished by their "
+                         "ring and label. 'none' gives binary dots (big = landmark).")
     ap.add_argument("--size-range", default="2.0,11.0", metavar="MIN,MAX",
                     help="dot radius range in px for --size-by-citations (default 2.0,11.0)")
-    args = ap.parse_args()
+    return ap
+
+
+def main():
+    argv = sys.argv[1:]
+    args = build_parser().parse_args(argv)
+    args.internal = resolve_internal(args.internal, args.rows)
+    if args.internal:
+        print(f"landmarks: within-corpus citations from {args.internal}")
 
     load = common.load_json
     rows = load(args.rows)
@@ -539,7 +595,7 @@ def main():
     # Landmark status does not disappear; it moves entirely onto the ring, the
     # leader line and the label, which is where it already half lived.
     LANDMARK_FLOOR = 4.5      # a 2px dot cannot carry a 2.6px gold ring legibly
-    size_mode = args.size_by_citations
+    size_mode = None if args.size_by_citations == "none" else args.size_by_citations
     try:
         R_MIN, R_MAX = (float(v) for v in args.size_range.split(","))
     except ValueError:
@@ -813,6 +869,13 @@ def main():
             made.append(fmt)
     print(f"wrote {base}.{{{','.join(made)}}}  "
           f"({len(bg)} dots + {len(big)} big ({len(labeled)} labeled) across {len(order)} families)")
+    folder = os.path.dirname(os.path.abspath(base))
+    state = record_args(argv, folder)
+    if state == "written":
+        print(f"recorded these arguments in {os.path.join(folder, ARGS_FILE)}")
+    elif state == "unrecorded":
+        sys.stderr.write(f"note: {ARGS_FILE} does not hold this exact render; add the arguments "
+                         "by hand so the figure can be reproduced\n")
 
 
 HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>__TITLE__</title>

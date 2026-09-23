@@ -5,7 +5,7 @@ fabricating references. The agent decides what to search, how to group the
 papers, and how to write them up. The scripts do the API calls, verification and
 bookkeeping.
 
-Version 1.13.0 · MIT license
+Version 1.14.0 · MIT license
 
 📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**, with the
 [operator manual](https://gallantlab.org/literature-review-toolkit/manual/),
@@ -25,11 +25,13 @@ themes, and places them in the field. Both then run the same pipeline:
    hard audit gate.
 4. **Build the spreadsheet**, add **citation counts** (OpenAlex, checked against
    Semantic Scholar), and mine the corpus's reference lists for papers it missed.
-5. Optionally, group the papers into **theoretical families**, render an
-   interactive **lineage figure**, and write an AI-authored **review article**.
+5. **Offer the lineage timeline** on every review: the agent proposes
+   **theoretical families**, and you use them, change them, or skip the timeline.
+   If kept, it renders an interactive timeline of the families.
+6. Optionally, write an AI-authored **review article**.
 
-The core deliverable is one annotated `.xlsx` bibliography per topic. PDF
-download is opt-in.
+Each topic gets an annotated `.xlsx` bibliography and, unless you skip it, the
+lineage timeline. PDF download is opt-in.
 
 ## Install
 
