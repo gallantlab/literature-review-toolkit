@@ -34,6 +34,7 @@ and CI fails if any copy is stale.
 | `review_paper.py` | 7 | Phase 7 — build a review ARTICLE (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `lab_corpus.py` | L1 | Lab mode — Phase L1: ingest a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
+| `version.py` | — | Compute the toolkit's version from its git commits: how many, and how much work. | `--bump` `--committed` `--explain` |
 <!-- END GENERATED TOOL INDEX -->
 
 ## Phase 3: `verify.py`
@@ -317,8 +318,9 @@ python3 tools/prose_audit.py --page build_review_page.py --baseline /tmp/before.
 
 Renders an AI-authored review article as `.docx`. It handles only the mechanics:
 title, author and disclosure block, abstract, sections, an embedded figure with
-its caption, and an APA-7 reference list built from `rows.json` (deduplicated,
-alphabetized, hanging indent, DOI links). Because the references come from the
+its caption, and an APA-7 reference list built from `rows.json` (deduplicated, hanging
+indent, DOI links). References follow APA-7 order: authors letter by letter,
+then year, then title, so a sole author precedes that author's co-authored works. Because the references come from the
 verified corpus, they cannot drift from the citations.
 
 ```bash
@@ -373,8 +375,17 @@ covers the later steps.
   playbook explains each `{PLACEHOLDER}`.
 - **`family_prompt_template.md`**: the two-step propose-then-assign prompt for
   Phase 6b.
-- **`gen_docs.py`**: regenerates the index above in all three files;
-  `--check` exits 1 if any copy is stale.
+- **`gen_docs.py`**: regenerates the index above in all three files and stamps
+  the version from `version.py` into every file that states it; `--check` exits
+  1 if either is stale. Run it last, just before committing, as
+  `gen_docs.py --bump <level>`.
+- **`version.py`**: computes the toolkit version from the git history. Each
+  non-merge commit declares its bump, judged from the work, with a
+  `Version-Bump: major|minor|patch|none` trailer; a commit without one is minor
+  at 400 or more changed lines and patch otherwise. Uncommitted changes count as
+  the next commit (`--bump` gives their level). `--explain` lists every commit,
+  how its bump was decided, and the version after it. Needs full history
+  (`fetch-depth: 0` in CI).
 
 ## Using the toolkit from a project script
 

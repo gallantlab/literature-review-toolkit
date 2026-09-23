@@ -32,6 +32,7 @@ in `tools/README.md` and `PLAYBOOK.md`.
 | `review_paper.py` | 7 | Phase 7 — build a review ARTICLE (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `lab_corpus.py` | L1 | Lab mode — Phase L1: ingest a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
+| `version.py` | — | Compute the toolkit's version from its git commits: how many, and how much work. | `--bump` `--committed` `--explain` |
 <!-- END GENERATED TOOL INDEX -->
 
 ## What each tool refuses to guess
@@ -71,14 +72,20 @@ in `tools/README.md` and `PLAYBOOK.md`.
 - **`prose_audit.py`** reports sentence length per block; `--baseline` exits 1 if
   a revision lost a citation.
 - **`review_paper.py`** renders the `.docx` only. Its reference list comes from
-  `reference_list(rows)`, which any HTML page should reuse.
+  `reference_list(rows)`, in APA-7 order (authors, then year, then title); any
+  HTML page should reuse it.
 - **`lab_corpus.py`** ingests a lab's corpus from OpenAlex. Author-id
   disambiguation is the main risk: ids can merge different people or split one
   person. Fetch abstracts before classifying.
 - **`download.py` / `reconcile_downloads.py`** are opt-in (Phase 4). The
   reconciler matches filename to DOI, then author, year and title on the first
   page, and refuses to move a file when unsure.
-- **`gen_docs.py`** regenerates the index above; `--check` is what CI runs.
+- **`gen_docs.py`** regenerates the index above and stamps the version;
+  `--check` is what CI runs.
+- **`version.py`** computes the version from the git commits: each declares a
+  major, minor or patch bump judged from its work, and undeclared ones are
+  judged by size. `--explain` shows how each commit moved it. See
+  [Maintaining this site](maintaining.md#the-version-number).
 
 !!! tip "Read the PLAYBOOK alongside the tools"
     [`PLAYBOOK.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/PLAYBOOK.md)

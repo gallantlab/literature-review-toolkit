@@ -8,7 +8,10 @@ site_url: https://gallantlab.org/literature-review-toolkit/
 repo_url: https://github.com/gallantlab/literature-review-toolkit
 repo_name: gallantlab/literature-review-toolkit
 edit_uri: edit/main/docs/
-copyright: MIT-licensed. Built in the Gallant Lab, UC Berkeley.
+copyright: >-
+  Version 1.13.0 · MIT license · Gallant Lab, UC Berkeley ·
+  Code and documentation written largely by Claude (Anthropic);
+  <a href="https://gallantlab.org/literature-review-toolkit/#ai-disclosure">AI disclosure</a>
 
 theme:
   name: material

@@ -3,6 +3,8 @@
 **Scripts that let an LLM agent run a literature review without fabricating
 references.**
 
+Version 1.13.0 ([how it is computed](maintaining.md#the-version-number)) · MIT license · [AI disclosure](#ai-disclosure)
+
 The agent decides what to search, what matters, how to group it, and optionally
 how to write it up. The scripts handle the API calls, verification and
 bookkeeping: the work LLMs do worst, where one invented author or wrong DOI
@@ -118,7 +120,18 @@ From verification on, both modes run the same pipeline. See
 - **[Examples](examples.md)**: a finished review in each mode and a gallery of
   lineage figures.
 
-!!! note "AI disclosure"
-    The toolkit is designed to be driven by an LLM agent, and the review articles
-    it produces are AI-authored, with a disclosure in each. The verification
-    machinery exists because LLM output cannot be trusted on matters of fact.
+## AI disclosure
+
+**The toolkit was built with AI.** Most of its code and documentation were
+written by Claude, Anthropic's AI model, under the direction of Jack Gallant
+(Gallant Lab, UC Berkeley).
+
+**What it produces is AI-generated too.** An LLM agent runs the searches,
+writes each paper's summary from its abstract (not the full text), proposes the
+family groupings, and writes the review articles. Every review article states
+its AI authorship.
+
+**Only facts are machine-checked.** The scripts verify every citation against
+the literature databases and rebuild every reference from its DOI. Summaries,
+groupings and interpretation cannot be checked that way; read them as an AI's
+reading of the abstracts.

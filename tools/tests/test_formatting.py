@@ -24,6 +24,7 @@ import review_paper  # noqa: E402
 import sentence_case as sc  # noqa: E402
 import spreadsheet  # noqa: E402
 import verify  # noqa: E402
+import version  # noqa: E402
 import xref  # noqa: E402
 
 FAILURES = []
@@ -660,6 +661,55 @@ check_true("generated block is fenced by markers",
 check("splice replaces only what is between the markers",
       gen_docs.splice("a\n" + gen_docs.BEGIN + "\nold\n" + gen_docs.END + "\nz\n", "NEW"),
       "a\n" + gen_docs.BEGIN + "\nNEW\n" + gen_docs.END + "\nz\n")
+# The version is computed from git history (tools/version.py) and gen_docs stamps
+# it into the manifests, skill, README and docs, so no copy can drift.
+check("sync_version rewrites the stated version",
+      gen_docs.sync_version("footer: Version 0.1.0 · MIT", r"Version (\d+\.\d+\.\d+)", "0.2.0"),
+      "footer: Version 0.2.0 · MIT")
+try:
+    gen_docs.sync_version("no version here", r"Version (\d+\.\d+\.\d+)", "0.2.0")
+    _raised = False
+except ValueError:
+    _raised = True
+check("sync_version raises when a target lost its version string", _raised, True)
+# version.py: a large commit bumps MINOR and resets PATCH; small ones bump PATCH;
+# a commit that only restates the version changes nothing.
+check("version: first large commit gives 0.1.0, small ones count up",
+      version.version_from_sizes([(1588, False), (178, False), (18, False)], major=0), (0, 1, 2))
+check("version: a large commit resets the patch count",
+      version.version_from_sizes([(900, False), (5, False), (400, False), (3, False)], major=0), (0, 2, 1))
+check("version: binary-only is a patch, version-only is nothing",
+      version.version_from_sizes([(900, False), (0, True), (0, False)], major=0), (0, 1, 1))
+# A declared Version-Bump (judged from the work) overrides size in either direction,
+# and only a declaration can bump MAJOR.
+check("version: a declared bump overrides size",
+      version.version_from_sizes([(900, False), (3000, False, "patch"), (5, False, "minor")], major=1),
+      (1, 2, 0))
+check("version: a declared major resets minor and patch",
+      version.version_from_sizes([(900, False), (5, False), (10, False, "major"), (5, False)], major=1),
+      (2, 0, 1))
+check("version: trailer parsed from a commit message",
+      version.declared_bump("Add a flag\n\nBody.\n\nVersion-Bump: Minor\nCo-Authored-By: X"), "minor")
+check("version: no trailer means no declaration", version.declared_bump("Fix a typo"), None)
+_PATCH = """diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -1,2 +1,2 @@
+-Version 0.1.0 · MIT license
++Version 0.2.0 · MIT license
+-old line
++new line
++--flag documented
+diff --git a/x.png b/x.png
+Binary files a/x.png and b/x.png differ
+"""
+check("version: diff lines counted, headers and version-only lines skipped",
+      version.count_lines(_PATCH), (3, True))
+# Only a clean tree can be checked here: uncommitted work has no Version-Bump
+# trailer yet (gen_docs.py --check --bump <level> covers it). CI is always clean.
+if version._pending() == (0, False):
+    check("every version target agrees with the version computed from history",
+          [rel for rel, stale in gen_docs.version_status() if stale], [])
 
 
 # ---- rows.json in, no converters ------------------------------------------

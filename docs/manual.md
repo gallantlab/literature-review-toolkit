@@ -475,7 +475,8 @@ The agent writes the prose (your decision #3). Three safeguards apply:
   match a row in `rows.json`. If one author-year matches two rows, name more
   authors (APA-7 §8.19).
 - **Canonical reference list.** `review_paper.py` builds the reference list from
-  `rows.json`, so it cannot drift from the verified bibliography.
+  `rows.json`, so it cannot drift from the verified bibliography. Entries follow
+  APA-7 order: authors, then year, then title.
 
 An AI-authored review states its author and how it was verified, once, in the
 masthead.
@@ -658,6 +659,11 @@ original row emitter (contract rule 6).
 `figure_render_args.txt`, then compare the label set with the previous `.svg`. A
 re-render should change the drawing, not the landmarks; if labels moved, find out
 why before shipping.
+
+**To re-render a review** after a toolkit or corpus change, render it to a
+scratch path first and compare the prose with the delivered `.docx`. If only the
+reference list differs, replace the file. If the prose differs too, the delivered
+file holds edits or is an older draft, and re-rendering would overwrite them.
 
 !!! tip "Confirm the renderer is deterministic first"
     Render twice with unchanged code and data. Any difference is a renderer bug,

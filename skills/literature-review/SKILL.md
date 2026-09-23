@@ -2,7 +2,7 @@
 name: literature-review
 license: MIT
 metadata:
-  version: 0.1.0
+  version: 1.13.0
   author: Jack L. Gallant
 description: Structured academic literature review — search a topic and its antecedents, verify every citation against PMC/PubMed/CrossRef/arXiv, rebuild references into canonical APA form, count citations, cross-reference the set, and assemble an annotated xlsx bibliography, optionally grouped into theoretical families with a lineage figure. Use whenever the user asks for a lit review or literature review, wants to build or audit a bibliography, survey the literature on a topic, verify or canonicalize a list of citations, check which references cite which, gather citation counts, trace the intellectual lineage of a field, or review a lab's own corpus in the context of its field. PDF acquisition is opt-in and never runs by default.
 ---

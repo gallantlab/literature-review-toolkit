@@ -56,7 +56,15 @@ tool, a phase, a command/flag, a guardrail or lesson — update the matching pag
 under `docs/` in the same change** (fastest to drift: `docs/manual.md`, which
 carries every phase command, guardrail and flag). The tool index in `docs/tools.md`, `tools/README.md` and
 this file is **generated** — run `python3 tools/gen_docs.py` after adding a tool
-or a flag; `.github/workflows/tests.yml` fails on a stale copy, and also runs
+or a flag. The same script stamps the **version**, which is never typed by hand:
+`tools/version.py` computes it from the commit history, counting uncommitted changes as the
+next commit. **Every commit declares its bump, judged from the work**, with a trailer in the
+message — `Version-Bump: major` (breaks existing projects: removed/renamed flags, a `rows.json`
+field or output format changed), `minor` (a new tool, flag or phase), `patch` (fixes, docs,
+refactors) or `none`. Commits without one fall back to size (400+ lines minor, else patch).
+Run `python3 tools/gen_docs.py --bump <level>` last, just before committing, and put the
+same level in the trailer.
+`.github/workflows/tests.yml` fails on a stale copy of either, and also runs
 `ruff check .` and `tools/tests/test_formatting.py`. The site auto-deploys via
 `.github/workflows/docs.yml` on push to `main` (build runs `mkdocs build
 --strict`). Full editing/figure/snippet details live in `docs/maintaining.md`.
@@ -733,7 +741,7 @@ This pass catches what self-review misses because the drafting model is biased t
 
 **Mechanics — `tools/review_paper.py`.** The tool owns only the mechanical render; it does not
 write prose. It reads `rows.json` and builds the **APA-7 reference list straight from the
-canonical `apa` strings** (deduped, alphabetized, hanging indent, with DOI links), embeds the
+canonical `apa` strings** (deduped, in APA-7 order — authors, then year, then title — hanging indent, with DOI links), embeds the
 families figure with a standalone caption, and lays out the title/author/disclosure block + the
 abstract + sections. Keep the prose in a small per-project emitter that dumps `content.json`
 (see the schema in `review_paper.py`); render with the shared tool:
@@ -1193,6 +1201,13 @@ The real gap was one layer down, in the appearance.
   **priority audit** are all in Phase 7 — run the audit. Self-review misses these because the
   author is biased toward its own story; an independent pass with the publication years catches them.
 
+- **A toolkit fix does not reach a delivered .docx until you re-render it.** `reference_list`
+  once sorted on the whole string with digits dropped, so one author's works came out in title
+  order, not year order (67 inversions across 7 delivered reviews, fixed 2026-09-23). Before
+  overwriting a delivered `.docx`, render to scratch and diff the prose against the old file: if
+  the prose differs, the file holds edits or is an older draft, and re-rendering would destroy
+  them.
+
 ### On PDF downloads
 Phase 4 has the full source order and the bot-blocked list. Three things that recur:
 institutional-repo URLs (`.edu`/`.ac.uk`) from Unpaywall almost always work;
@@ -1414,6 +1429,7 @@ it is stale); the per-tool detail is in `tools/README.md` and `docs/tools.md`.
 | `review_paper.py` | 7 | Phase 7 — build a review ARTICLE (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `lab_corpus.py` | L1 | Lab mode — Phase L1: ingest a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
+| `version.py` | — | Compute the toolkit's version from its git commits: how many, and how much work. | `--bump` `--committed` `--explain` |
 <!-- END GENERATED TOOL INDEX -->
 
 Notes the index cannot carry:

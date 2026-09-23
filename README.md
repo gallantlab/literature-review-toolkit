@@ -5,6 +5,8 @@ fabricating references. The agent decides what to search, how to group the
 papers, and how to write them up. The scripts do the API calls, verification and
 bookkeeping.
 
+Version 1.13.0 · MIT license
+
 📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**, with the
 [operator manual](https://gallantlab.org/literature-review-toolkit/manual/),
 [tools reference](https://gallantlab.org/literature-review-toolkit/tools/) and
@@ -67,6 +69,16 @@ every phase is one script in [`tools/`](./tools).
 | [`skills/`](./skills) | the Claude skill that points an agent at the playbook |
 | [`.claude-plugin/`](./.claude-plugin) | manifests that make the repo installable as a Claude Code plugin |
 | [`docs/`](./docs) | the documentation site (MkDocs) |
+
+## AI disclosure
+
+Most of this toolkit's code and documentation were written by Claude, Anthropic's
+AI model, under the direction of Jack Gallant (Gallant Lab, UC Berkeley). What
+the toolkit produces is also AI-generated: the search, the paper summaries
+(written from abstracts, not full texts), the family groupings and the review
+articles. The scripts verify every citation and rebuild every reference from its
+DOI; summaries and interpretation cannot be machine-checked. See the
+[full disclosure](https://gallantlab.org/literature-review-toolkit/#ai-disclosure).
 
 ## License
 
