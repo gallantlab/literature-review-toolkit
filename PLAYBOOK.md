@@ -995,6 +995,33 @@ changes because curl fails too and the backoff still runs.
 `curl -sS --compressed`. If curl succeeds where the tool failed, it is not the
 server and no amount of `--sleep` will help.
 
+### An arXiv-heavy corpus breaks three silent assumptions (2026-09-24)
+
+A 475-paper AI-alignment corpus, half of it arXiv-only plus blog and forum posts, exposed
+three places where the toolkit assumed a journal-article literature:
+
+- **Dated web sources failed the gate as `no-year`.** APA-7 dates a post `(2022, June 5)` and
+  a magazine issue `(1942, March)`; `common.parse_apa` accepted only `(2022)`, so nine
+  correctly cited posts and reports reported defects. It now accepts the month/day forms.
+- **Book chapters printed the series as the venue.** CrossRef deposits a chapter's
+  `container-title` as `[series, book]`, and canon read only the first entry, giving
+  `Title. Lecture Notes in Computer Science.` with no book, pages or publisher. Canon now
+  builds `In Book (pp. x-y). Publisher.` from the last entry (`common.build_chapter_apa`).
+  CrossRef deposits no editors for most chapters, and Springer occasionally deposits the
+  WRONG book (Biggio 2013 carried another volume's title and ISBN; the book-level DOI had
+  the right one), so spot-check chapter rows. Book titles still need hand sentence case.
+- **Within-corpus in-degree is blind to arXiv papers.** `xref.py` reads CrossRef reference
+  lists, which arXiv DOIs do not have, so the auto-landmarks favored old journal classics
+  (Simon, Jensen, Arrow) over the field's own canon. Raise `--per-family`/`--max-labels`
+  (checking zero removals), then add each family's lineage papers through a `--spec`
+  labels map. Also: on a warped axis the recent years are wide, and the x axis now labels
+  single years wherever they fit (`families_figure.year_ticks`).
+
+Two search-side notes from the same build: with 11 lanes, **seven papers were deferred by
+one lane to another and kept by neither** (a 14-paper recovery lane found them all), and a
+journal paper returned by one lane under its DOI and by another under its arXiv DOI is the
+same paper, so dedup on the arXiv id as well as the DOI.
+
 ### On the search agent
 - **Always verify.** ~25% of agent-returned citations have errors. Wrong
   first authors are the most common; the agent confuses similar-titled

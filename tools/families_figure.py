@@ -444,6 +444,30 @@ def build_parser():
     return ap
 
 
+def year_ticks(ymin, ymax, xf, warp, min_gap=34):
+    """Years to label on the x axis, oldest first, never closer than `min_gap` px.
+
+    5-year (or, on a long linear axis, 10-year) candidates first, greedily
+    dropping any that would collide. A warped axis then also labels single years
+    wherever they fit: the warp stretches the dense recent years to hundreds of
+    pixels each, and the 5-year grid alone left them unlabeled."""
+    span = ymax - ymin
+    step = 5 if (warp > 0 or span <= 40) else 10
+    ticks, drawn_x = [], -1e9
+    for t in range(((ymin + step - 1) // step) * step, ymax + 1, step):
+        if xf(t) - drawn_x >= min_gap:
+            ticks.append(t)
+            drawn_x = xf(t)
+    if warp > 0:
+        for t in range(ymin, ymax + 1):
+            if t in ticks:
+                continue
+            if all(abs(xf(t) - xf(u)) >= min_gap for u in ticks):
+                ticks.append(t)
+        ticks.sort()
+    return ticks
+
+
 def main():
     argv = sys.argv[1:]
     args = build_parser().parse_args(argv)
@@ -726,15 +750,8 @@ def main():
     # x axis. A warped axis bunches early decades, so consider 5-year candidates and
     # greedily drop any label that would collide with the previous one (kept >=34px
     # apart). A faint gridline marks each drawn tick so the nonlinear scale is legible.
-    span = YMAX - YMIN
-    step = 5 if (warp > 0 or span <= 40) else 10
-    cand = list(range(((YMIN + step - 1) // step) * step, YMAX + 1, step))
-    drawn_x = -1e9
-    for t in cand:
+    for t in year_ticks(YMIN, YMAX, xf, warp):
         x = xf(t)
-        if x - drawn_x < 34:
-            continue
-        drawn_x = x
         if warp > 0:
             s.append(f'<line x1="{x:.0f}" y1="{PADT:.0f}" x2="{x:.0f}" y2="{H-PADB:.0f}" '
                      f'stroke="#000" stroke-opacity="0.04"/>')

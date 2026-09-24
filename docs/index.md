@@ -3,7 +3,7 @@
 **Scripts that let an LLM agent run a literature review without fabricating
 references.**
 
-Version 1.14.1 · MIT license · [AI disclosure](#ai-disclosure)
+Version 1.14.2 · MIT license · [AI disclosure](#ai-disclosure)
 
 The agent decides what to search, what matters, how to group it, and optionally
 how to write it up. The scripts handle the API calls, verification and

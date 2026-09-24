@@ -285,7 +285,11 @@ def arxiv_id_of(row):
 # title and venue are, or they diverge: three of them once required a bare
 # (YYYY) while the gate had moved on to accept APA-7's 2025a/2025b suffix, so a
 # suffixed row passed the gate and then silently vanished from the figure.
-_APA_HEAD = re.compile(r"^(?P<authors>.*?)\s?\((?P<year>\d{4})(?P<suffix>[a-z]?)\)\.?\s*")
+# APA-7 also dates web posts, reports and magazine issues more finely --
+# "(2022, June 5)", "(1942, March)", "(2021, June 10-12)" -- and those must
+# parse too, or a correctly cited blog post fails the gate as "no-year".
+_APA_HEAD = re.compile(r"^(?P<authors>.*?)\s?\((?P<year>\d{4})(?P<suffix>[a-z]?)"
+                       r"(?:, [A-Z][a-z]+(?: \d{1,2}(?:[-–]\d{1,2})?)?)?\)\.?\s*")
 
 
 def parse_apa(apa):
@@ -472,6 +476,19 @@ def build_apa(people, year, title, journal, vol=None, issue=None, pages=None):
     return MARKUP.sub("", s).translate(UNI_HYPHEN)
 
 
+def build_chapter_apa(people, year, title, book, pages=None, publisher=None):
+    """APA-7 chapter in an edited book: `... Title. In Book (pp. x-y). Publisher.`
+    CrossRef deposits no editors for most chapters, so none are printed."""
+    import html
+    t = norm_title(title).rstrip(".")
+    s = f"{join_authors(people)} ({year}). {t}" + ("" if t.endswith(("?", "!")) else ".")
+    s += f" In {clean_venue(book)}" + (f" (pp. {pages})" if pages else "") + "."
+    if publisher:
+        s += f" {publisher.strip().rstrip('.')}."
+    s = html.unescape(re.sub(r"\s+", " ", s).strip())
+    return MARKUP.sub("", s).translate(UNI_HYPHEN)
+
+
 # ---- authoritative-source records -------------------------------------------
 # references.py (canon), verify.py (existence check) and xref.py (resolve a cited
 # DOI) each read the same CrossRef message / arXiv Atom entry. One reading here,
@@ -484,7 +501,8 @@ def crossref_record(msg, fallback_venue=""):
     """Normalize a CrossRef `message` dict.
 
     -> {title, year (str), authors [(family, given)], people [APA-formatted],
-        first_author ('Family I'), journal, volume, issue, pages}. `journal`
+        first_author ('Family I'), journal, volume, issue, pages, book, publisher}.
+    `book` is set only for a book chapter (see build_chapter_apa). `journal`
     falls back to the preprint server (institution / group-title) and then to
     the caller's venue, cleaned — CrossRef leaves posted-content bare. An
     author-less work still yields a record (people == []); canon rejects it,
@@ -498,7 +516,11 @@ def crossref_record(msg, fallback_venue=""):
         if dp and dp[0]:
             year = str(dp[0])
             break
-    journal = (msg.get("container-title") or [""])[0]
+    containers = msg.get("container-title") or [""]
+    journal = containers[0]
+    # A chapter deposits [series, book] (or just [book]): the book is the LAST
+    # entry, and it -- not the series -- is what APA-7 prints after "In".
+    book = containers[-1] if msg.get("type") == "book-chapter" else ""
     if not journal:                          # preprints (posted-content): name the server
         inst = msg.get("institution")
         if isinstance(inst, dict):
@@ -522,7 +544,8 @@ def crossref_record(msg, fallback_venue=""):
     return {"title": title, "year": year,
             "authors": authors, "people": [person(f, g) for f, g in authors],
             "first_author": f"{fam} {giv[:1]}".strip(), "journal": journal,
-            "volume": msg.get("volume"), "issue": msg.get("issue"), "pages": msg.get("page")}
+            "volume": msg.get("volume"), "issue": msg.get("issue"), "pages": msg.get("page"),
+            "book": book, "publisher": msg.get("publisher") or ""}
 
 
 def crossref_work(doi, fallback_venue=""):

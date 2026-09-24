@@ -40,13 +40,20 @@ PHASE = "3f"   # pipeline phase, read by tools/gen_docs.py for the tool index
 # ---- authoritative sources ------------------------------------------------
 # Both readers live in common (crossref_record / arxiv_entries) and are shared
 # with verify.py and xref.py; this file only turns a record into an APA string.
+def crossref_apa(r):
+    """APA string for one crossref_record(): a chapter names its book, not its series."""
+    if r.get("book"):
+        return common.build_chapter_apa(r["people"], r["year"], r["title"], r["book"],
+                                        r["pages"], r.get("publisher"))
+    return build_apa(r["people"], r["year"], r["title"], r["journal"],
+                     r["volume"], r["issue"], r["pages"])
+
+
 def crossref(doi, fallback_venue=""):
     r = common.crossref_work(doi, fallback_venue)
     if not r or not r["people"]:
         return None
-    apa = build_apa(r["people"], r["year"], r["title"], r["journal"],
-                    r["volume"], r["issue"], r["pages"])
-    return {"apa": apa, "venue": r["journal"], "source": "crossref"}
+    return {"apa": crossref_apa(r), "venue": r["book"] or r["journal"], "source": "crossref"}
 
 
 def arxiv(aid, fallback_venue=""):

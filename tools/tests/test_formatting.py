@@ -108,6 +108,12 @@ check("lead_surname keeps a particle surname", common.lead_surname("van den Heuv
       "van den Heuvel")
 check("year_of accepts a suffix", common.year_of("Yang, W. (2025a). T. V."), 2025)
 check("year_of on garbage is None", common.year_of("no year"), None)
+# APA-7 dates web posts, reports and magazine issues more finely: (2022, June 5)
+_W = common.parse_apa("Yudkowsky, E. (2022, June 5). AGI ruin: A list of lethalities. LessWrong. https://x.org")
+check("parse_apa accepts a (YYYY, Month D) date", (_W["year"], _W["title"]), (2022, "AGI ruin: A list of lethalities"))
+check("year_of accepts a (YYYY, Month) date", common.year_of("Asimov, I. (1942, March). Runaround. V."), 1942)
+check("year_of accepts a day range", common.year_of("Doe, J. (2021, June 10-12). T. V."), 2021)
+check("year_of rejects a lowercase non-date", common.year_of("Doe, J. (2021, draft). T. V."), None)
 # the consumers agree with the gate
 check("families.lead_year accepts a suffix", families.lead_year("Yang, W. (2025a). T. V."), ("Yang", 2025))
 check("families_figure.year_of accepts a suffix", families_figure.year_of("Yang, W. (2025a). T. V."), 2025)
@@ -142,6 +148,25 @@ check("crossref_record falls back to the caller's venue",
 # An author-less work (some editorials, datasets) is still a real record for the
 # existence check; only canon (which must print authors) refuses it.
 check("crossref_record with no authors keeps the title", common.crossref_record({"title": ["T"]})["people"], [])
+# A book chapter deposits [series, book] as container-title. Reading only the
+# first printed "Title. The Frontiers Collection." -- no book, pages or publisher.
+_CH = common.crossref_record({
+    "type": "book-chapter", "title": ["The Singularity and Machine Ethics"],
+    "author": [{"family": "Muehlhauser", "given": "Luke"}, {"family": "Helm", "given": "Louie"}],
+    "issued": {"date-parts": [[2012]]}, "page": "101-126",
+    "container-title": ["The Frontiers Collection", "Singularity Hypotheses"],
+    "publisher": "Springer Berlin Heidelberg"})
+check("crossref_record: a chapter's book is the last container-title", _CH["book"], "Singularity Hypotheses")
+check("crossref_record: a chapter keeps its publisher", _CH["publisher"], "Springer Berlin Heidelberg")
+check("crossref_record: a journal article has no book", _R["book"], "")
+check("references.crossref_apa builds an APA-7 chapter",
+      references.crossref_apa(_CH),
+      "Muehlhauser, L., & Helm, L. (2012). The Singularity and Machine Ethics. "
+      "In Singularity Hypotheses (pp. 101-126). Springer Berlin Heidelberg.")
+check("references.crossref_apa leaves an article unchanged", references.crossref_apa(_R),
+      "Tang, J., & Huth, A. G. (2023). A Title. Nature Neuroscience, 26(5), 858-866.")
+check("a chapter reference parses with the book as venue",
+      common.parse_apa(references.crossref_apa(_CH))["rest"], " In Singularity Hypotheses (pp. 101-126). Springer Berlin Heidelberg.")
 # CrossRef deposits a series/subtitle in a separate `subtitle` field; dropping it
 # made "Part I" and "Part II" papers render as the same title (Creutzfeldt 1989).
 check("crossref_record appends the CrossRef subtitle APA-style",
@@ -599,6 +624,18 @@ check_true("claim_lines never exceeds the line budget", len(_cl) <= 3, str(len(_
 check_true("a truncated claim says so", _cl[-1].endswith("\u2026"), repr(_cl[-1]))
 # A budget of zero must yield nothing rather than raising or drawing one line.
 check("a zero budget draws no claim", families_figure.claim_lines(_long, 42, 0), [])
+# Year ticks: a density-warped axis stretches each recent year to hundreds of
+# pixels, and 5-year candidates alone left 2021-2024 unlabeled on the widest,
+# densest part of the plot. Single years fill in wherever they fit.
+_xf = lambda y: {2000: 0, 2005: 20, 2010: 40, 2015: 60, 2020: 100}.get(y, 100 + (y - 2020) * 150) if y >= 2020 \
+    else (y - 2000) * 4  # noqa: E731
+_tk = families_figure.year_ticks(2000, 2026, _xf, warp=0.85)
+check("year ticks keep the 5-year grid", {2000, 2010, 2020} <= set(_tk), True)
+check("year ticks fill single years where the axis is stretched", {2021, 2022, 2023, 2024, 2026} <= set(_tk), True)
+check("year ticks never crowd (>= 34px apart)", all(_xf(b) - _xf(a) >= 34 for a, b in zip(_tk, _tk[1:])), True)
+check("year ticks skip single years in a compressed span", 2003 in _tk, False)
+check("an unwarped axis keeps the plain 5-year grid (no single-year fill)",
+      families_figure.year_ticks(1960, 2000, lambda y: (y - 1960) * 20, warp=0), list(range(1960, 2001, 5)))
 
 # The timeline is a standard deliverable (offered on every review), so its standard
 # settings are the defaults: dots sized by citations, internal citations picked up
