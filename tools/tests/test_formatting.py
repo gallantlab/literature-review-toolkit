@@ -1223,6 +1223,13 @@ os.remove(_page)
 # interval, so 39 rows each slept 45 s of 429 backoff and then failed. Everything
 # here runs offline: urlopen / arxiv_fetch / crossref_work are stubbed and every
 # sleep is recorded instead of taken.
+def _stamp(row, verdict="OK"):
+    d, a = common.ids_of(row)
+    row["verified"] = {"verdict": verdict, "doi": d, "arxiv": a, "source": "doi", "issues": [],
+                       "at": common.GATES_SINCE}
+    return row
+
+
 import contextlib as _ctx  # noqa: E402
 import json  # noqa: E402
 import time as _time  # noqa: E402
@@ -1561,6 +1568,35 @@ def _cr_throttled(d):
 with _patched(verify, lookup_crossref=_cr_throttled):
     _r = verify.verify_one(_both, _arx, set())
 check("verify: an unreachable journal DOI is ERROR, not OK", _r["verdict"], "ERROR")
+
+
+# ---- reference gates: stamp primitives (added 2026-09-26) ------------------
+_g = _stamp({"ref": "A", "doi": "https://doi.org/10.1/ABC"})
+check("ids_of normalizes the DOI form", common.ids_of(_g), ("10.1/abc", ""))
+check_true("a stamp matches the same DOI written differently",
+           common.verified_ok(dict(_g, doi="10.1/abc")))
+check_true("a stamp lapses when the DOI changes", not common.verified_ok(dict(_g, doi="10.1/other")))
+check_true("an arXiv row is identified by its id",
+           common.ids_of({"doi": "10.48550/arXiv.2301.00001v2"}) == ("10.48550/arxiv.2301.00001v2", "2301.00001"))
+_m = _stamp({"ref": "M", "doi": "10.1/m"}, "MISMATCH")
+check_true("a MISMATCH is not verified", not common.verified_ok(_m))
+_m["verify_override"] = {"reason": "preprint retitled on publication", "doi": "10.1/m", "arxiv": ""}
+check_true("an override with a reason clears it", common.verified_ok(_m))
+check_true("an override without a reason does not",
+           not common.verified_ok(dict(_m, verify_override={"reason": " ", "doi": "10.1/m", "arxiv": ""})))
+check_true("an override for other ids does not",
+           not common.verified_ok(dict(_m, verify_override={"reason": "x", "doi": "10.1/z", "arxiv": ""})))
+check_true("a legacy table is not gated", not common.is_gated([{"ref": "L", "canonical_at": "2026-08-18"}]))
+check_true("a stamped table is gated", common.is_gated([{"ref": "L"}, _g]))
+check_true("a table canonicalized since the gates is gated",
+           common.is_gated([{"ref": "L", "canonical_at": common.GATES_SINCE}]))
+check("summary_sha ignores surrounding whitespace", common.summary_sha(" A b. "), common.summary_sha("A b."))
+check_true("summary_sha sees an edit", common.summary_sha("A b.") != common.summary_sha("A c."))
+check_true("title_score lives in common", common.title_score("Sparse coding in visual cortex",
+                                                               "Sparse Coding in Visual Cortex.") > 0.99)
+check_true("verify uses the common title_score", verify.title_score is common.title_score)
+check("load_optional_json returns the default for a missing file",
+      common.load_optional_json("/nonexistent/litreview.json", {}), {})
 
 
 # ---- report ---------------------------------------------------------------

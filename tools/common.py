@@ -11,8 +11,10 @@ Tools are run as `python3 tools/<tool>.py`, so `tools/` is on sys.path[0] and a
 plain `import common` resolves.
 """
 import gzip
+import hashlib
 import http.client
 import json
+import os
 import re
 import shutil
 import socket
@@ -243,7 +245,6 @@ def write_rows(path, rows, force=False):
     caller passes force=True. The canonical-preserving tools (references.py,
     families.py, sentence_case.py) write through dump_json and are unaffected.
     """
-    import os
     if not force and os.path.exists(path):
         try:
             old = load_json(path)
@@ -260,6 +261,78 @@ def write_rows(path, rows, force=False):
                 "refusing to overwrite it from an upstream emitter. Edit rows.json directly, "
                 "or pass force=True if you really mean to rebuild it.")
     dump_json(rows, path)
+
+
+# ---- reference gates: stamps a check writes onto the row it checked ----------
+# A table is GATED (the gates can fail it) once any row carries a verify stamp or
+# was canonicalized on/after this date; older corpora are legacy and only warned.
+GATES_SINCE = "2026-09-26"
+
+
+def _bare_doi(d):
+    return re.sub(r"(?i)^https?://(dx\.)?doi\.org/", "", (d or "").strip()).lower()
+
+
+def ids_of(row):
+    """(doi, arxiv) a row is identified by, normalized for comparing with a stamp."""
+    return _bare_doi(doi_of(row) or ""), norm_arxiv(arxiv_id_of(row) or "").lower()
+
+
+def stamp_ids(stamp):
+    """(doi, arxiv) recorded in a verify stamp or override, normalized the same way."""
+    return _bare_doi(stamp.get("doi") or ""), norm_arxiv(stamp.get("arxiv") or "").lower()
+
+
+def verified_ok(row):
+    """True when the row's verify stamp is for its CURRENT ids and is OK, or a
+    non-OK verdict was overridden with a reason for those same ids."""
+    st = row.get("verified")
+    if not isinstance(st, dict) or stamp_ids(st) != ids_of(row):
+        return False
+    if st.get("verdict") == "OK":
+        return True
+    ov = row.get("verify_override")
+    return (isinstance(ov, dict) and bool(str(ov.get("reason") or "").strip())
+            and stamp_ids(ov) == ids_of(row))
+
+
+def is_gated(rows):
+    """True for a table built since the reference gates (see GATES_SINCE)."""
+    return any(isinstance(r, dict) and (r.get("verified") or str(r.get("canonical_at") or "") >= GATES_SINCE)
+               for r in rows)
+
+
+def summary_sha(text):
+    """Short hash of a summary, so a check recorded for one text lapses on an edit."""
+    return hashlib.sha256((text or "").strip().encode("utf-8")).hexdigest()[:16]
+
+
+def load_optional_json(path, default):
+    """load_json, or `default` when the file does not exist."""
+    return load_json(path) if path and os.path.exists(path) else default
+
+
+def _title_words(t):
+    t = MARKUP.sub(" ", t or "").lower()
+    return " ".join(re.sub(r"[^a-z0-9 ]", " ", t).split())
+
+
+_TITLE_STOP = frozenset("a an the of in on and for to with by from at as is are be its via into".split())
+
+
+def title_score(a, b):
+    """Similarity of two titles in [0, 1], or None if either is missing: the
+    better of character similarity and the share of the shorter title's content
+    words found in the longer (so a dropped subtitle still scores high)."""
+    import difflib
+    a, b = _title_words(a), _title_words(b)
+    if not a or not b:
+        return None
+    ta = [w for w in a.split() if w not in _TITLE_STOP]
+    tb = [w for w in b.split() if w not in _TITLE_STOP]
+    short, long_ = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
+    contained = sum(w in set(long_) for w in short) / len(short) if short else 0.0
+    return max(difflib.SequenceMatcher(None, a, b).ratio(), contained)
 
 
 def attach_counts(rows, counts, keyf=None):

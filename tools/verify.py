@@ -54,7 +54,6 @@ re-verifies only the rows that were not OK and splices them back into the report
 (--only A-01,B-02 names rows explicitly).
 """
 import argparse
-import difflib
 import json
 import os
 import re
@@ -218,28 +217,10 @@ def merge_reports(old, new):
     return out + list(by.values())
 
 
-def _norm_title(t):
-    t = common.MARKUP.sub(" ", t or "").lower()
-    return " ".join(re.sub(r"[^a-z0-9 ]", " ", t).split())
-
-
-_STOP = frozenset("a an the of in on and for to with by from at as is are be its via into".split())
-
-
-def title_score(a, b):
-    """Similarity of two titles in [0, 1], or None if either is missing: the
-    better of character similarity and the share of the shorter title's content
-    words found in the longer (so a dropped subtitle still scores high). Measured
-    on 2,473 OK verdicts from five corpora, one scored under 0.7 — a preprint
-    retitled on publication; garbage title-search hits score 0.14–0.31."""
-    a, b = _norm_title(a), _norm_title(b)
-    if not a or not b:
-        return None
-    ta = [w for w in a.split() if w not in _STOP]
-    tb = [w for w in b.split() if w not in _STOP]
-    short, long_ = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
-    contained = sum(w in set(long_) for w in short) / len(short) if short else 0.0
-    return max(difflib.SequenceMatcher(None, a, b).ratio(), contained)
+# Title similarity lives in common (merge_lanes and handcheck use it too). On
+# 2,473 OK verdicts from five corpora, one scored under 0.7 — a preprint retitled
+# on publication; garbage title-search hits score 0.14–0.31.
+title_score = common.title_score
 
 
 TITLE_MIN = 0.5
