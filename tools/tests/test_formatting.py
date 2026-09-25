@@ -1925,6 +1925,46 @@ check_true("excluded candidates get their own sheet",
 check("draft_path inserts _DRAFT", spreadsheet.draft_path("/a/b/bib.xlsx"), "/a/b/bib_DRAFT.xlsx")
 
 
+# ---- reference gates: handcheck.py (2026-09-26) ----------------------------
+import handcheck  # noqa: E402
+
+_book = {"ref": "B1", "apa": "Kuhn, T. S. (1962). The structure of scientific revolutions. U Chicago Press.",
+         "summary": "s"}
+_hit = lambda t: [{"doi": "10.7208/x", "title": "The Structure of Scientific Revolutions", "year": "1962",  # noqa: E731
+                   "source": "crossref"}]
+_wrong_year = lambda t: [{"doi": "10.7208/y", "title": "The structure of scientific revolutions",  # noqa: E731
+                          "year": "1996", "source": "openalex"}]
+_far = lambda t: [{"doi": "10.1/z", "title": "Paradigms in physics", "year": "1962", "source": "crossref"}]  # noqa: E731
+check("find_doi: title and year match", [h["doi"] for h in handcheck.find_doi(_book, (_hit,))], ["10.7208/x"])
+check("find_doi: a different year is not a match", handcheck.find_doi(_book, (_wrong_year,)), [])
+check("find_doi: a different title is not a match", handcheck.find_doi(_book, (_far,)), [])
+_cands, _todo = handcheck.prepare([_book, {"ref": "B2", "apa": "Doe, J. (1970). Memo. Lab.", "summary": ""},
+                                   {"ref": "D1", "doi": "10.1/d"}], "ref", (_far,))
+check("prepare: DOI-less rows with no DOI match go to the hand check",
+      (sorted(_cands), [t["ref"] for t in _todo]), ([], ["B1", "B2"]))
+_rows = [dict(_book)]
+_ad, _amb = handcheck.adopt(_rows, "ref", {"B1": [{"doi": "10.7208/x"}]})
+check("adopt moves a row with one found DOI into the verify path",
+      (_ad, _rows[0]["doi"], _rows[0]["link"]), (["B1"], "10.7208/x", "https://doi.org/10.7208/x"))
+check("adopt skips an ambiguous row", handcheck.adopt([dict(_book)], "ref",
+                                                      {"B1": [{"doi": "a"}, {"doi": "b"}]}), ([], ["B1"]))
+_rows = [dict(_book), {"ref": "B2", "apa": "Doe, J. (1970). Memo. Lab."}, {"ref": "D1", "doi": "10.1/d"}]
+_n, _err = handcheck.ingest(_rows, "ref", [
+    {"ref": "B1", "verdict": "confirmed", "source_checked": "LoC record 62019621"},
+    {"ref": "B2", "verdict": "corrected", "apa": "Doe, J. (1971). Memo. Lab.", "source_checked": "scan"},
+    {"ref": "D1", "verdict": "confirmed", "source_checked": "x"},
+    {"ref": "B9", "verdict": "confirmed", "source_checked": "x"}], "2026-09-26")
+check("ingest records valid results", (_n, _rows[0]["hand_verified"]["verdict"], _rows[1]["apa"]),
+      (2, "confirmed", "Doe, J. (1971). Memo. Lab."))
+check("ingest refuses a DOI'd row and an unknown ref", len(_err), 2)
+_n, _err = handcheck.ingest([dict(_book)], "ref", [{"ref": "B1", "verdict": "confirmed", "source_checked": ""}],
+                            "2026-09-26")
+check("ingest refuses a confirmation that names no source", (_n, len(_err)), (0, 1))
+check_true("a handcheck-ingested row passes the audit's hand-check gate",
+           "hand-check-missing" not in " ".join(references.audit_rows(
+               [_grow(), dict(_rows[0], canonical_at=common.GATES_SINCE, summary="")], "ref")["defects"].get("B1", [])))
+
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
