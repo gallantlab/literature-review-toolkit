@@ -342,9 +342,16 @@ def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None):
     arXiv-routed rows are prefetched in batches first, so they cost no request
     and no pause of their own; a row that fetch-fails gets one more try after
     `retry_wait`. Returns {"rebuilt": n, "failed": [keys still failing],
-    "kept": [keys whose source had no usable record, so the old apa stayed]}."""
+    "kept": [keys whose source had no usable record, so the old apa stayed],
+    "unverified": [keys not verified for their current DOI/arxiv id, so left
+    un-rebuilt]}."""
     targets = [r for r in rows if (doi_of(r) or r.get("arxiv"))
                and (only is None or r.get(keyf) in only)]
+    # The gate: a row is rebuilt only from ids verify.py confirmed. A MISMATCH
+    # nobody resolved, or a DOI edited after verification, stays un-rebuilt, and
+    # the audit then fails it — canon never prints a wrong paper beautifully.
+    unverified = [r.get(keyf, "?") for r in targets if not common.verified_ok(r)]
+    targets = [r for r in targets if common.verified_ok(r)]
     rebuilt, failed, kept = 0, [], []
 
     def one_pass(batch, chunk):
@@ -378,7 +385,7 @@ def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None):
         time.sleep(retry_wait)
         bad = one_pass(bad, 25)
     failed = [r.get(keyf, "?") for r in bad]
-    return {"rebuilt": rebuilt, "failed": failed, "kept": kept}
+    return {"rebuilt": rebuilt, "failed": failed, "kept": kept, "unverified": unverified}
 
 
 def main():
@@ -416,7 +423,7 @@ def main():
             ap.error(f"--only names keys not in {args.rows}: {', '.join(sorted(missing))}")
     defects, notes, rebuilt = {}, {}, 0
     repaired = {}
-    result = {"rebuilt": 0, "failed": [], "kept": []}
+    result = {"rebuilt": 0, "failed": [], "kept": [], "unverified": []}
     if not args.repair and not args.audit:
         result = canon_rows(rows, keyf, args.asof, sleep=args.sleep,
                             retry_wait=args.retry_wait, only=only)
@@ -428,7 +435,7 @@ def main():
             if what:
                 r["apa"] = fixed
                 repaired[k] = what
-            stamp_canonical(r, args.asof)      # a repaired corpus is a canonical one
+            r.setdefault("canonical_at", args.asof)   # keep an existing date: repair is not canon
         d, n = audit(r.get("apa", ""), bool(doi_of(r) or r.get("arxiv")))
         # The DOI is not visible inside audit(), so the back-file/digitization
         # date check runs here and reports as a warning (only a human can say
@@ -473,9 +480,12 @@ def main():
     for k in result["failed"]:
         print(f"  ✗ {k}: fetch failed twice — NOT rebuilt, its apa is not canonical; "
               f"re-run with --only {k}")
+    for k in result["unverified"]:
+        print(f"  ✗ {k}: not verified for its current DOI/arXiv id — NOT rebuilt. Run "
+              "verify.py --rows first, or clear a false alarm with verify.py --override")
     for k, d in defects.items():
         print(f"  ✗ {k}: {'; '.join(d)}")
-    if defects or result["failed"]:
+    if defects or result["failed"] or result["unverified"]:
         sys.exit(1)
     print("✓ all references perfect (no formatting defects)")
 

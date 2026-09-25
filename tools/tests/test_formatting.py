@@ -1290,7 +1290,8 @@ with _patched(common, arxiv_fetch=_fa), _sleeps():
 check("arxiv_batch: a failed chunk marks exactly its ids errored", len(_err), 50)
 check_true("arxiv_batch: errored ids are not reported as misses", not (_err & set(_ent)))
 
-_AROWS = [{"ref": f"A{n}", "doi": f"10.48550/arXiv.2301.{n:05d}", "apa": ""} for n in range(60)]
+_AROWS = [_stamp(r) for r in
+          [{"ref": f"A{n}", "doi": f"10.48550/arXiv.2301.{n:05d}", "apa": ""} for n in range(60)]]
 _fa = _FakeArxiv()
 with _patched(common, arxiv_fetch=_fa), _sleeps():
     _res = references.canon_rows(_AROWS, "ref", "2026-09-25", sleep=0.25, retry_wait=0)
@@ -1300,7 +1301,8 @@ check_true("canon: arXiv-built apa names the paper",
            _AROWS[0]["apa"].startswith("Lovelace, A. (2023). Paper 2301.00000."), _AROWS[0]["apa"])
 
 # T2 — a failed batch is retried inside the run, not by a hand-built rerun file.
-_AROWS = [{"ref": f"A{n}", "doi": f"10.48550/arXiv.2301.{n:05d}", "apa": ""} for n in range(3)]
+_AROWS = [_stamp(r) for r in
+          [{"ref": f"A{n}", "doi": f"10.48550/arXiv.2301.{n:05d}", "apa": ""} for n in range(3)]]
 _fa = _FakeArxiv(fail_calls={1})
 with _patched(common, arxiv_fetch=_fa), _sleeps():
     _res = references.canon_rows(_AROWS, "ref", "2026-09-25", sleep=0, retry_wait=0)
@@ -1325,7 +1327,8 @@ class _FlakyCR:
         return self.rec if self.rec is not None else _cr_record()
 
 
-_JROWS = [{"ref": "J1", "doi": "10.1523/x1", "apa": ""}, {"ref": "J2", "doi": "10.1523/x2", "apa": ""}]
+_JROWS = [_stamp(r) for r in
+          [{"ref": "J1", "doi": "10.1523/x1", "apa": ""}, {"ref": "J2", "doi": "10.1523/x2", "apa": ""}]]
 with _patched(common, crossref_work=_FlakyCR()), _sleeps():
     _res = references.canon_rows(_JROWS, "ref", "2026-09-25", sleep=0, retry_wait=0)
 check("canon: a transient CrossRef failure is retried in-run", (_res["rebuilt"], _res["failed"]), (2, []))
@@ -1335,21 +1338,24 @@ def _always_503(doi, fallback_venue=""):
     raise urllib.error.HTTPError("u", 503, "busy", {}, None)
 
 
-_JROWS = [{"ref": "J1", "doi": "10.1523/x1", "apa": "Old, A. (2020). Agent typed. J."}]
+_JROWS = [_stamp(r) for r in
+          [{"ref": "J1", "doi": "10.1523/x1", "apa": "Old, A. (2020). Agent typed. J."}]]
 with _patched(common, crossref_work=_always_503), _sleeps():
     _res = references.canon_rows(_JROWS, "ref", "2026-09-25", sleep=0, retry_wait=0)
 check("canon: a row that still fails after the retry is named", _res["failed"], ["J1"])
 check_true("canon: a failed row is not stamped canonical", "canonical_at" not in _JROWS[0])
 
 # C4 — a source that answers with no usable record must not pass silently.
-_JROWS = [{"ref": "E1", "doi": "10.1038/editorial", "apa": "Nature. (2020). Editorial. Nature."}]
+_JROWS = [_stamp(r) for r in
+          [{"ref": "E1", "doi": "10.1038/editorial", "apa": "Nature. (2020). Editorial. Nature."}]]
 with _patched(common, crossref_work=lambda d, fallback_venue="": dict(_cr_record(), people=[])), _sleeps():
     _res = references.canon_rows(_JROWS, "ref", "2026-09-25", sleep=0, retry_wait=0)
 check("canon: a row the source cannot rebuild is named, not skipped silently", _res["kept"], ["E1"])
 
 # T2 — --only canonicalizes the named rows and leaves every other row untouched.
-_JROWS = [{"ref": "J1", "doi": "10.1523/x1", "apa": "keep me"},
-          {"ref": "J2", "doi": "10.1523/x2", "apa": ""}]
+_JROWS = [_stamp(r) for r in
+          [{"ref": "J1", "doi": "10.1523/x1", "apa": "keep me"},
+           {"ref": "J2", "doi": "10.1523/x2", "apa": ""}]]
 with _patched(common, crossref_work=lambda d, fallback_venue="": _cr_record()), _sleeps():
     _res = references.canon_rows(_JROWS, "ref", "2026-09-25", sleep=0, retry_wait=0, only={"J2"})
 check("canon --only: other rows untouched", (_JROWS[0]["apa"], "canonical_at" in _JROWS[0]), ("keep me", False))
@@ -1688,6 +1694,39 @@ finally:
 _after3 = {r["ref"]: r for r in common.load_json(_rp3)}
 check_true("verify: --override needs no --email/LITREVIEW_EMAIL",
            "verify_override" in _after3["O1"], _after3["O1"])
+
+
+# ---- reference gates: canon refuses unverified rows (added 2026-09-26) -----
+_crok = lambda d, fallback_venue="": _cr_record()   # noqa: E731
+for _label, _row in [("never verified", {"ref": "U1", "doi": "10.1/u1", "apa": ""}),
+                     ("verdict MISMATCH", _stamp({"ref": "U2", "doi": "10.1/u2", "apa": ""}, "MISMATCH")),
+                     ("DOI changed after verify", dict(_stamp({"ref": "U3", "doi": "10.1/u3", "apa": ""}),
+                                                        doi="10.1/u3-new"))]:
+    with _patched(common, crossref_work=_crok), _sleeps():
+        _res = references.canon_rows([_row], "ref", "2026-09-26", sleep=0, retry_wait=0)
+    check(f"canon refuses a row: {_label}", (_res["unverified"], _res["rebuilt"], _row["apa"]), ([_row["ref"]], 0, ""))
+_ov = _stamp({"ref": "U4", "doi": "10.1/u4", "apa": ""}, "MISMATCH")
+_ov["verify_override"] = {"reason": "retitled preprint", "doi": "10.1/u4", "arxiv": ""}
+with _patched(common, crossref_work=_crok), _sleeps():
+    _res = references.canon_rows([_ov], "ref", "2026-09-26", sleep=0, retry_wait=0)
+check("canon rebuilds an overridden row", (_res["rebuilt"], _res["unverified"]), (1, []))
+
+# Entrance test: --repair must not re-date a legacy corpus (that would gate it).
+_d = _tmpf.mkdtemp()
+_rp = os.path.join(_d, "rows.json")
+common.dump_json([{"ref": "L1", "apa": "Andrews‐Hanna, J. (2012). The brain. Neuron, 1, 1.",
+                   "doi": "10.1/l1", "canonical_at": "2026-08-18"}], _rp)
+_argv = sys.argv
+sys.argv = ["references.py", "--rows", _rp, "--repair", "--email", "t@example.org"]
+try:
+    references.main()
+except SystemExit:
+    pass
+finally:
+    sys.argv = _argv
+_L = common.load_json(_rp)[0]
+check("--repair fixes the string damage", "‐" in _L["apa"], False)
+check("--repair keeps the original canon date", _L["canonical_at"], "2026-08-18")
 
 
 # ---- report ---------------------------------------------------------------
