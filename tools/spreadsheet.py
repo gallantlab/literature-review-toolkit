@@ -37,11 +37,13 @@ Input format (JSON list):
 Run:  python3 spreadsheet.py --rows rows.json --out bibliography.xlsx
 """
 import argparse
+import os
 import sys
 
 import xlsxwriter
 
 import common
+import references
 
 PHASE = "5"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
@@ -65,7 +67,13 @@ def unknown_sources(rows):
     return sorted({r.get("source", "source-doc") for r in rows} - set(COLORS))
 
 
-def build(rows, out, sheet_name="References"):
+def draft_path(out):
+    """bib.xlsx -> bib_DRAFT.xlsx: a draft can never pass for the deliverable."""
+    stem, ext = os.path.splitext(out)
+    return f"{stem}_DRAFT{ext or '.xlsx'}"
+
+
+def build(rows, out, sheet_name="References", banner=None, excluded=None):
     """Write the xlsx. Returns (n_rows, has_cite)."""
     # Auto-detect citation counts on any row -> add the two columns.
     has_cite = any(
@@ -118,12 +126,19 @@ def build(rows, out, sheet_name="References"):
         cols.append(("Verify note", "verify_note", 32, "text"))
     cols += [("PDF (local)", "pdf", 14, "text"), ("Xref", "xref", 8, "text")]
 
+    top = 0
+    if banner:
+        banner_fmt = wb.add_format({"bold": True, "font_color": "#9C0006", "bg_color": "#FFC7CE",
+                                    "text_wrap": True, "valign": "top"})
+        ws.merge_range(0, 0, 0, len(cols) - 1, banner, banner_fmt)
+        ws.set_row(0, 36)
+        top = 1
     for c, (header, _, width, _kind) in enumerate(cols):
         ws.set_column(c, c, width)
-        ws.write(0, c, header, header_fmt)
-    ws.freeze_panes(1, 0)
+        ws.write(top, c, header, header_fmt)
+    ws.freeze_panes(top + 1, 0)
 
-    for i, r in enumerate(rows, start=1):
+    for i, r in enumerate(rows, start=top + 1):
         src = r.get("source", "source-doc")
         if src not in COLORS:
             src = "source-doc"           # unknown tag -> default format (see unknown_sources)
@@ -142,6 +157,18 @@ def build(rows, out, sheet_name="References"):
                 ws.write(i, c, r.get(key, ""), cf)
         ws.set_row(i, 110)
 
+    if excluded:
+        xs = wb.add_worksheet("Considered and excluded")
+        xcols = [("DOI", "doi", 30), ("Title", "title", 70), ("Year", "year", 8),
+                 ("First author", "first_author", 22), ("Found by", "sources", 20), ("Reason", "reason", 60)]
+        for c, (h, _k, w) in enumerate(xcols):
+            xs.set_column(c, c, w)
+            xs.write(0, c, h, header_fmt)
+        for i, e in enumerate(excluded, start=1):
+            for c, (_h, k, _w) in enumerate(xcols):
+                v = e.get(k, "")
+                xs.write(i, c, ", ".join(sorted(v)) if isinstance(v, dict) else str(v), fmts[None])
+
     wb.close()
     return len(rows), has_cite
 
@@ -151,16 +178,40 @@ def main():
     ap.add_argument("--rows", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--sheet-name", default="References")
+    ap.add_argument("--key", default=None, help="row key field (default: ref, else label)")
+    ap.add_argument("--acks", help="acknowledged warnings (default: audit_acks.json beside --rows)")
+    ap.add_argument("--candidates", help="candidate ledger (default: candidates.json beside --rows)")
+    ap.add_argument("--draft", action="store_true",
+                    help="write even if the audit fails, as <out>_DRAFT.xlsx with a banner")
     args = ap.parse_args()
 
     rows = common.load_json(args.rows)
+    here = os.path.dirname(os.path.abspath(args.rows))
+    keyf = common.key_field(rows, args.key)
+    acks = references.load_acks(args.acks or os.path.join(here, "audit_acks.json"))
+    report = references.audit_rows(rows, keyf, acks)
+    out, banner = args.out, None
+    if report["failed"]:
+        references.print_report(report, len(rows))
+        n = len(report["defects"]) + len(report["corpus"]) + sum(len(v) for v in report["unacked"].values())
+        if args.draft:
+            out = draft_path(args.out)
+            banner = f"DRAFT, NOT A DELIVERABLE: {n} audit failure(s). Run references.py --audit."
+        elif report["gated"]:
+            print(f"✗ not written: {n} audit failure(s). Fix them, or pass --draft for a marked draft.",
+                  file=sys.stderr)
+            sys.exit(1)
+        else:
+            print("  (legacy corpus: written despite the audit findings above)", file=sys.stderr)
+    ledger = common.load_optional_json(args.candidates or os.path.join(here, "candidates.json"), {})
+    excluded = [dict(v, doi=d) for d, v in sorted(ledger.items()) if v.get("decision") == "exclude"]
     for src in unknown_sources(rows):
         print(f"  ⚠ source={src!r} has no color rule (known: {', '.join(COLORS)}); "
               "rendered white", file=sys.stderr)
-    n, has_cite = build(rows, args.out, args.sheet_name)
+    n, has_cite = build(rows, out, args.sheet_name, banner=banner, excluded=excluded)
     n_pdf = sum(1 for r in rows if r.get("pdf"))
     extra = " + citation columns" if has_cite else ""
-    print(f"Wrote {n} rows ({n_pdf} with PDFs){extra} to {args.out}")
+    print(f"Wrote {n} rows ({n_pdf} with PDFs){extra} to {out}")
 
 
 if __name__ == "__main__":

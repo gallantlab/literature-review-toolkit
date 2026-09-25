@@ -1877,6 +1877,54 @@ _code, _out = _list_acks()
 check("references --list-acks exits 0 and prints nothing once acknowledged", (_code, _out), (0, ""))
 
 
+# ---- reference gates: the spreadsheet runs the audit (2026-09-26) ----------
+import zipfile as _zip  # noqa: E402
+
+
+def _sheet_main(rows, *extra, candidates=None):
+    d = _tmpf.mkdtemp()
+    rp, out = os.path.join(d, "rows.json"), os.path.join(d, "bib.xlsx")
+    common.dump_json(rows, rp)
+    if candidates is not None:
+        common.dump_json(candidates, os.path.join(d, "candidates.json"))
+    argv = sys.argv
+    sys.argv = ["spreadsheet.py", "--rows", rp, "--out", out, *extra]
+    code = 0
+    try:
+        spreadsheet.main()
+    except SystemExit as e:
+        code = e.code or 0
+    finally:
+        sys.argv = argv
+    return code, d
+
+
+def _xlsx_text(path):
+    with _zip.ZipFile(path) as z:
+        return "".join(z.read(n).decode("utf-8") for n in z.namelist()
+                       if n.endswith(("sharedStrings.xml", "workbook.xml")))
+
+
+_code, _dd = _sheet_main([dict(_grow(), doi="10.1/changed")])
+check("spreadsheet refuses a failing gated table",
+      (_code, os.path.exists(os.path.join(_dd, "bib.xlsx"))), (1, False))
+_code, _dd = _sheet_main([dict(_grow(), doi="10.1/changed")], "--draft")
+check_true("--draft writes a file named as a draft", _code == 0 and os.path.exists(os.path.join(_dd, "bib_DRAFT.xlsx")))
+check_true("the draft carries a banner", "DRAFT" in _xlsx_text(os.path.join(_dd, "bib_DRAFT.xlsx")))
+_code, _dd = _sheet_main([_grow()])
+check("a passing table is written", (_code, os.path.exists(os.path.join(_dd, "bib.xlsx"))), (0, True))
+_undated = [{"ref": "N1", "apa": "Doe, J. Undated manuscript. Private papers.", "canonical_at": "2026-08-18"}]
+_code, _dd = _sheet_main(_undated)
+check("a legacy corpus with an accepted defect is still written",
+      (_code, os.path.exists(os.path.join(_dd, "bib.xlsx"))), (0, True))
+_code, _dd = _sheet_main([_grow()], candidates={"10.1/x": {"title": "Excluded paper", "year": "2019",
+                                                           "first_author": "Roe", "sources": {"xref": 4},
+                                                           "decision": "exclude", "reason": "off topic"}})
+check_true("excluded candidates get their own sheet",
+           "Considered and excluded" in _xlsx_text(os.path.join(_dd, "bib.xlsx")))
+check("draft_path inserts _DRAFT", spreadsheet.draft_path("/a/b/bib.xlsx"), "/a/b/bib_DRAFT.xlsx")
+
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
