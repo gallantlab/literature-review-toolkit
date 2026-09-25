@@ -501,12 +501,12 @@ def main():
                          "or set LITREVIEW_EMAIL env var)")
     args = ap.parse_args()
 
-    if not args.email:
-        ap.error("--email or LITREVIEW_EMAIL required "
-                 "(NCBI/CrossRef expect a contact email in the User-Agent)")
-    set_user_agent(args.email)
+    if args.citations and args.rows:
+        ap.error("give --citations or --rows, not both")
 
     if args.override:
+        # No network I/O, so it must not demand a contact email — check this
+        # before the --email requirement below.
         if not args.rows:
             ap.error("--override needs --rows")
         rows = common.load_json(args.rows)
@@ -517,6 +517,11 @@ def main():
         common.dump_json(rows, args.rows)
         print(f"recorded an override for {args.override}", file=sys.stderr)
         return
+
+    if not args.email:
+        ap.error("--email or LITREVIEW_EMAIL required "
+                 "(NCBI/CrossRef expect a contact email in the User-Agent)")
+    set_user_agent(args.email)
 
     if args.citations:
         cits = common.load_json(args.citations)

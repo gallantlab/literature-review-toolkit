@@ -1648,6 +1648,47 @@ check("verify --retry-from stamps the re-verified row", _after["R2"].get("verifi
 check_true("verify --retry-from does not stamp a row it only copied from the old report",
            "verified" not in _after["R1"])
 
+# Entrance test: --citations and --rows together must not reach the stamping
+# block with `rows` unbound (main() took the --citations branch, so `rows` was
+# never assigned) — they are mutually exclusive, refused by argparse.
+_d2 = _tmpf.mkdtemp()
+_cp, _rp2 = (os.path.join(_d2, f) for f in ("cits.json", "rows.json"))
+common.dump_json([{"label": "C1", "doi": "10.1/c1"}], _cp)
+common.dump_json([{"ref": "C1", "doi": "10.1/c1"}], _rp2)
+_before2 = common.load_json(_rp2)
+_argv = sys.argv
+sys.argv = ["verify.py", "--citations", _cp, "--rows", _rp2, "--email", "t@example.org"]
+_exit = None
+try:
+    verify.main()
+except SystemExit as e:
+    _exit = e
+finally:
+    sys.argv = _argv
+check_true("verify: --citations + --rows is refused with a SystemExit(2)",
+           _exit is not None and _exit.code == 2, repr(_exit))
+check("verify: --citations + --rows leaves the rows file untouched",
+      common.load_json(_rp2), _before2)
+
+# Entrance test: --override does no network I/O, so it must not require
+# --email / LITREVIEW_EMAIL.
+_d3 = _tmpf.mkdtemp()
+_rp3 = os.path.join(_d3, "rows.json")
+common.dump_json([_stamp({"ref": "O1", "doi": "10.1/o1"}, "MISMATCH")], _rp3)
+_env = {k: v for k, v in os.environ.items() if k != "LITREVIEW_EMAIL"}
+_argv = sys.argv
+sys.argv = ["verify.py", "--rows", _rp3, "--override", "O1", "--reason", "retitled"]
+try:
+    with _patched(os, environ=_env):
+        verify.main()
+except SystemExit:
+    pass
+finally:
+    sys.argv = _argv
+_after3 = {r["ref"]: r for r in common.load_json(_rp3)}
+check_true("verify: --override needs no --email/LITREVIEW_EMAIL",
+           "verify_override" in _after3["O1"], _after3["O1"])
+
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
