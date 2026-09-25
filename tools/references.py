@@ -336,6 +336,122 @@ def duplicate_scan(rows, keyf, threshold=0.88):
     return pairs
 
 
+def warning_id(note):
+    """Stable id for an audit warning, so an acknowledgment survives reruns."""
+    m = re.match(r"multi-word surname '(.+?)'", note)
+    if m:
+        return f"multi-word-surname:{m.group(1)}"
+    for prefix, wid in (("glued-footnote", "glued-footnote"), ("deposit-year", "deposit-year"),
+                        ("cached year", "cached-year")):
+        if note.startswith(prefix):
+            return wid
+    return note
+
+
+def row_gate_defects(r, warn):
+    """Defects the reference gates add for one row of a GATED table; `warn(wid,
+    text)` records a warning that must be acknowledged."""
+    d = []
+    if doi_of(r) or r.get("arxiv"):
+        if not common.verified_ok(r):
+            st = r.get("verified")
+            why = ("never verified" if not isinstance(st, dict)
+                   else "verified under a different DOI/arXiv id" if common.stamp_ids(st) != common.ids_of(r)
+                   else f"verdict {st.get('verdict')} not resolved")
+            d.append(f"unverified ({why})")
+        elif not r.get("canonical_at"):
+            warn("kept-existing-apa", "verified but not rebuilt by canon (the source had no usable "
+                 "record); confirm the apa by hand")
+    else:
+        hv = r.get("hand_verified")
+        if not (isinstance(hv, dict) and hv.get("verdict") in ("confirmed", "corrected")
+                and str(hv.get("source_checked") or "").strip()):
+            d.append("hand-check-missing (a DOI-less row needs handcheck.py --ingest)")
+    s = (r.get("summary") or "").strip()
+    if s:
+        sc = r.get("summary_check")
+        if not isinstance(sc, dict) or sc.get("summary_sha") != common.summary_sha(s):
+            d.append("summary-unchecked (run summary_audit.py)")
+        elif sc.get("verdict") == "unsupported":
+            d.append(f"summary-flagged: {sc.get('note') or 'claims something its abstract does not'}")
+        elif sc.get("verdict") == "no-abstract":
+            warn("no-abstract", "the summary has no abstract to be checked against")
+        elif sc.get("verdict") != "supported":
+            d.append(f"summary-unchecked (unknown verdict {sc.get('verdict')!r})")
+    return d
+
+
+def load_acks(path):
+    """audit_acks.json -> {ref: {warning_id: reason}} ({} when absent)."""
+    acks = common.load_optional_json(path, {})
+    if not isinstance(acks, dict) or not all(isinstance(v, dict) for v in acks.values()):
+        raise ValueError(f"{path} must map ref -> {{warning_id: reason}}")
+    return acks
+
+
+def audit_rows(rows, keyf, acks=None):
+    """The whole audit, for references.py --audit and spreadsheet.py alike."""
+    gated = common.is_gated(rows)
+    acks = acks or {}
+    defects, warnings, manual = {}, {}, {}
+
+    def warn(k, wid, text):
+        warnings.setdefault(k, []).append((wid, text))
+
+    for r in rows:
+        k = r.get(keyf, "?")
+        d, n = audit(r.get("apa", ""), bool(doi_of(r) or r.get("arxiv")))
+        d = list(d)
+        extra = [x for x in (deposit_year_conflict(doi_of(r), r.get("apa", "")), cached_year_conflict(r))
+                 if x]
+        for note in list(n) + extra:
+            if note.startswith("no DOI"):
+                manual[k] = note
+            else:
+                warn(k, warning_id(note), note)
+        if gated:
+            d += row_gate_defects(r, lambda wid, text, k=k: warn(k, wid, text))
+        if d:
+            defects[k] = d
+    dups = duplicate_scan(rows, keyf)
+    for ka, kb, ratio, why in dups:
+        warn(ka, f"possible-duplicate:{kb}", f"possible duplicate of {kb} ({ratio:.2f}, {why})")
+    corpus = []
+    unacked = {}
+    for k, ws in warnings.items():
+        for wid, text in ws:
+            if not str((acks.get(k) or {}).get(wid) or "").strip():
+                unacked.setdefault(k, []).append((wid, text))
+    live = {(k, wid) for k, ws in warnings.items() for wid, _ in ws}
+    stale = [(k, wid) for k, m in acks.items() for wid in m if (k, wid) not in live]
+    failed = bool(defects or corpus or (gated and unacked))
+    return {"gated": gated, "defects": defects, "corpus": corpus, "warnings": warnings,
+            "unacked": unacked, "stale_acks": stale, "manual": manual, "dups": dups, "failed": failed}
+
+
+def print_report(report, n_rows):
+    """Human-readable audit, in the order a reader acts on it."""
+    nw = sum(len(v) for v in report["warnings"].values())
+    nu = sum(len(v) for v in report["unacked"].values())
+    print(f"{n_rows} refs | {len(report['defects'])} defects | {len(report['manual'])} manual (no-DOI) | "
+          f"{nw} warnings ({nu} unacknowledged) | {len(report['dups'])} possible duplicates")
+    if not report["gated"]:
+        print("  note: this corpus predates the reference gates; verify/hand-check/summary/"
+              "acknowledgment checks are not enforced")
+    for k, n in report["manual"].items():
+        print(f"  · {k}: {n}")
+    for k, ws in report["warnings"].items():
+        for wid, text in ws:
+            mark = "⚠" if (k, wid) in {(k2, w) for k2, v in report["unacked"].items() for w, _ in v} else "✓"
+            print(f"  {mark} {k} [{wid}]: {text}")
+    for k, wid in report["stale_acks"]:
+        print(f"  · stale acknowledgment {k} [{wid}]: no such warning any more; delete it")
+    for c in report["corpus"]:
+        print(f"  ✗ corpus: {c}")
+    for k, d in report["defects"].items():
+        print(f"  ✗ {k}: {'; '.join(d)}")
+
+
 def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None):
     """Rebuild every sourced row (or just the keys in `only`) in place.
 
@@ -407,6 +523,9 @@ def main():
                     "untouched (targeted re-canon)")
     ap.add_argument("--asof", default=datetime.date.today().isoformat(),
                     help="date written to each rebuilt/repaired row's canonical_at (default: today)")
+    ap.add_argument("--acks", help="acknowledged warnings (default: audit_acks.json beside --rows)")
+    ap.add_argument("--list-acks", action="store_true",
+                    help="list every unacknowledged warning as REF<TAB>WARNING_ID<TAB>TEXT and exit")
     args = ap.parse_args()
     if args.repair and args.audit:
         ap.error("--repair writes; --audit reports. Run --repair, then --audit to confirm.")
@@ -421,59 +540,33 @@ def main():
         missing = only - {r.get(keyf) for r in rows}
         if missing:
             ap.error(f"--only names keys not in {args.rows}: {', '.join(sorted(missing))}")
-    defects, notes, rebuilt = {}, {}, 0
-    repaired = {}
+    repaired, rebuilt = {}, 0
     result = {"rebuilt": 0, "failed": [], "kept": [], "unverified": []}
-    if not args.repair and not args.audit:
+    if not args.repair and not args.audit and not args.list_acks:
         result = canon_rows(rows, keyf, args.asof, sleep=args.sleep,
                             retry_wait=args.retry_wait, only=only)
         rebuilt = result["rebuilt"]
-    for r in rows:
-        k = r.get(keyf, "?")
-        if args.repair:
+    if args.repair:
+        for r in rows:
             fixed, what = repair(r.get("apa", ""))
             if what:
                 r["apa"] = fixed
-                repaired[k] = what
+                repaired[r.get(keyf, "?")] = what
             r.setdefault("canonical_at", args.asof)   # keep an existing date: repair is not canon
-        d, n = audit(r.get("apa", ""), bool(doi_of(r) or r.get("arxiv")))
-        # The DOI is not visible inside audit(), so the back-file/digitization
-        # date check runs here and reports as a warning (only a human can say
-        # which year is right).
-        conflict = deposit_year_conflict(doi_of(r), r.get("apa", ""))
-        if conflict:
-            n = list(n) + [conflict]
-        stale = cached_year_conflict(r)
-        if stale:
-            n = list(n) + [stale]
-        if d:
-            defects[k] = d
-        if n:
-            notes[k] = n
-
-    if not args.audit:
+    if not args.audit and not args.list_acks:
         common.dump_json(rows, args.out or args.rows)
 
-    dups = duplicate_scan(rows, keyf)
-    # Two kinds of note, counted separately: a DOI-less item is an expected,
-    # permanent state (a book), whereas a surname warning is a one-off thing to
-    # eyeball. Lumping them made a corpus of 8 manual refs report 367.
-    manual = {k: n for k, n in notes.items() if any(x.startswith("no DOI") for x in n)}
-    warned = {k: [x for x in n if not x.startswith("no DOI")] for k, n in notes.items()}
-    warned = {k: v for k, v in warned.items() if v}
-    print(f"{len(rows)} refs | rebuilt {rebuilt} | "
-          + (f"repaired {len(repaired)} | " if args.repair else "")
-          + f"{len(defects)} defects | "
-          f"{len(manual)} manual (no-DOI) | {len(warned)} warnings | "
-          f"{len(dups)} possible duplicates")
+    acks_path = args.acks or os.path.join(os.path.dirname(os.path.abspath(args.rows)), "audit_acks.json")
+    report = audit_rows(rows, keyf, load_acks(acks_path))
+    if args.list_acks:
+        for k, ws in report["unacked"].items():
+            for wid, text in ws:
+                print(f"{k}\t{wid}\t{text}")
+        sys.exit(1 if report["unacked"] else 0)
+    if rebuilt or args.repair:
+        print(f"rebuilt {rebuilt}" + (f" | repaired {len(repaired)}" if args.repair else ""))
     for k, what in repaired.items():
         print(f"  ✎ {k}: {'; '.join(what)}")
-    for k, n in manual.items():
-        print(f"  · {k}: {'; '.join(x for x in n if x.startswith('no DOI'))}")
-    for k, n in warned.items():
-        print(f"  ⚠ {k}: {'; '.join(n)}")
-    for ka, kb, ratio, why in dups:
-        print(f"  ⚠ {ka} ~ {kb}: possible duplicate ({ratio:.2f}, {why}) — verify by hand")
     for k in result["kept"]:
         print(f"  ⚠ {k}: the source returned no usable record (no authors, or an id "
               "missing from the feed) — kept the existing apa; confirm it by hand")
@@ -483,11 +576,10 @@ def main():
     for k in result["unverified"]:
         print(f"  ✗ {k}: not verified for its current DOI/arXiv id — NOT rebuilt. Run "
               "verify.py --rows first, or clear a false alarm with verify.py --override")
-    for k, d in defects.items():
-        print(f"  ✗ {k}: {'; '.join(d)}")
-    if defects or result["failed"] or result["unverified"]:
+    print_report(report, len(rows))
+    if report["failed"] or result["failed"] or result["unverified"]:
         sys.exit(1)
-    print("✓ all references perfect (no formatting defects)")
+    print("✓ all references pass the audit")
 
 
 if __name__ == "__main__":

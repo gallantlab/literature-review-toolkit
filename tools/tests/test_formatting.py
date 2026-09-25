@@ -1729,6 +1729,86 @@ check("--repair fixes the string damage", "‐" in _L["apa"], False)
 check("--repair keeps the original canon date", _L["canonical_at"], "2026-08-18")
 
 
+# ---- reference gates: one audit, gate defects, acknowledgments (2026-09-26) -
+def _grow(ref="G1", doi="10.1/g1", summary="Tests whether a thing happens."):
+    r = {"ref": ref, "doi": doi, "link": f"https://doi.org/{doi}", "summary": summary,
+         "apa": "Smith, J. (2020). A real paper. J Neurosci, 1, 1-2.", "canonical_at": common.GATES_SINCE}
+    _stamp(r)
+    r["summary_check"] = {"verdict": "supported", "summary_sha": common.summary_sha(summary)}
+    return r
+
+
+def _codes(report, ref):
+    return [d.split(" ")[0].rstrip(":") for d in report["defects"].get(ref, [])]
+
+
+check("warning ids are stable",
+      [references.warning_id(n) for n in [
+          "multi-word surname 'Lambon Ralph' — confirm it is not a mis-split given name",
+          "glued-footnote (a footnote digit ...)", "deposit-year: DOI encodes 1943 ...",
+          "cached year 2019 != apa year 2020 — fix ..."]],
+      ["multi-word-surname:Lambon Ralph", "glued-footnote", "deposit-year", "cached-year"])
+_rep = references.audit_rows([_grow()], "ref")
+check("a fully checked gated row passes", (_rep["gated"], _rep["failed"], _rep["defects"]), (True, False, {}))
+_rep = references.audit_rows([_grow(), dict(_grow("G2", "10.1/g2"), doi="10.1/changed")], "ref")
+check("a DOI edited after verify fails the audit", _codes(_rep, "G2"), ["unverified"])
+_nd = {"ref": "B1", "apa": "Kuhn, T. S. (1962). The structure of scientific revolutions. U Chicago Press.",
+       "summary": "", "canonical_at": common.GATES_SINCE}
+check("a DOI-less row without a hand check fails", _codes(references.audit_rows([_grow(), _nd], "ref"), "B1"),
+      ["hand-check-missing"])
+_nd_ok = dict(_nd, hand_verified={"verdict": "confirmed", "source_checked": "LoC catalog record"})
+check("a hand-checked DOI-less row passes", references.audit_rows([_grow(), _nd_ok], "ref")["defects"], {})
+_ed = _grow()
+_ed["summary"] = "Tests whether a different thing happens."
+check("an edited summary is unchecked", _codes(references.audit_rows([_ed], "ref"), "G1"), ["summary-unchecked"])
+_fl = _grow()
+_fl["summary_check"]["verdict"] = "unsupported"
+check("a flagged summary fails", _codes(references.audit_rows([_fl], "ref"), "G1"), ["summary-flagged"])
+_na = _grow()
+_na["summary_check"]["verdict"] = "no-abstract"
+_rep = references.audit_rows([_na], "ref")
+check("no abstract is a warning, and unacknowledged it fails a gated table",
+      (_rep["defects"], [w for w, _ in _rep["unacked"]["G1"]], _rep["failed"]), ({}, ["no-abstract"], True))
+_rep = references.audit_rows([_na], "ref", acks={"G1": {"no-abstract": "editorial, no abstract exists"}})
+check("an acknowledged warning passes", _rep["failed"], False)
+_rep = references.audit_rows([_na], "ref", acks={"G1": {"no-abstract": " "}})
+check("an acknowledgment needs a reason", _rep["failed"], True)
+_rep = references.audit_rows([_grow()], "ref", acks={"G1": {"glued-footnote": "fine"}})
+check("a stale acknowledgment is reported, not failed", (_rep["stale_acks"], _rep["failed"]),
+      ([("G1", "glued-footnote")], False))
+_kept = _grow()
+del _kept["canonical_at"]
+_kept["verified"]["at"] = common.GATES_SINCE
+check_true("a verified row canon could not rebuild is a warning",
+           "kept-existing-apa" in [w for w, _ in references.audit_rows([_kept], "ref")["warnings"]["G1"]])
+_legacy = [{"ref": "L1", "doi": "10.1/l1", "canonical_at": "2026-08-18",
+            "apa": "Lambon Ralph, M. A. (2017). The neural basis. Nat Rev Neurosci, 1, 1."}]
+_rep = references.audit_rows(_legacy, "ref")
+check("a legacy table is audited as before: warnings do not fail", (_rep["gated"], _rep["failed"]), (False, False))
+
+# Entrance test: --audit exits 1 on an unacknowledged warning in a gated table, 0 once acknowledged.
+_d = _tmpf.mkdtemp()
+_rp, _ap = os.path.join(_d, "rows.json"), os.path.join(_d, "audit_acks.json")
+common.dump_json([_na], _rp)
+
+
+def _audit_exit():
+    _argv = sys.argv
+    sys.argv = ["references.py", "--rows", _rp, "--audit", "--email", "t@example.org"]
+    try:
+        references.main()
+        return 0
+    except SystemExit as e:
+        return e.code or 0
+    finally:
+        sys.argv = _argv
+
+
+check("references --audit fails on an unacknowledged warning", _audit_exit(), 1)
+common.dump_json({"G1": {"no-abstract": "editorial, no abstract exists"}}, _ap)
+check("references --audit passes once it is acknowledged", _audit_exit(), 0)
+
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
