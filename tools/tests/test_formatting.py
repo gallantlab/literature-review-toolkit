@@ -1217,6 +1217,352 @@ check("citations are read from the markers",
 os.remove(_page)
 
 
+# ---- network efficiency + verify gaps (added 2026-09-25) ------------------
+# A 475-ref arXiv-heavy build spent ~85 min in network tools, 53 of them in
+# canon: one arXiv request per row, 0.25 s apart, against arXiv's ~3 s courtesy
+# interval, so 39 rows each slept 45 s of 429 backoff and then failed. Everything
+# here runs offline: urlopen / arxiv_fetch / crossref_work are stubbed and every
+# sleep is recorded instead of taken.
+import contextlib as _ctx  # noqa: E402
+import json  # noqa: E402
+import time as _time  # noqa: E402
+
+import citations  # noqa: E402
+
+
+@_ctx.contextmanager
+def _patched(obj, **attrs):
+    old = {k: getattr(obj, k) for k in attrs}
+    for k, v in attrs.items():
+        setattr(obj, k, v)
+    try:
+        yield
+    finally:
+        for k, v in old.items():
+            setattr(obj, k, v)
+
+
+@_ctx.contextmanager
+def _sleeps():
+    got = []
+    with _patched(_time, sleep=lambda s: got.append(s)):
+        yield got
+
+
+def _atom(ids):
+    ents = "".join(
+        f"<entry><id>http://arxiv.org/abs/{i}v1</id><title>Paper {i}</title>"
+        f"<published>2023-01-01T00:00:00Z</published><author><name>Ada Lovelace</name></author>"
+        f"</entry>" for i in ids)
+    return f'<feed xmlns="http://www.w3.org/2005/Atom">{ents}</feed>'.encode()
+
+
+class _FakeArxiv:
+    """arxiv_fetch stand-in: counts calls; `fail_calls` lists call numbers that raise."""
+    def __init__(self, fail_calls=()):
+        self.calls, self.fail_calls = [], set(fail_calls)
+
+    def __call__(self, ids):
+        self.calls.append(list(ids))
+        if len(self.calls) in self.fail_calls:
+            raise urllib.error.HTTPError("u", 429, "slow down", {}, None)
+        return {e["id"]: e for e in common.arxiv_entries(_atom(ids))}
+
+
+# T1 — one batched prefetch, shared by verify and canon.
+_ids = [f"2301.{n:05d}" for n in range(120)]
+_fa = _FakeArxiv()
+with _patched(common, arxiv_fetch=_fa), _sleeps() as _sl:
+    _ent, _err = common.arxiv_batch(_ids)
+check("arxiv_batch: 120 ids take 3 requests of <=50", [len(c) for c in _fa.calls], [50, 50, 20])
+check("arxiv_batch: every id resolved", (len(_ent), _err), (120, set()))
+check("arxiv_batch: 3 s courtesy pause between chunks only", _sl, [3.0, 3.0])
+_fa = _FakeArxiv(fail_calls={2})
+with _patched(common, arxiv_fetch=_fa), _sleeps():
+    _ent, _err = common.arxiv_batch(_ids)
+check("arxiv_batch: a failed chunk marks exactly its ids errored", len(_err), 50)
+check_true("arxiv_batch: errored ids are not reported as misses", not (_err & set(_ent)))
+
+_AROWS = [{"ref": f"A{n}", "doi": f"10.48550/arXiv.2301.{n:05d}", "apa": ""} for n in range(60)]
+_fa = _FakeArxiv()
+with _patched(common, arxiv_fetch=_fa), _sleeps():
+    _res = references.canon_rows(_AROWS, "ref", "2026-09-25", sleep=0.25, retry_wait=0)
+check("canon: 60 arXiv rows cost 2 batched requests, not 60", len(_fa.calls), 2)
+check("canon: every arXiv row rebuilt from the batch", _res["rebuilt"], 60)
+check_true("canon: arXiv-built apa names the paper",
+           _AROWS[0]["apa"].startswith("Lovelace, A. (2023). Paper 2301.00000."), _AROWS[0]["apa"])
+
+# T2 — a failed batch is retried inside the run, not by a hand-built rerun file.
+_AROWS = [{"ref": f"A{n}", "doi": f"10.48550/arXiv.2301.{n:05d}", "apa": ""} for n in range(3)]
+_fa = _FakeArxiv(fail_calls={1})
+with _patched(common, arxiv_fetch=_fa), _sleeps():
+    _res = references.canon_rows(_AROWS, "ref", "2026-09-25", sleep=0, retry_wait=0)
+check("canon: an arXiv 429 batch is retried in-run", (_res["rebuilt"], _res["failed"]), (3, []))
+
+
+def _cr_record(first="Smith", title="A real paper", year=2020):
+    return {"title": title, "year": str(year), "authors": [(first, "J")],
+            "people": [f"{first}, J."], "first_author": f"{first} J", "journal": "J Neurosci",
+            "volume": "1", "issue": None, "pages": "1-2", "book": "", "publisher": ""}
+
+
+class _FlakyCR:
+    """crossref_work stand-in: the first call per DOI raises 503, later calls succeed."""
+    def __init__(self, rec=None):
+        self.seen, self.rec = {}, rec
+
+    def __call__(self, doi, fallback_venue=""):
+        self.seen[doi] = self.seen.get(doi, 0) + 1
+        if self.seen[doi] == 1:
+            raise urllib.error.HTTPError("u", 503, "busy", {}, None)
+        return self.rec if self.rec is not None else _cr_record()
+
+
+_JROWS = [{"ref": "J1", "doi": "10.1523/x1", "apa": ""}, {"ref": "J2", "doi": "10.1523/x2", "apa": ""}]
+with _patched(common, crossref_work=_FlakyCR()), _sleeps():
+    _res = references.canon_rows(_JROWS, "ref", "2026-09-25", sleep=0, retry_wait=0)
+check("canon: a transient CrossRef failure is retried in-run", (_res["rebuilt"], _res["failed"]), (2, []))
+
+
+def _always_503(doi, fallback_venue=""):
+    raise urllib.error.HTTPError("u", 503, "busy", {}, None)
+
+
+_JROWS = [{"ref": "J1", "doi": "10.1523/x1", "apa": "Old, A. (2020). Agent typed. J."}]
+with _patched(common, crossref_work=_always_503), _sleeps():
+    _res = references.canon_rows(_JROWS, "ref", "2026-09-25", sleep=0, retry_wait=0)
+check("canon: a row that still fails after the retry is named", _res["failed"], ["J1"])
+check_true("canon: a failed row is not stamped canonical", "canonical_at" not in _JROWS[0])
+
+# C4 — a source that answers with no usable record must not pass silently.
+_JROWS = [{"ref": "E1", "doi": "10.1038/editorial", "apa": "Nature. (2020). Editorial. Nature."}]
+with _patched(common, crossref_work=lambda d, fallback_venue="": dict(_cr_record(), people=[])), _sleeps():
+    _res = references.canon_rows(_JROWS, "ref", "2026-09-25", sleep=0, retry_wait=0)
+check("canon: a row the source cannot rebuild is named, not skipped silently", _res["kept"], ["E1"])
+
+# T2 — --only canonicalizes the named rows and leaves every other row untouched.
+_JROWS = [{"ref": "J1", "doi": "10.1523/x1", "apa": "keep me"},
+          {"ref": "J2", "doi": "10.1523/x2", "apa": ""}]
+with _patched(common, crossref_work=lambda d, fallback_venue="": _cr_record()), _sleeps():
+    _res = references.canon_rows(_JROWS, "ref", "2026-09-25", sleep=0, retry_wait=0, only={"J2"})
+check("canon --only: other rows untouched", (_JROWS[0]["apa"], "canonical_at" in _JROWS[0]), ("keep me", False))
+check("canon --only: named row rebuilt", _res["rebuilt"], 1)
+
+# T4 — sleep only after a row that actually went to the network. Stubbing
+# urlopen (not http) keeps common.http's real bookkeeping in the path.
+class _Resp:
+    def __init__(self, body):
+        self.body, self.headers = body, {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self.body
+
+
+def _cr_body(first="Smith", title="A real paper", year=2020):
+    return json.dumps({"message": {"author": [{"family": first, "given": "J"}],
+                                   "title": [title], "issued": {"date-parts": [[year]]},
+                                   "container-title": ["J Neurosci"]}}).encode()
+
+
+_CITS = [{"label": "X1", "arxiv": "2301.00001", "expect_first_author": "Lovelace", "expect_year": "2023",
+          "title": "Paper 2301.00001"},
+         {"label": "X2", "arxiv": "2301.00002", "expect_first_author": "Lovelace", "expect_year": "2023",
+          "title": "Paper 2301.00002"},
+         {"label": "J1", "doi": "10.1523/x1", "expect_first_author": "Smith", "expect_year": "2020",
+          "title": "A real paper"}]
+with _patched(common, arxiv_fetch=_FakeArxiv()), \
+        _patched(urllib.request, urlopen=lambda req, timeout=30: _Resp(_cr_body())), _sleeps() as _sl:
+    _out = verify.verify_all(_CITS, sleep=0.4, retry_wait=0)
+check("verify: all three verified", [r["verdict"] for r in _out], ["OK", "OK", "OK"])
+check("verify: rows answered by the arXiv prefetch do not sleep", _sl, [0.4])
+
+# T2 — verify retries ERROR rows itself after a cool-down.
+with _patched(common, arxiv_fetch=_FakeArxiv(fail_calls={1})), _sleeps() as _sl:
+    _out = verify.verify_all(_CITS[:2], sleep=0, retry_wait=60)
+check("verify: an errored arXiv chunk is retried in-run", [r["verdict"] for r in _out], ["OK", "OK"])
+check_true("verify: the retry waits out the cool-down first", 60 in _sl, str(_sl))
+
+# T2 — --only / --retry-from select rows; merge_reports splices results by label.
+check("verify: --only selects by label",
+      [c["label"] for c in verify.select_citations(_CITS, only={"J1"})], ["J1"])
+check("verify: --retry-from selects the non-OK rows of a report",
+      [c["label"] for c in verify.select_citations(
+          _CITS, retry_from=[{"label": "X1", "verdict": "OK"}, {"label": "X2", "verdict": "ERROR"}])],
+      ["X2"])
+check("verify: merge_reports replaces by label and keeps order",
+      verify.merge_reports([{"label": "A", "verdict": "ERROR"}, {"label": "B", "verdict": "OK"}],
+                           [{"label": "A", "verdict": "OK"}]),
+      [{"label": "A", "verdict": "OK"}, {"label": "B", "verdict": "OK"}])
+
+# T3 — CrossRef has no 10.48550 DOIs; asking costs a 404 per row.
+def _no_network(*a, **k):
+    raise AssertionError("network call for an arXiv DOI")
+
+
+_asked = []
+with _patched(verify, lookup_crossref=lambda d: _asked.append(("crossref", d)),
+              lookup_pubmed_title=lambda t: _asked.append(("pubmed-title", t))):
+    _r = verify.verify_one({"label": "A", "doi": "10.48550/arXiv.2301.00001", "arxiv": "2301.00001",
+                            "title": "AI safety via debate"}, {}, {"2301.00001"})
+check("verify: an errored arXiv row is ERROR", _r["verdict"], "ERROR")
+# A PubMed title search mis-resolves arXiv papers (on one build it answered an
+# AI-debate paper with a physiotherapy article), and CrossRef has no
+# 10.48550 DOIs: both lookups are pure cost. The in-run retry re-asks arXiv.
+check("verify: an errored arXiv row asks neither CrossRef nor PubMed", _asked, [])
+with _patched(xref, http_json=_no_network), _sleeps() as _sl:
+    _refs, _inc = xref.fetch_all([{"slug": "A", "doi": "10.48550/arXiv.2301.00001"}], sleep=0.4, retry_wait=0)
+check("xref: an arXiv DOI is skipped, complete, and costs no sleep", (_refs["A"], _inc, _sl), ([], [], []))
+
+_calls = []
+
+
+def _xref_flaky(doi):
+    _calls.append(doi)
+    return None if len(_calls) == 1 else [{"doi": "10.1/y"}]
+
+
+with _patched(xref, crossref_refs=_xref_flaky), _sleeps():
+    _refs, _inc = xref.fetch_all([{"slug": "B", "doi": "10.1/b"}], sleep=0, retry_wait=0)
+check("xref: an incomplete fetch is retried in-run", (_inc, len(_refs["B"])), ([], 1))
+
+# T5 — honor Retry-After (seconds, capped), and fall back to backoff without it.
+def _urlopen_seq(*errs):
+    seq = list(errs)
+
+    def f(req, timeout=30):
+        if seq:
+            raise seq.pop(0)
+        return _Resp(b"{}")
+    return f
+
+
+with _patched(urllib.request, urlopen=_urlopen_seq(
+        urllib.error.HTTPError("u", 429, "slow", {"Retry-After": "7"}, None))), _sleeps() as _sl:
+    common.http("https://example.org/x")
+check("http: Retry-After seconds are honored", _sl, [7.0])
+with _patched(urllib.request, urlopen=_urlopen_seq(
+        urllib.error.HTTPError("u", 429, "slow", {"Retry-After": "9999"}, None))), _sleeps() as _sl:
+    common.http("https://example.org/x")
+check("http: Retry-After is capped", _sl, [120.0])
+with _patched(urllib.request, urlopen=_urlopen_seq(
+        urllib.error.HTTPError("u", 503, "busy", {}, None))), _sleeps() as _sl:
+    common.http("https://example.org/x")
+check("http: no Retry-After falls back to exponential backoff", _sl, [3])
+
+# T5 — S2: at most 500 ids per POST, and a 400 is not retried or slept on.
+_bodies = []
+
+
+def _s2_ok(url, data=None, headers=None, **k):
+    ids = json.loads(data)["ids"]
+    _bodies.append(len(ids))
+    return [{"citationCount": 1, "influentialCitationCount": 0} for _ in ids]
+
+
+_items = [(f"k{n}", f"10.1/{n}") for n in range(1200)]
+with _patched(citations, http_json=_s2_ok), _sleeps():
+    _got = citations.fetch_s2(_items)
+check("s2: 1200 ids go out in chunks of <=500", _bodies, [500, 500, 200])
+check("s2: every chunk's results are mapped back", len(_got), 1200)
+_n400 = []
+
+
+def _s2_400(url, data=None, headers=None, **k):
+    _n400.append(1)
+    raise urllib.error.HTTPError("u", 400, "bad", {}, None)
+
+
+with _patched(citations, http_json=_s2_400), _sleeps() as _sl:
+    citations.fetch_s2(_items[:10])
+check("s2: a 400 is not retried or slept on", (len(_n400), _sl), (1, []))
+
+# T6 — the duplicate-scan prefilter must not change a single pair.
+import difflib as _dl  # noqa: E402
+import random as _rnd  # noqa: E402
+
+_rng = _rnd.Random(7)
+_words = "cortex layer visual neuron model deep laminar feedback alpha gamma coding".split()
+_titles = [" ".join(_rng.choice(_words) for _ in range(_rng.randint(3, 8))) for _ in range(150)]
+_DROWS = [{"ref": f"D{i}", "apa": f"Doe, J. (2020). {t}. J."} for i, t in enumerate(_titles)]
+
+
+def _brute(rows, thr=0.88):
+    out = []
+    items = [(r["ref"], re.sub(r"[^a-z0-9 ]", "", common.parse_apa(r["apa"])["title"].lower()).strip())
+             for r in rows]
+    for i, (ka, ta) in enumerate(items):
+        for kb, tb in items[i + 1:]:
+            if abs(len(ta) - len(tb)) > 0.35 * max(len(ta), len(tb)):
+                continue
+            q = _dl.SequenceMatcher(None, ta, tb).ratio()
+            if q >= thr:
+                out.append((ka, kb))
+    return out
+
+
+check("duplicate_scan: prefilter finds exactly the brute-force pairs",
+      [(a, b) for a, b, _, _ in references.duplicate_scan(_DROWS, "ref")], _brute(_DROWS))
+
+# C1 — pre-canon rows verify against the SEARCH AGENT's claim, not an empty apa.
+_pre = {"ref": "P1", "doi": "10.1/p", "apa": "", "search_author": "Amodei, D.",
+        "search_year": 2016, "search_title": "Concrete problems in AI safety"}
+_c = verify.rows_to_citations([_pre])[0]
+check("rows_to_citations: pre-canon expectations come from search_*",
+      (_c["expect_first_author"], _c["expect_year"], _c["title"]),
+      ("Amodei", "2016", "Concrete problems in AI safety"))
+check("rows_to_citations: 'D. Amodei' shape yields the surname",
+      verify.rows_to_citations([dict(_pre, search_author="D. Amodei")])[0]["expect_first_author"], "Amodei")
+_canon = dict(_pre, apa="Amodei, D., & Olah, C. (2016). Concrete problems in AI safety. arXiv.",
+              canonical_at="2026-09-25", search_author="Wrong, X.")
+check("rows_to_citations: a canonical row is checked against its apa",
+      verify.rows_to_citations([_canon])[0]["expect_first_author"], "Amodei")
+with _patched(verify, lookup_crossref=lambda d: {"title": "T", "year": "2020",
+                                                   "first_author": "Smith J", "journal": "J"}):
+    _r = verify.verify_one({"label": "N", "doi": "10.1/n"})
+check("verify: a row with nothing to check against is UNCHECKED, not OK", _r["verdict"], "UNCHECKED")
+check("verify gate fails an UNCHECKED row", verify.gate_code([_r]), 1)
+
+# C2 — a DOI that resolves to a different paper by the same first author.
+_rec = {"title": "Sparse coding in visual cortex", "year": "2020", "first_author": "Smith J", "journal": "J"}
+with _patched(verify, lookup_crossref=lambda d: _rec):
+    _bad = verify.verify_one({"label": "T", "doi": "10.1/t", "expect_first_author": "Smith",
+                              "expect_year": "2020", "title": "Attention modulates auditory thalamus"})
+    _good = verify.verify_one({"label": "T", "doi": "10.1/t", "expect_first_author": "Smith",
+                               "expect_year": "2020", "title": "Sparse Coding in Visual Cortex."})
+check("verify: a different title under the same author/year is a MISMATCH", _bad["verdict"], "MISMATCH")
+check_true("verify: the title mismatch is named", any("title" in i for i in _bad["issues"]), str(_bad))
+check("verify: case and punctuation differences still pass", _good["verdict"], "OK")
+
+# C3 — with both ids, the journal DOI canon will cite must be checked too.
+_arx = {"2301.00009": {"title": "Emergent behavior in agents", "year": "2023",
+                       "first_author": "Ada Lovelace", "journal": "arXiv"}}
+_both = {"label": "B", "doi": "10.1038/s1", "arxiv": "2301.00009", "expect_first_author": "Lovelace",
+         "expect_year": "2023", "title": "Emergent behavior in agents"}
+with _patched(verify, lookup_crossref=lambda d: {"title": "Unrelated chemistry paper", "year": "2023",
+                                                  "first_author": "Curie M", "journal": "Nature"}):
+    _r = verify.verify_one(_both, _arx, set())
+check("verify: a wrong journal DOI beside a right arXiv id is a MISMATCH", _r["verdict"], "MISMATCH")
+with _patched(verify, lookup_crossref=lambda d: {"title": "Emergent behavior in agents", "year": "2024",
+                                                  "first_author": "Lovelace A", "journal": "Nature"}):
+    _r = verify.verify_one(_both, _arx, set())
+check("verify: arXiv id and journal DOI of one paper pass", (_r["verdict"], _r["source"]), ("OK", "arxiv+doi"))
+
+
+def _cr_throttled(d):
+    raise urllib.error.HTTPError("u", 503, "busy", {}, None)
+
+
+with _patched(verify, lookup_crossref=_cr_throttled):
+    _r = verify.verify_one(_both, _arx, set())
+check("verify: an unreachable journal DOI is ERROR, not OK", _r["verdict"], "ERROR")
+
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

@@ -151,7 +151,17 @@ template in `tools/search_prompt_template.md` and fill in:
 The agent should return a numbered list with: APA citation, **DOI link in
 `https://doi.org/<doi>` form** (not PubMed/PMC URLs), PMCID if available,
 3-5 sentence summary, tag (`classic`/`recent-review`/`recent-empirical`/
-`recent-method`/`recent-LLM`/`recent-theory`/`recent-clinical`), and year.
+`recent-method`/`recent-LLM`/`recent-theory`/`recent-clinical`), and year. Keep its
+first author, year and title on each row as `search_author` / `search_year` /
+`search_title`: they are what Phase 3 verifies against.
+
+**With several lanes, no paper may fall between them.** Tell every agent: never drop
+an on-topic paper because another lane might own it — include it and name the lane
+it fits better (`lane_fit`), since the merge dedups on DOI and arXiv id. Anything it
+leaves out on purpose goes in a separate **Deferred** list, which the merge checks
+against the merged table. Do not cap DOI-less items per lane. Three recent builds
+lost 14, 6 and 4 papers at their seams, and each loss cost a recovery lane after the
+fact.
 
 **Do not act on the agent's output yet.** It will contain errors. Proceed
 to Phase 2b, then Phase 3.
@@ -180,8 +190,11 @@ Spawn a separate search agent **per axis** for the topic's intellectual roots:
 
 Reuse `tools/search_prompt_template.md`, but **flip the tier emphasis**: the
 target here is foundational / highly-cited / classic work that PRE-DATES the
-modern literature, not recent papers. Give each agent the already-have list
-(now including the Phase-2 results) so it does not re-find them, and have it tag
+modern literature, not recent papers. **Launch the antecedent lanes in the same
+fan-out as the Phase-2 lanes**, not after them: the merge dedups on DOI and arXiv
+id, so overlap costs nothing, and waiting costs a full search round. Give each agent
+the already-have list (the seed list; add Phase-2 results only if they already
+exist) so it does not re-find them, and have it tag
 each paper with the best-fit **existing** theme/family. Antecedents fold into the
 existing lanes by default — do NOT spin up new lanes for them unless the user
 asks. Feed every returned paper through Phase 3 → 3f → 5b like any other.
@@ -212,8 +225,9 @@ In a previous run, the search agent fabricated 5 author lists, reversed
 one paper's conclusion, and invented a bioRxiv DOI that didn't exist.
 About 1 in 4 citations had errors. **Always verify before adding.**
 
-`verify.py` returns one verdict per citation: **OK**, **MISMATCH** (author/year),
-**NOT-FOUND**, or **ERROR**. NOT-FOUND and ERROR are NOT the same and must be
+`verify.py` returns one verdict per citation: **OK**, **MISMATCH** (first author,
+year, or title), **NOT-FOUND**, **ERROR**, or **UNCHECKED** (the row carried no
+claim to check, so a resolving DOI proved nothing — give it one). NOT-FOUND and ERROR are NOT the same and must be
 handled differently: NOT-FOUND means every lookup completed and none matched
 (chase it down — likely fabricated); ERROR means a lookup could not complete
 (rate-limit / network), so **re-run those** rather than treating them as missing.
@@ -231,9 +245,30 @@ contract as the audit gate and `cite_check.py` — so a chained Phase-3 run stop
 on a table that still needs attention.
 
 Feed it the live table directly — `python3 tools/verify.py --rows rows.json --out
-verify_report.json` derives the label, DOI and the expected first author / year /
-title from each row's `apa`; do not write a per-project converter script (fourteen
-projects did, each with its own first-author regex).
+verify_report.json`. **Keep each search agent's claim on its row** as
+`search_author` / `search_year` / `search_title` (the row template does). Before
+canon, `apa` is empty, so those fields ARE the expectations; after canon (a row
+stamped `canonical_at`) the canonical `apa` is. Do not write a per-project
+converter script: fourteen projects did, each with its own first-author regex, and
+five more wrote `make_verify_input.py` because the `apa`-only path verified nothing.
+
+What a verdict checks: the first-author surname (fuzzy containment), the year
+(±1, since a preprint and its version of record differ), and the **title**
+(similarity ≥ 0.5, which on 2,473 past OK verdicts flagged exactly one: a preprint
+retitled on publication). A row with **both** an arXiv id and a journal DOI has
+both checked, because canon cites the journal DOI: a wrong DOI beside a right
+arXiv id is a MISMATCH.
+
+**Retries are built in.** An ERROR row gets a second try at the end of the run
+after a 60 s cool-down (`--retry-wait`), with smaller arXiv batches. Anything still
+ERROR is re-checked later with `--retry-from verify_report.json --out
+verify_report.json`, which re-verifies only the non-OK rows and splices the new
+verdicts into the report; `--only A-01,B-02` names rows explicitly. Never build a
+rerun input file by hand.
+
+**Start verifying before the last lane lands.** Lanes finish minutes apart; run
+verify on each lane's rows as they arrive (`--only`), and dispatch the DOI-less
+hand check (Phase 3e) as soon as those rows exist, instead of after the merge.
 
 For each paper the agent returned:
 
@@ -305,6 +340,18 @@ science1`)**). The ONLY allowed non-fatal
 case is a DOI-less item (book, report, old proceedings) — it keeps its
 hand-written `apa` and is reported as a
 manual ref; verify those by hand. **Run the gate before every deliverable.**
+
+**arXiv is read in batches.** Canon prefetches every arXiv-routed id 50 per request,
+3 s apart (`common.arxiv_batch`, shared with verify). Until 2026-09-25 it sent one
+request per row, and a 475-ref arXiv-heavy build spent most of 53 minutes asleep in
+429 backoff; the
+same fetch is now about 30 s. A row whose fetch fails gets one more try at the end
+of the run (`--retry-wait`, default 60 s); a row that still fails is **named, not
+stamped, and the run exits 1**, because its `apa` is not canonical. A row whose
+source answers with no usable record (an author-less editorial, an id missing from
+the feed) keeps its existing `apa` and is named as a warning — confirm it by hand.
+**Targeted re-canon is a flag:** `--only A-01,B-02` rebuilds those rows and leaves
+every other row byte-for-byte as it was, so a splice script is never needed.
 
 Four things the gate reports as **warnings**, because none can be decided
 automatically: a near-duplicate row pair; a **multi-word surname** that may be
@@ -444,6 +491,11 @@ python3 tools/citations.py --rows rows.json --out citation_counts.json \
         --email you@inst.edu --asof <YYYY-MM-DD>
 ```
 
+Citations and xref (Phase 6) read only DOIs, so start both in the background as soon
+as verify's DOI corrections are applied, while canon runs; none of the three waits on
+another. S2 is queried 500 ids per request; a 400 stops S2 for the run (it never
+recovered on retry in any logged build) and OpenAlex counts stand.
+
 Then attach the counts to each row (`cite_openalex` / `cite_s2` keys) in your
 `build_data.py`/rows pipeline and rebuild — `spreadsheet.py` auto-adds the two
 `Cite` columns when it sees them. Counts are a snapshot at run time; re-run to
@@ -468,7 +520,10 @@ PDF text via `pdftotext -layout <pdf> - | grep -oE '10\.\d+/...'`. This is
 crude but recovers some.
 
 **6b. Build the frequency table.** For each cited DOI, count how many of
-your N papers cite it. `tools/xref.py` does this.
+your N papers cite it. `tools/xref.py` does this. It skips arXiv DOIs without a
+request (CrossRef has none, so each was a certain 404: 69% of one arXiv-heavy
+build's xref requests) and retries an incomplete fetch once at the end of the run before it
+reports the table as undercounted.
 
 **6c. Resolve unknowns.** Many cited refs have only a DOI in the CrossRef
 response, no title/author. Look these up via CrossRef metadata
@@ -496,7 +551,12 @@ it — do not wait to be asked.** It needs the papers grouped into a few **theor
 families** — a conceptual axis *orthogonal to the Topic column* (Topic captures
 method/sub-area; families capture what each paper is fundamentally *for*). Adds a
 `Family` column, a `families.md` (grouped tables + a family×topic cross-tab), and the
-timeline. Run it as soon as the bibliography is assembled, verified, and counted.
+timeline. **Pitch the families as soon as the rows are verified (after Phase 3),
+not after xref.** The proposal needs only titles and summaries, and the user's reply
+is the one human wait in the run: let canon, citations and xref run in the
+background while they decide. Rows that xref adds later join the same assignment
+batch (`families.py` fails loud on any unassigned row). On a 475-ref build the pitch
+came last, and 56 minutes passed between the pitch and the finished figure.
 
 The user's one decision is at step 2, and it covers the timeline too: **use the
 proposed families, change them, or skip the timeline.** Everything after that runs
@@ -1448,14 +1508,14 @@ it is stale); the per-tool detail is in `tools/README.md` and `docs/tools.md`.
 <!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
 | Script | Phase | Purpose | Flags |
 |---|---|---|---|
-| `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / arXiv. | `--citations` `--email` `--key` `--out` `--rows` `--sleep` |
-| `references.py` | 3f | Canonical reference builder — make EVERY reference perfect, in both modes. | `--asof` `--audit` `--email` `--key` `--out` `--repair` `--rows` `--sleep` |
+| `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / arXiv. | `--citations` `--email` `--key` `--only` `--out` `--retry-from` `--retry-wait` `--rows` `--sleep` |
+| `references.py` | 3f | Canonical reference builder — make EVERY reference perfect, in both modes. | `--asof` `--audit` `--email` `--key` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
 | `sentence_case.py` | 3f | Post-canon pass — propose strict APA-7 sentence case for reference titles. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
 | `download.py` | 4 (opt-in) | Multi-source PDF downloader (Phase 4 — OPT-IN, not run by default). | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
 | `reconcile_downloads.py` | 4 (opt-in) | Reconcile manually-downloaded PDFs against a slug+title+doi manifest. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
 | `spreadsheet.py` | 5 | Build/rebuild the bibliography xlsx from a JSON of accumulated rows. | `--out` `--rows` `--sheet-name` |
 | `citations.py` | 5b | Fetch citation counts for a bibliography from OpenAlex + Semantic Scholar. | `--asof` `--email` `--key` `--out` `--rows` `--sources` |
-| `xref.py` | 6 | Build a cross-citation index from a list of papers. | `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--rows` `--sleep` |
+| `xref.py` | 6 | Build a cross-citation index from a list of papers. | `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
 | `families.py` | 6b | Phase 6b — validate an LLM-proposed family taxonomy against the bibliography, stamp `family` onto rows.json, and emit families.json (the reproducible cache) + families.md (grouped tables + a family x topic cross-tab). | `--asof` `--assign` `--digest` `--md` `--out` `--rows` |
 | `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |
 | `bib_viewer.py` | 7 | Render the searchable bibliography viewer every review page embeds. | `--author` `--author-note` `--families` `--out` `--rows` `--subtitle` `--title` |
@@ -1519,7 +1579,10 @@ they're scaffolding to keep the LLM judgment work fast.
     (see "Documentation site — keep it in sync" above).
 ```
 
-For a topic with ~40 search-added + ~30 xref-added papers, the default
-no-PDF workflow takes Claude roughly 1-2M tokens and 5-10 minutes
-wall-clock — Phase 6 (xref) is the slowest step (~3-5 minutes for CrossRef
-calls). With Phase 4 turned on, add 10-20 more minutes for downloads.
+Plan on hours, not minutes. A 475-ref, 11-lane build took about
+4 hours on 2026-09-24: ~20 min of web search, ~85 min in the network tools (53 of
+them in canon's arXiv backoff), and the rest in reruns, hand steps and the families
+decision. The 2026-09-25 fixes (batched arXiv canon, in-run retries, no arXiv DOIs
+sent to CrossRef, pauses only after real requests) should cut the tool time to
+roughly 15-20 min; that has not yet been measured on a full build. With Phase 4
+turned on, add 10-20 more minutes for downloads.

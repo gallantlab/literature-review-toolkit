@@ -29,7 +29,6 @@ import json
 import os
 import sys
 import time
-import urllib.error
 import urllib.parse
 
 import common
@@ -90,33 +89,36 @@ def fetch_openalex(items, email):
     return out
 
 
-def fetch_s2(items, retries=4):
-    """items: list of (key, doi). Returns {key: (count, influential)}. Best-effort."""
+S2_BATCH = 500   # the /paper/batch endpoint's documented cap on ids per request
+
+
+def fetch_s2(items):
+    """items: list of (key, doi). Returns {key: (count, influential)}. Best-effort.
+
+    One POST per <=500 ids. There is one retry layer, common.http's (which
+    honors Retry-After on a 429). A non-transient error such as a 400 stops S2
+    at once: in every logged run a 400 failed all four of the old outer retries
+    and only added 150 s of sleep."""
     out = {}
-    pairs = [(key, s2_id(doi)) for key, doi in items]
-    ids = [sid for _, sid in pairs]
     headers = {"Content-Type": "application/json"}
     if os.environ.get("S2_API_KEY"):
         headers["x-api-key"] = os.environ["S2_API_KEY"]
     url = ("https://api.semanticscholar.org/graph/v1/paper/batch"
            "?fields=citationCount,influentialCitationCount")
-    body = json.dumps({"ids": ids}).encode()
-    for att in range(retries):
+    pairs = [(key, s2_id(doi)) for key, doi in items]
+    for i in range(0, len(pairs), S2_BATCH):
+        chunk = pairs[i:i + S2_BATCH]
+        body = json.dumps({"ids": [sid for _, sid in chunk]}).encode()
         try:
             res = http_json(url, data=body, headers=headers)
-            for (key, _), e in zip(pairs, res):
-                if e and e.get("citationCount") is not None:
-                    out[key] = (e.get("citationCount"), e.get("influentialCitationCount"))
-            return out
-        except urllib.error.HTTPError as e:
-            wait = 15 * (att + 1)
-            print(f"  S2 batch HTTP {e.code} (attempt {att+1}); retry in {wait}s", file=sys.stderr)
-            time.sleep(wait)
         except Exception as e:
-            print(f"  S2 batch error: {e}", file=sys.stderr)
-            time.sleep(10)
-    print("  S2 unavailable (rate-limited); OpenAlex counts stand. Set S2_API_KEY to fix.",
-          file=sys.stderr)
+            code = getattr(e, "code", None)
+            print(f"  S2 batch {i}: {f'HTTP {code}' if code else type(e).__name__}; "
+                  "OpenAlex counts stand. Set S2_API_KEY to make S2 reliable.", file=sys.stderr)
+            break
+        for (key, _), e in zip(chunk, res):
+            if e and e.get("citationCount") is not None:
+                out[key] = (e.get("citationCount"), e.get("influentialCitationCount"))
     return out
 
 

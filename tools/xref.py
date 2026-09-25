@@ -17,6 +17,10 @@ Input format (JSON list):
 
 Run:  python3 xref.py --papers list.json --out xref.json --min-cites 3
 Or:   python3 xref.py --rows rows.json --out xref.json     # slug = row key, DOI from link
+
+arXiv DOIs (10.48550/...) are registered at DataCite, not CrossRef, so they have
+no CrossRef reference list and are skipped without a request. A fetch that fails
+transiently gets a second try at the end of the run, after --retry-wait.
 """
 import argparse
 import os
@@ -102,6 +106,48 @@ def pdf_refs(pdf_path):
     return out
 
 
+def fetch_all(papers, sleep=0.4, retry_wait=60.0):
+    """Reference lists for every paper -> ({slug: refs}, [slugs still incomplete]).
+
+    Pauses only after a paper that made a request, and gives each incomplete
+    fetch one more try after `retry_wait` before reporting it."""
+    all_refs, incomplete = {}, []
+
+    def one(p):
+        doi = p.get("doi")
+        if doi and common.ARXIV_DOI.match(doi):
+            return [], "arxiv-doi"          # DataCite DOI: CrossRef has no record, a certain 404
+        if doi:
+            return crossref_refs(doi), "crossref"
+        return pdf_refs(p.get("pdf")), "pdf"
+
+    for p in papers:
+        before = common.request_count()
+        refs, src = one(p)
+        if refs is None:          # fetch did not complete — not the same as "cites nothing"
+            incomplete.append(p)
+            refs = []
+        print(f"  {p['slug']:50s} {len(refs):>4d} refs ({src})", file=sys.stderr)
+        all_refs[p["slug"]] = refs
+        if common.request_count() != before:
+            time.sleep(sleep)
+    if incomplete:
+        print(f"  [retry] {len(incomplete)} incomplete fetch(es); cooling down {retry_wait:.0f}s, "
+              "then one more try…", file=sys.stderr)
+        time.sleep(retry_wait)
+        still = []
+        for p in incomplete:
+            refs, src = one(p)
+            if refs is None:
+                still.append(p)
+                refs = []
+            print(f"  {p['slug']:50s} {len(refs):>4d} refs ({src}, retry)", file=sys.stderr)
+            all_refs[p["slug"]] = refs
+            time.sleep(sleep)
+        incomplete = still
+    return all_refs, [p["slug"] for p in incomplete]
+
+
 def resolve_doi(doi):
     """Get title/first_author/year/journal for a DOI via CrossRef (best-effort:
     None on any failure — this only decorates the ranked list)."""
@@ -126,7 +172,10 @@ def main():
     ap.add_argument("--min-cites", type=int, default=3)
     ap.add_argument("--resolve-unknown", action="store_true",
                     help="Look up titles for top-cited DOIs via CrossRef")
-    ap.add_argument("--sleep", type=float, default=0.4)
+    ap.add_argument("--sleep", type=float, default=0.4,
+                    help="pause after each paper that made a request (default 0.4 s)")
+    ap.add_argument("--retry-wait", type=float, default=60.0,
+                    help="cool-down before incomplete fetches get their second try (default 60 s)")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"),
                     help="Contact email for CrossRef User-Agent (required; "
                          "or set LITREVIEW_EMAIL env var)")
@@ -147,22 +196,7 @@ def main():
     excludes = set(d.lower() for d in (common.load_json(args.exclude) if args.exclude else []))
 
     print(f"Fetching reference lists for {len(papers)} papers...", file=sys.stderr)
-    all_refs = {}
-    incomplete = []
-    for p in papers:
-        slug = p["slug"]
-        if p.get("doi"):
-            refs = crossref_refs(p["doi"])
-            if refs is None:      # fetch did not complete — not the same as "cites nothing"
-                incomplete.append(slug)
-                refs = []
-            src = "crossref"
-        else:
-            refs = pdf_refs(p.get("pdf"))
-            src = "pdf"
-        print(f"  {slug:50s} {len(refs):>4d} refs ({src})", file=sys.stderr)
-        all_refs[slug] = refs
-        time.sleep(args.sleep)
+    all_refs, incomplete = fetch_all(papers, sleep=args.sleep, retry_wait=args.retry_wait)
 
     # Build frequency table
     counts = defaultdict(list)   # doi -> list of citing slugs
@@ -232,7 +266,7 @@ def main():
     print(f"Wrote {args.out}", file=sys.stderr)
     if incomplete:
         print(f"\nWARNING: {len(incomplete)} reference-list fetch(es) could not complete "
-              f"(throttle/network): {', '.join(incomplete)}\n"
+              f"(throttle/network) even after a retry: {', '.join(incomplete)}\n"
               "Their papers contributed ZERO references above — the frequency table and "
               "any --internal-out in-degrees are undercounted. Re-run.", file=sys.stderr)
         sys.exit(1)

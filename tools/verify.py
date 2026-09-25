@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Verify a list of citations against PMC / PubMed / CrossRef / arXiv.
 
-Reports one verdict per citation: OK, MISMATCH (author/year), NOT-FOUND, or
-ERROR. NOT-FOUND and ERROR are kept strictly separate: NOT-FOUND means every
+Reports one verdict per citation: OK, MISMATCH (author/year/title), NOT-FOUND,
+ERROR, or UNCHECKED (the row carried no claim to check, so a resolving DOI proves
+nothing). NOT-FOUND and ERROR are kept strictly separate: NOT-FOUND means every
 lookup completed and none matched (chase it down — likely fabricated); ERROR
 means a lookup could not complete (rate-limit / network) and must be re-run.
 Collapsing the two — as an earlier version did by swallowing exceptions into
@@ -41,11 +42,22 @@ Or:   python3 verify.py --rows rows.json --out report.json    # straight from th
 
 With --rows the citation list is derived from rows.json (rows_to_citations):
 label = the row key, doi from `doi`/`link`, and the expected first author, year
-and title from the canonical `apa` — so a project needs no converter script.
+and title from the SEARCH AGENT's claim (`search_author` / `search_year` /
+`search_title`) until the row is canonical, and from its `apa` after — so a
+project needs no converter script, and a pre-canon table is not verified
+against its own empty `apa`.
+
+A lookup that fails transiently is retried once more at the end of the run,
+after a cool-down (--retry-wait). To re-check a few rows later:
+      python3 verify.py --rows rows.json --retry-from report.json --out report.json
+re-verifies only the rows that were not OK and splices them back into the report
+(--only A-01,B-02 names rows explicitly).
 """
 import argparse
+import difflib
 import json
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -127,43 +139,144 @@ def _found_record(entry):
 
 
 def lookup_arxiv_batch(aids, chunk=50, sleep=3.0):
-    """Resolve many arXiv ids in a handful of requests via the API's `id_list`
-    (comma-separated). arXiv asks for a ~3s courtesy interval and rate-limits
-    hard, so one-request-per-paper gets the IP temporarily banned on a big run —
-    the whole reason a batch of real papers can come back as false NOT-FOUNDs.
+    """Resolve many arXiv ids in a handful of requests (common.arxiv_batch).
+    arXiv asks for a ~3s courtesy interval and rate-limits hard, so
+    one-request-per-paper gets the IP temporarily banned on a big run — the
+    whole reason a batch of real papers can come back as false NOT-FOUNDs.
 
     Returns (results, errored): `results[norm_id]` is the found-record or None
     (a genuine miss), and `errored` is the set of ids whose chunk failed
     (reported as ERROR, not NOT-FOUND, so they get re-run)."""
-    results, errored = {}, set()
-    uniq = list(dict.fromkeys(_norm_arxiv(a) for a in aids if a))
-    for i in range(0, len(uniq), chunk):
-        batch = uniq[i:i + chunk]
-        try:
-            got = common.arxiv_fetch(batch)
-        except Exception:
-            errored.update(batch)          # could not complete: don't mistake for missing
-            continue
-        for a in batch:
-            results[a] = _found_record(got[a]) if a in got else None   # None = a genuine miss
-        if i + chunk < len(uniq):
-            time.sleep(sleep)
+    entries, errored = common.arxiv_batch(aids, chunk=chunk, sleep=sleep)
+    uniq = dict.fromkeys(_norm_arxiv(a) for a in aids if a)
+    results = {a: (_found_record(entries[a]) if a in entries else None)
+               for a in uniq if a not in errored}
     return results, errored
 
 
+def claim_surname(name):
+    """Surname out of whatever shape a search agent reported a first author in:
+    'Gilbert, C. D.' / 'C. D. Gilbert' / 'Gilbert' -> 'Gilbert'. A comma means
+    family-first (APA); otherwise the last token that is not an initial."""
+    name = re.sub(r"\s*(?:,?\s*et al\.?|&.*)$", "", (name or "").strip())
+    if not name:
+        return ""
+    if "," in name:
+        return name.split(",")[0].strip()
+    parts = [p for p in name.split() if not (len(p.rstrip(".")) == 1 and p.endswith("."))]
+    return parts[-1] if parts else name
+
+
 def rows_to_citations(rows, keyf=None):
-    """rows.json -> the citation list this tool verifies. One place derives the
-    expectations from the canonical `apa` (via common.parse_apa), instead of a
-    per-project regex in every emitter."""
+    """rows.json -> the citation list this tool verifies.
+
+    The expectations must be an INDEPENDENT claim. Before canon a row's `apa` is
+    empty (references.py fills it from the very DOI being checked), so a pre-canon
+    row is checked against what the search agent reported (`search_author` /
+    `search_year` / `search_title`). A row stamped `canonical_at` is checked
+    against its canonical `apa`, whose hand fixes supersede the agent's claim.
+    Rows with neither yield no expectations and verify as UNCHECKED."""
     keyf = keyf or common.key_field(rows)
     out = []
     for r in rows:
-        p = common.parse_apa(r.get("apa", ""))
-        out.append({"label": r.get(keyf, "?"), "doi": common.doi_of(r),
-                    "arxiv": r.get("arxiv"), "title": p["title"] if p else "",
-                    "expect_first_author": common.lead_surname(r.get("apa", "")),
-                    "expect_year": str(p["year"]) if p else ""})
+        apa = r.get("apa", "") or ""
+        claim = any(r.get(k) for k in ("search_author", "search_year", "search_title"))
+        if claim and not r.get("canonical_at"):
+            title = r.get("search_title") or ""
+            author = claim_surname(r.get("search_author"))
+            year = str(r.get("search_year") or "")
+        else:
+            p = common.parse_apa(apa)
+            title = p["title"] if p else ""
+            author = common.lead_surname(apa) if apa else ""
+            year = str(p["year"]) if p else ""
+        c = {"label": r.get(keyf, "?"), "doi": common.doi_of(r), "arxiv": r.get("arxiv"),
+             "title": title, "expect_first_author": author, "expect_year": year}
+        for k in ("pmid", "pmcid"):
+            if r.get(k):
+                c[k] = str(r[k])
+        out.append(c)
     return out
+
+
+def select_citations(cits, only=None, retry_from=None):
+    """The citations to (re-)verify: those labeled in `only`, and/or those whose
+    verdict in a previous report (`retry_from`) was anything but OK."""
+    keep = set(only or ())
+    if retry_from is not None:
+        keep |= {r.get("label") for r in retry_from if r.get("verdict") != "OK"}
+    if only is None and retry_from is None:
+        return list(cits)
+    return [c for c in cits if c.get("label") in keep]
+
+
+def merge_reports(old, new):
+    """Splice re-verified results into an earlier report: same order, each label
+    replaced by its newer verdict, unseen labels appended."""
+    by = {r.get("label"): r for r in new}
+    out = [by.pop(r.get("label"), r) for r in old]
+    return out + list(by.values())
+
+
+def _norm_title(t):
+    t = common.MARKUP.sub(" ", t or "").lower()
+    return " ".join(re.sub(r"[^a-z0-9 ]", " ", t).split())
+
+
+_STOP = frozenset("a an the of in on and for to with by from at as is are be its via into".split())
+
+
+def title_score(a, b):
+    """Similarity of two titles in [0, 1], or None if either is missing: the
+    better of character similarity and the share of the shorter title's content
+    words found in the longer (so a dropped subtitle still scores high). Measured
+    on 2,473 OK verdicts from five corpora, one scored under 0.7 — a preprint
+    retitled on publication; garbage title-search hits score 0.14–0.31."""
+    a, b = _norm_title(a), _norm_title(b)
+    if not a or not b:
+        return None
+    ta = [w for w in a.split() if w not in _STOP]
+    tb = [w for w in b.split() if w not in _STOP]
+    short, long_ = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
+    contained = sum(w in set(long_) for w in short) / len(short) if short else 0.0
+    return max(difflib.SequenceMatcher(None, a, b).ratio(), contained)
+
+
+TITLE_MIN = 0.5
+
+
+def _author_issue(c, rec, where=""):
+    expect_au = str(c.get("expect_first_author") or "").lower().strip()
+    actual_au = (rec.get("first_author") or "").lower().strip()
+    # Fuzzy surname containment (handles "Tang" vs "Tang J"). It can over-accept
+    # a short surname that is a substring of another ("Lee" in "Leeson") — a
+    # deliberate trade to avoid false MISMATCH spam; verdicts are human-reviewed.
+    if (expect_au and actual_au and expect_au.split()[0] not in actual_au
+            and actual_au.split()[0] not in expect_au):
+        return [f"{where}first-author mismatch: expected '{c.get('expect_first_author')}', "
+                f"got '{rec['first_author']}'"]
+    return []
+
+
+def _title_issue(c, rec, where=""):
+    s = title_score(c.get("title"), rec.get("title"))
+    if s is not None and s < TITLE_MIN:
+        return [f"{where}title mismatch ({s:.2f}): expected '{c['title'][:80]}', "
+                f"got '{rec['title'][:80]}'"]
+    return []
+
+
+def _year_issue(c, recs):
+    """Year within ±1 of ANY of the records (a preprint and its version of record
+    legitimately differ, and the agent may have reported either)."""
+    expect_year = str(c.get("expect_year") or "").strip()
+    years = [(r.get("year") or "").strip() for r in recs]
+    # Guard the int() — a human-typed "in press"/"2023a" must not crash the run;
+    # compare numerically only when both years are clean 4-digit values.
+    clean = [int(y) for y in years if y.isdigit()]
+    if expect_year.isdigit() and clean and all(abs(int(expect_year) - y) > 1 for y in clean):
+        return [f"year mismatch: expected {expect_year}, got {'/'.join(years)}"]
+    return []
 
 
 def verify_one(c, arxiv_results=None, arxiv_errored=None):
@@ -187,18 +300,41 @@ def verify_one(c, arxiv_results=None, arxiv_errored=None):
     if aid:
         na = _norm_arxiv(aid)
         if na in arxiv_errored:
-            errored = True
+            # arXiv is the only authority for this id. CrossRef has no 10.48550
+            # DOIs and a PubMed title search mis-resolves arXiv papers, so asking
+            # them is pure cost; the retry pass re-asks arXiv instead.
+            return {"verdict": "ERROR", "found": None, "source": None,
+                    "issues": ["arXiv lookup failed (rate-limit/network) — re-run to verify"]}
         elif na in arxiv_results:
             if arxiv_results[na]:
                 found, src = arxiv_results[na], "arxiv"
         else:                # standalone/uncached call: resolve just this id
             res, err = lookup_arxiv_batch([aid])
             if na in err:
-                errored = True
+                return {"verdict": "ERROR", "found": None, "source": None,
+                        "issues": ["arXiv lookup failed (rate-limit/network) — re-run to verify"]}
             elif res.get(na):
                 found, src = res[na], "arxiv"
+    doi = c.get("doi") or ""
+    is_arxiv_doi = bool(common.ARXIV_DOI.match(doi))
+    journal = None           # the journal record, when a row carries both ids
+    if found and doi and not is_arxiv_doi:
+        # references.py cites the JOURNAL DOI over the preprint, so an arXiv hit
+        # alone does not verify what will be printed: check the DOI as well.
+        try:
+            journal = lookup_crossref(doi)
+        except Exception as e:
+            if _is_transient(e):
+                return {"verdict": "ERROR", "found": found, "source": "arxiv",
+                        "issues": ["journal DOI lookup failed (rate-limit/network) — re-run to verify"]}
+            raise
+        if journal is None:
+            return {"verdict": "MISMATCH", "found": found, "source": "arxiv",
+                    "issues": [f"journal DOI {doi} not found in CrossRef (the arXiv id resolves)"]}
     if not found:
         for fn, key in [(lookup_pmc, "pmcid"), (lookup_pubmed_id, "pmid"), (lookup_crossref, "doi")]:
+            if key == "doi" and is_arxiv_doi:
+                continue     # CrossRef has no 10.48550 DOIs: a guaranteed 404
             if c.get(key):
                 try:
                     r = fn(c[key])
@@ -226,23 +362,23 @@ def verify_one(c, arxiv_results=None, arxiv_errored=None):
                     "issues": ["lookup failed (rate-limit/network) — re-run to verify"]}
         return {"verdict": "NOT-FOUND", "found": None, "source": None}
 
-    issues = []
-    # str() so a JSON integer year or non-string author can't crash the whole run.
-    expect_au = str(c.get("expect_first_author") or "").lower().strip()
-    actual_au = (found.get("first_author") or "").lower().strip()
-    # Fuzzy surname containment (handles "Tang" vs "Tang J"). It can over-accept
-    # a short surname that is a substring of another ("Lee" in "Leeson") — a
-    # deliberate trade to avoid false MISMATCH spam; verdicts are human-reviewed.
-    if (expect_au and actual_au and expect_au.split()[0] not in actual_au
-            and actual_au.split()[0] not in expect_au):
-        issues.append(f"first-author mismatch: expected '{c.get('expect_first_author')}', "
-                      f"got '{found['first_author']}'")
-    expect_year = str(c.get("expect_year") or "").strip()
-    actual_year = (found.get("year") or "").strip()
-    # Guard the int() — a human-typed "in press"/"2023a" must not crash the run;
-    # compare numerically only when both years are clean 4-digit values.
-    if expect_year.isdigit() and actual_year.isdigit() and abs(int(expect_year) - int(actual_year)) > 1:
-        issues.append(f"year mismatch: expected {expect_year}, got {found['year']}")
+    if not any(str(c.get(k) or "").strip() for k in ("expect_first_author", "expect_year", "title")):
+        # Nothing to compare: the DOI resolves, which proves only that it exists.
+        # Reporting that as OK is how a pre-canon table once passed with every
+        # expectation blank (see rows_to_citations).
+        return {"verdict": "UNCHECKED", "found": found, "source": src,
+                "issues": ["no expected author/year/title to check the record against"]}
+
+    if journal is not None:
+        # Both ids: the journal record is what canon prints, so it gets the full
+        # check; the preprint gets the author check (preprints are often retitled
+        # on publication, so its title is not held against the claim).
+        issues = (_author_issue(c, journal, "journal DOI: ") + _title_issue(c, journal, "journal DOI: ")
+                  + _author_issue(c, found, "arXiv: ") + _year_issue(c, [journal, found]))
+        return {"verdict": "OK" if not issues else "MISMATCH", "issues": issues,
+                "found": journal, "source": "arxiv+doi"}
+
+    issues = _author_issue(c, found) + _year_issue(c, [found]) + _title_issue(c, found)
 
     if issues and errored and src == "title-search":
         # The authoritative lookup (DOI/PMID) could not complete and the fallback
@@ -270,14 +406,70 @@ def gate_code(results):
     return 0 if all(r.get("verdict") == "OK" for r in results) else 1
 
 
+def _print_result(c, r):
+    v = r["verdict"]
+    au = r["found"]["first_author"] if r["found"] else "?"
+    yr = r["found"]["year"] if r["found"] else "?"
+    ti = (r["found"]["title"] if r["found"] else "")[:60]
+    print(f"  [{v:9s}] {c.get('label','?')}  →  {au} ({yr})  {ti}", file=sys.stderr)
+    for i in r.get("issues") or []:
+        print(f"             ↳ {i}", file=sys.stderr)
+
+
+def _verify_pass(cits, sleep, chunk=50):
+    # Prefetch every arXiv id in a few batched requests. arXiv rate-limits a
+    # per-paper loop into a temporary ban (its retries exhaust and the paper
+    # falls through to a false NOT-FOUND), so batching is both faster and the fix
+    # for that failure mode; ids whose chunk failed come back as ERROR, not miss.
+    aids = [a for a in (arxiv_id_of(c) for c in cits) if a]
+    arxiv_results, arxiv_errored = ({}, set())
+    if aids:
+        print(f"  [arxiv] batch-resolving {len(set(_norm_arxiv(a) for a in aids))} ids…", file=sys.stderr)
+        arxiv_results, arxiv_errored = lookup_arxiv_batch(aids, chunk=chunk)
+    out = []
+    for c in cits:
+        before = common.request_count()
+        try:
+            r = verify_one(c, arxiv_results, arxiv_errored)
+        except Exception as e:
+            # One malformed row must not abort a long batch — record and move on.
+            r = {"verdict": "ERROR", "found": None, "source": None,
+                 "issues": [f"{type(e).__name__}: {e}"]}
+        r["label"] = c.get("label", "?")
+        out.append(r)
+        _print_result(c, r)
+        if common.request_count() != before:
+            time.sleep(sleep)      # courtesy pause only after a row that hit the network
+    return out
+
+
+def verify_all(cits, sleep=0.4, retry_wait=60.0):
+    """Verify every citation, then give each ERROR one more try after a
+    cool-down (smaller arXiv chunks). Returns results in input order."""
+    out = _verify_pass(cits, sleep)
+    again = [c for c, r in zip(cits, out) if r["verdict"] == "ERROR"]
+    if again:
+        print(f"\n  [retry] {len(again)} ERROR row(s); cooling down {retry_wait:.0f}s, then one more try…",
+              file=sys.stderr)
+        time.sleep(retry_wait)
+        out = merge_reports(out, _verify_pass(again, sleep, chunk=25))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--citations", help="JSON citation list (else --rows, else stdin)")
-    ap.add_argument("--rows", help="verify a rows.json directly (label = row key; "
-                    "expectations derived from the canonical apa)")
+    ap.add_argument("--rows", help="verify a rows.json directly (label = row key; expectations "
+                    "from the search agent's claim before canon, the canonical apa after)")
     ap.add_argument("--key", default=None, help="row key field for --rows (default: ref, else label)")
     ap.add_argument("--out", help="JSON output file (else stdout)")
-    ap.add_argument("--sleep", type=float, default=0.4)
+    ap.add_argument("--only", help="comma-separated labels: verify just these rows")
+    ap.add_argument("--retry-from", help="an earlier report: re-verify only its non-OK rows and "
+                    "splice the new verdicts into it (write with --out)")
+    ap.add_argument("--sleep", type=float, default=0.4,
+                    help="pause after each row that made a request (default 0.4 s)")
+    ap.add_argument("--retry-wait", type=float, default=60.0,
+                    help="cool-down before ERROR rows get their second try (default 60 s)")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"),
                     help="Contact email for NCBI/CrossRef User-Agent (required; "
                          "or set LITREVIEW_EMAIL env var)")
@@ -296,49 +488,28 @@ def main():
     else:
         cits = json.loads(sys.stdin.read())
 
-    # Prefetch every arXiv id in a few batched requests. arXiv rate-limits a
-    # per-paper loop into a temporary ban (its retries exhaust and the paper
-    # falls through to a false NOT-FOUND), so batching is both faster and the fix
-    # for that failure mode; ids whose chunk failed come back as ERROR, not miss.
-    aids = [a for a in (arxiv_id_of(c) for c in cits) if a]
-    arxiv_results, arxiv_errored = ({}, set())
-    if aids:
-        print(f"  [arxiv] batch-resolving {len(set(_norm_arxiv(a) for a in aids))} ids…", file=sys.stderr)
-        arxiv_results, arxiv_errored = lookup_arxiv_batch(aids)
-
-    out = []
-    for c in cits:
-        try:
-            r = verify_one(c, arxiv_results, arxiv_errored)
-        except Exception as e:
-            # One malformed row must not abort a long batch — record and move on.
-            r = {"verdict": "ERROR", "found": None, "source": None,
-                 "issues": [f"{type(e).__name__}: {e}"]}
-        r["label"] = c.get("label", "?")
-        out.append(r)
-        v = r["verdict"]
-        au = r["found"]["first_author"] if r["found"] else "?"
-        yr = r["found"]["year"] if r["found"] else "?"
-        ti = (r["found"]["title"] if r["found"] else "")[:60]
-        print(f"  [{v:9s}] {c.get('label','?')}  →  {au} ({yr})  {ti}", file=sys.stderr)
-        if r.get("issues"):
-            for i in r["issues"]:
-                print(f"             ↳ {i}", file=sys.stderr)
-        time.sleep(args.sleep)
+    prior = common.load_json(args.retry_from) if args.retry_from else None
+    only = {x.strip() for x in args.only.split(",") if x.strip()} if args.only else None
+    cits = select_citations(cits, only=only, retry_from=prior)
+    out = verify_all(cits, sleep=args.sleep, retry_wait=args.retry_wait)
+    if prior is not None:
+        out = merge_reports(prior, out)
 
     if args.out:
         common.dump_json(out, args.out)
     else:
         print(json.dumps(out, indent=2, ensure_ascii=False))
-    n_ok = sum(1 for r in out if r["verdict"] == "OK")
-    n_mm = sum(1 for r in out if r["verdict"] == "MISMATCH")
-    n_nf = sum(1 for r in out if r["verdict"] == "NOT-FOUND")
-    n_er = sum(1 for r in out if r["verdict"] == "ERROR")
-    tail = f" / {n_er} ERROR" if n_er else ""
-    print(f"\n=== {n_ok} OK / {n_mm} MISMATCH / {n_nf} NOT-FOUND{tail} ===", file=sys.stderr)
-    if n_er:
-        print("    ERROR = lookup could not complete (rate-limit/network); re-run "
-              "those — NOT the same as NOT-FOUND.", file=sys.stderr)
+    n = {v: sum(1 for r in out if r["verdict"] == v)
+         for v in ("OK", "MISMATCH", "NOT-FOUND", "ERROR", "UNCHECKED")}
+    tail = "".join(f" / {n[v]} {v}" for v in ("ERROR", "UNCHECKED") if n[v])
+    print(f"\n=== {n['OK']} OK / {n['MISMATCH']} MISMATCH / {n['NOT-FOUND']} NOT-FOUND{tail} ===",
+          file=sys.stderr)
+    if n["ERROR"]:
+        print("    ERROR = lookup could not complete (rate-limit/network) even after the retry; "
+              "re-run with --retry-from — NOT the same as NOT-FOUND.", file=sys.stderr)
+    if n["UNCHECKED"]:
+        print("    UNCHECKED = the row carried no author/year/title claim, so nothing was "
+              "verified; give it search_* fields or a canonical apa.", file=sys.stderr)
     sys.exit(gate_code(out))
 
 

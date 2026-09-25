@@ -284,7 +284,10 @@ python3 ../tools/verify.py --rows rows.json --out verify_report.json
 ```
 
 Checks every citation against PubMed, PMC, CrossRef and arXiv, and exits 0 only
-when every verdict is `OK`.
+when every verdict is `OK`. Before canon, the claim it checks is what the search
+agent reported, kept on each row as `search_author`, `search_year` and
+`search_title`; after canon it is the canonical `apa`. A row with both an arXiv id
+and a journal DOI has both checked.
 
 | Verdict | Meaning | Action |
 |---|---|---|
@@ -292,11 +295,15 @@ when every verdict is `OK`.
 | `MISMATCH` | the record resolves but disagrees on author, year or title | fix or drop the row |
 | `NOT-FOUND` | every lookup completed and nothing matched | chase it; likely fabricated |
 | `ERROR` | a lookup could not complete (rate limit, network) | re-run |
+| `UNCHECKED` | the row carried no author, year or title to check against | add the claim, re-run |
 
 !!! danger "Re-run every non-OK verdict before acting on it"
     Network failures can masquerade as bad citations. When the DOI lookup errors
     and the title-search fallback does not match, the verdict is `ERROR`, not
-    `MISMATCH`, but check anyway: a second run often clears it.
+    `MISMATCH`, but check anyway: a second run often clears it. `ERROR` rows get
+    one automatic retry at the end of the run; re-check the rest with
+    `--retry-from verify_report.json --out verify_report.json`, which re-verifies
+    only the non-OK rows and keeps the others.
 
 ### 5.2 Phase 3f: canonicalize every reference
 
@@ -747,9 +754,12 @@ the S2 column. See [§5.5](#55-phase-5b-citation-counts).
 
 ### Cost and time
 
-For about 40 searched plus 30 cross-citation papers, without PDFs, an agent uses
-roughly **1–2M tokens** and **5–10 minutes**. The cross-citation pass (Phase 6) is
-the slowest step, at 3–5 minutes. PDF download (Phase 4) adds 10–20 minutes.
+Plan on hours, not minutes. A 475-reference build with 11 search lanes took about
+**4 hours** in September 2026: about 20 minutes of web search, 85 minutes in the
+network tools, and the rest in reruns, hand steps and the families decision.
+Batched arXiv fetches and in-run retries should cut the tool time to 15–20 minutes;
+that has not yet been measured on a full build. PDF download (Phase 4) adds 10–20
+minutes.
 
 ### Tools and flags
 

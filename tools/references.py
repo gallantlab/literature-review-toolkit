@@ -23,9 +23,16 @@ are flagged `no-source` for manual attention.
 OUTPUT (default): rewrites each row's `apa` (and `link` to the DOI URL), prints a
 per-defect audit. `--audit` reports without writing and exits nonzero if any row
 is imperfect — wire it into the build so a bad ref can never ship.
+
+arXiv ids are fetched in batches of 50 (one request per 50 rows, 3 s apart, as
+arXiv asks), never one per row. A row whose fetch fails gets a second try at the
+end of the run after --retry-wait; a row that still fails is named and the run
+exits 1, because its `apa` is not canonical. `--only A-01,B-02` rebuilds just
+those rows and leaves every other row exactly as it is (the targeted re-canon).
 """
 import argparse
 import datetime
+import difflib
 import os
 import re
 import sys
@@ -56,8 +63,11 @@ def crossref(doi, fallback_venue=""):
     return {"apa": crossref_apa(r), "venue": r["book"] or r["journal"], "source": "crossref"}
 
 
-def arxiv(aid, fallback_venue=""):
-    e = common.arxiv_fetch([aid]).get(common.norm_arxiv(aid))
+def arxiv(aid, fallback_venue="", entries=None):
+    """APA from the arXiv record; `entries` is a common.arxiv_batch() prefetch
+    (else this one id is fetched on its own)."""
+    na = common.norm_arxiv(aid)
+    e = (entries if entries is not None else common.arxiv_fetch([aid])).get(na)
     if not e:
         return None
     people = [person(*split_name(name)) for name in e["authors"]]
@@ -67,25 +77,42 @@ def arxiv(aid, fallback_venue=""):
     return {"apa": apa, "venue": journal, "source": "arxiv"}
 
 
-def canonical(row):
-    """Return {apa, link, source, ...} rebuilt from the authoritative source, or
-    None if there is no DOI/arxiv to rebuild from."""
+def route(row):
+    """(journal_doi, arxiv_id) the row is canonicalized from; at most one is set.
+
+    A real (non-arXiv) DOI is the version of record: prefer CrossRef over the
+    arXiv preprint even when the row carries both, so a published paper is cited
+    by its journal version rather than its preprint. arXiv is used only when
+    there is no journal DOI (preprint-only rows) or the DOI is itself an arXiv DOI."""
     doi = doi_of(row)
     aid = (row.get("arxiv") or "").strip()
     am = ARXIV_DOI.match(doi or "")
     if am:
         aid = aid or am.group(1)
-    # A real (non-arXiv) DOI is the version of record: prefer CrossRef over the
-    # arXiv preprint even when the row carries both, so a published paper is cited
-    # by its journal version rather than its preprint. arXiv is used only when
-    # there is no journal DOI (preprint-only rows) or the DOI is itself an arXiv DOI.
     journal_doi = doi if (doi and not am) else ""
+    return journal_doi, ("" if journal_doi else aid)
+
+
+def canonical(row, arxiv_cache=None):
+    """Return {apa, link, source, ...} rebuilt from the authoritative source, or
+    None if there is no DOI/arxiv to rebuild from (or the source has no usable
+    record). `arxiv_cache` is an (entries, errored) common.arxiv_batch() result;
+    an id in `errored` is reported as a fetch error, never as a miss."""
+    doi = doi_of(row)
+    journal_doi, aid = route(row)
     fv = row.get("venue", "")
     try:
         if journal_doi:
             r = crossref(journal_doi, fv)
         elif aid:
-            r = arxiv(aid, fv)
+            if arxiv_cache is not None:
+                entries, errored = arxiv_cache
+                if common.norm_arxiv(aid) in errored:
+                    return {"error": "arXiv batch could not complete (rate-limit/network)",
+                            "source": "error"}
+                r = arxiv(aid, fv, entries)
+            else:
+                r = arxiv(aid, fv)
         elif doi:
             r = crossref(doi, fv)
         else:
@@ -279,8 +306,6 @@ def duplicate_scan(rows, keyf, threshold=0.88):
     and its 2026 successor; successive years of the same challenge), so this needs
     a human verdict — keep the version of record, drop the preprint.
     """
-    import difflib
-
     def title_of(apa):
         p = common.parse_apa(apa)
         return re.sub(r"[^a-z0-9 ]", "", p["title"].lower()).strip() if p else ""
@@ -288,6 +313,7 @@ def duplicate_scan(rows, keyf, threshold=0.88):
     items = [(r.get(keyf, "?"), title_of(r.get("apa", "")), (r.get("link") or "").lower())
              for r in rows]
     pairs = []
+    sm = difflib.SequenceMatcher()          # same defaults as before (autojunk on)
     for i, (ka, ta, la) in enumerate(items):
         for kb, tb, lb in items[i + 1:]:
             if la and la == lb:
@@ -297,12 +323,62 @@ def duplicate_scan(rows, keyf, threshold=0.88):
                 continue
             if abs(len(ta) - len(tb)) > 0.35 * max(len(ta), len(tb)):
                 continue                                      # cheap length prefilter
-            ratio = difflib.SequenceMatcher(None, ta, tb).ratio()
+            # real_quick_ratio() and quick_ratio() are upper bounds on ratio(), so
+            # a pair that fails either can never pass: same pairs, ~8x faster.
+            sm.set_seqs(ta, tb)
+            if sm.real_quick_ratio() < threshold or sm.quick_ratio() < threshold:
+                continue
+            ratio = sm.ratio()
             if ratio >= threshold:
                 preprint_pair = ("10.48550" in la) != ("10.48550" in lb)
                 why = "preprint vs published?" if preprint_pair else "near-identical title"
                 pairs.append((ka, kb, ratio, why))
     return pairs
+
+
+def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None):
+    """Rebuild every sourced row (or just the keys in `only`) in place.
+
+    arXiv-routed rows are prefetched in batches first, so they cost no request
+    and no pause of their own; a row that fetch-fails gets one more try after
+    `retry_wait`. Returns {"rebuilt": n, "failed": [keys still failing],
+    "kept": [keys whose source had no usable record, so the old apa stayed]}."""
+    targets = [r for r in rows if (doi_of(r) or r.get("arxiv"))
+               and (only is None or r.get(keyf) in only)]
+    rebuilt, failed, kept = 0, [], []
+
+    def one_pass(batch, chunk):
+        nonlocal rebuilt
+        aids = [route(r)[1] for r in batch if route(r)[1]]
+        cache = common.arxiv_batch(aids, chunk=chunk) if aids else ({}, set())
+        bad = []
+        for r in batch:
+            k = r.get(keyf, "?")
+            before = common.request_count()
+            res = canonical(r, cache)
+            if res and res.get("apa"):
+                r["apa"] = res["apa"]
+                if res.get("link"):
+                    r["link"] = res["link"]
+                stamp_canonical(r, asof)
+                rebuilt += 1
+            elif res and res.get("error"):
+                print(f"  [fetch-fail] {k}: {res['error']}", file=sys.stderr)
+                bad.append(r)
+            else:
+                kept.append(k)
+            if common.request_count() != before:
+                time.sleep(sleep)      # courtesy pause only after a row that hit the network
+        return bad
+
+    bad = one_pass(targets, 50)
+    if bad:
+        print(f"  [retry] {len(bad)} fetch-fail row(s); cooling down {retry_wait:.0f}s, "
+              "then one more try…", file=sys.stderr)
+        time.sleep(retry_wait)
+        bad = one_pass(bad, 25)
+    failed = [r.get(keyf, "?") for r in bad]
+    return {"rebuilt": rebuilt, "failed": failed, "kept": kept}
 
 
 def main():
@@ -316,7 +392,12 @@ def main():
                          "WITHOUT re-fetching, so post-canon hand fixes survive. Use to "
                          "retrofit the gate onto an existing corpus.")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"))
-    ap.add_argument("--sleep", type=float, default=0.25)
+    ap.add_argument("--sleep", type=float, default=0.25,
+                    help="pause after each row that made a request (default 0.25 s)")
+    ap.add_argument("--retry-wait", type=float, default=60.0,
+                    help="cool-down before fetch-fail rows get their second try (default 60 s)")
+    ap.add_argument("--only", help="comma-separated keys: rebuild just these rows, leave the rest "
+                    "untouched (targeted re-canon)")
     ap.add_argument("--asof", default=datetime.date.today().isoformat(),
                     help="date written to each rebuilt/repaired row's canonical_at (default: today)")
     args = ap.parse_args()
@@ -328,8 +409,18 @@ def main():
 
     rows = common.load_json(args.rows)
     keyf = common.key_field(rows, args.key)
+    only = {x.strip() for x in args.only.split(",") if x.strip()} if args.only else None
+    if only is not None:
+        missing = only - {r.get(keyf) for r in rows}
+        if missing:
+            ap.error(f"--only names keys not in {args.rows}: {', '.join(sorted(missing))}")
     defects, notes, rebuilt = {}, {}, 0
     repaired = {}
+    result = {"rebuilt": 0, "failed": [], "kept": []}
+    if not args.repair and not args.audit:
+        result = canon_rows(rows, keyf, args.asof, sleep=args.sleep,
+                            retry_wait=args.retry_wait, only=only)
+        rebuilt = result["rebuilt"]
     for r in rows:
         k = r.get(keyf, "?")
         if args.repair:
@@ -338,17 +429,6 @@ def main():
                 r["apa"] = fixed
                 repaired[k] = what
             stamp_canonical(r, args.asof)      # a repaired corpus is a canonical one
-        elif not args.audit:
-            res = canonical(r)
-            if res and res.get("apa"):
-                r["apa"] = res["apa"]
-                if res.get("link"):
-                    r["link"] = res["link"]
-                stamp_canonical(r, args.asof)
-                rebuilt += 1
-            elif res and res.get("error"):
-                print(f"  [fetch-fail] {k}: {res['error']}", file=sys.stderr)
-            time.sleep(args.sleep)
         d, n = audit(r.get("apa", ""), bool(doi_of(r) or r.get("arxiv")))
         # The DOI is not visible inside audit(), so the back-file/digitization
         # date check runs here and reports as a warning (only a human can say
@@ -387,9 +467,15 @@ def main():
         print(f"  ⚠ {k}: {'; '.join(n)}")
     for ka, kb, ratio, why in dups:
         print(f"  ⚠ {ka} ~ {kb}: possible duplicate ({ratio:.2f}, {why}) — verify by hand")
+    for k in result["kept"]:
+        print(f"  ⚠ {k}: the source returned no usable record (no authors, or an id "
+              "missing from the feed) — kept the existing apa; confirm it by hand")
+    for k in result["failed"]:
+        print(f"  ✗ {k}: fetch failed twice — NOT rebuilt, its apa is not canonical; "
+              f"re-run with --only {k}")
     for k, d in defects.items():
         print(f"  ✗ {k}: {'; '.join(d)}")
-    if defects:
+    if defects or result["failed"]:
         sys.exit(1)
     print("✓ all references perfect (no formatting defects)")
 

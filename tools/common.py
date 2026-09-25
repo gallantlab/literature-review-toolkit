@@ -109,21 +109,55 @@ def curl_get(url, headers, timeout):
     return p.stdout
 
 
+def retry_after(err, cap=120.0):
+    """Seconds a 429/503 asks us to wait (its Retry-After header), capped, else
+    None. The header is either delay-seconds or an HTTP-date; honoring it beats
+    a fixed backoff that is either too short (and burns every retry inside the
+    throttle window) or too long."""
+    import email.utils
+    val = ((getattr(err, "headers", None) or {}).get("Retry-After") or "").strip()
+    if not val:
+        return None
+    try:
+        secs = float(val)
+    except ValueError:
+        try:
+            when = email.utils.parsedate_to_datetime(val)
+        except (TypeError, ValueError):
+            return None
+        secs = when.timestamp() - time.time()
+    return min(max(secs, 0.0), cap)
+
+
+# Requests actually sent by http(). Loops compare it before/after a row so they
+# pause only after a row that went to the network -- a row answered by a batch
+# prefetch needs no courtesy delay.
+_REQUESTS = 0
+
+
+def request_count():
+    """How many HTTP attempts http() has made in this process."""
+    return _REQUESTS
+
+
 def http(url, retries=5, timeout=30, data=None, headers=None):
-    """GET (or POST if `data` given) with exponential backoff on rate-limits
-    (429/503) and timeouts, so a throttled fetch retries instead of failing
-    hard. Requests a gzip/deflate body and decodes it. Returns raw bytes;
-    raises on exhaustion."""
+    """GET (or POST if `data` given) with backoff on rate-limits (429/503) and
+    timeouts, so a throttled fetch retries instead of failing hard. A server's
+    Retry-After is honored; otherwise the wait doubles from 3 s. Requests a
+    gzip/deflate body and decodes it. Returns raw bytes; raises on exhaustion."""
+    global _REQUESTS
     hdrs = headers or HDRS
     tried_curl = False
     for attempt in range(retries):
         try:
+            _REQUESTS += 1
             req = urllib.request.Request(url, data=data, headers=hdrs)
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return decompress(r.read(), r.headers.get("Content-Encoding", ""))
         except urllib.error.HTTPError as e:
             if e.code in TRANSIENT_HTTP and attempt < retries - 1:
-                time.sleep(3 * 2 ** attempt)          # 3, 6, 12, 24s
+                wait = retry_after(e)
+                time.sleep(wait if wait is not None else 3 * 2 ** attempt)   # 3, 6, 12, 24s
                 continue
             raise
         except TRANSIENT_NETWORK:
@@ -593,3 +627,27 @@ def arxiv_fetch(ids):
         return {}
     url = f"{ARXIV_API}?max_results={len(ids)}&id_list={urllib.parse.quote(','.join(ids))}"
     return {e["id"]: e for e in arxiv_entries(http(url))}
+
+
+def arxiv_batch(ids, chunk=50, sleep=3.0):
+    """Resolve many arXiv ids in a few `id_list` calls -> (entries, errored).
+
+    `entries[norm_id]` is the arxiv_entries() record; an id absent from a batch
+    that COMPLETED is a genuine miss; `errored` holds the ids whose batch could
+    not complete (rate-limit / network), which callers must report as ERROR or
+    fetch-fail and retry, never as "no such paper". arXiv asks for ~3 s between
+    requests and bans a per-paper loop, so this is the only way the toolkit
+    reads arXiv in bulk (verify.py and references.py both call it)."""
+    entries, errored = {}, set()
+    uniq = list(dict.fromkeys(norm_arxiv(a) for a in ids if a))
+    for i in range(0, len(uniq), chunk):
+        batch = uniq[i:i + chunk]
+        try:
+            got = arxiv_fetch(batch)
+        except Exception:
+            errored.update(batch)
+        else:
+            entries.update({a: got[a] for a in batch if a in got})
+        if i + chunk < len(uniq):
+            time.sleep(sleep)
+    return entries, errored

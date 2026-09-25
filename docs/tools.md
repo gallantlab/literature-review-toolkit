@@ -16,14 +16,14 @@ in `tools/README.md` and `PLAYBOOK.md`.
 <!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
 | Script | Phase | Purpose | Flags |
 |---|---|---|---|
-| `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / arXiv. | `--citations` `--email` `--key` `--out` `--rows` `--sleep` |
-| `references.py` | 3f | Canonical reference builder — make EVERY reference perfect, in both modes. | `--asof` `--audit` `--email` `--key` `--out` `--repair` `--rows` `--sleep` |
+| `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / arXiv. | `--citations` `--email` `--key` `--only` `--out` `--retry-from` `--retry-wait` `--rows` `--sleep` |
+| `references.py` | 3f | Canonical reference builder — make EVERY reference perfect, in both modes. | `--asof` `--audit` `--email` `--key` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
 | `sentence_case.py` | 3f | Post-canon pass — propose strict APA-7 sentence case for reference titles. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
 | `download.py` | 4 (opt-in) | Multi-source PDF downloader (Phase 4 — OPT-IN, not run by default). | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
 | `reconcile_downloads.py` | 4 (opt-in) | Reconcile manually-downloaded PDFs against a slug+title+doi manifest. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
 | `spreadsheet.py` | 5 | Build/rebuild the bibliography xlsx from a JSON of accumulated rows. | `--out` `--rows` `--sheet-name` |
 | `citations.py` | 5b | Fetch citation counts for a bibliography from OpenAlex + Semantic Scholar. | `--asof` `--email` `--key` `--out` `--rows` `--sources` |
-| `xref.py` | 6 | Build a cross-citation index from a list of papers. | `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--rows` `--sleep` |
+| `xref.py` | 6 | Build a cross-citation index from a list of papers. | `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
 | `families.py` | 6b | Phase 6b — validate an LLM-proposed family taxonomy against the bibliography, stamp `family` onto rows.json, and emit families.json (the reproducible cache) + families.md (grouped tables + a family x topic cross-tab). | `--asof` `--assign` `--digest` `--md` `--out` `--rows` |
 | `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |
 | `bib_viewer.py` | 7 | Render the searchable bibliography viewer every review page embeds. | `--author` `--author-note` `--families` `--out` `--rows` `--subtitle` `--title` |
@@ -36,17 +36,21 @@ in `tools/README.md` and `PLAYBOOK.md`.
 
 ## What each tool refuses to guess
 
-- **`verify.py`** returns `OK`, `MISMATCH`, `NOT-FOUND` or `ERROR`. `ERROR` means
-  a lookup could not complete (re-run it); `NOT-FOUND` means every lookup
-  completed and nothing matched (likely fabricated). arXiv ids are fetched in
-  batches so rate limits cannot produce false NOT-FOUNDs. Accepts a citation list
-  or `rows.json` (`--rows`).
+- **`verify.py`** returns `OK`, `MISMATCH`, `NOT-FOUND`, `ERROR` or `UNCHECKED`.
+  `ERROR` means a lookup could not complete (it is retried once in the run, then
+  re-checked with `--retry-from`); `NOT-FOUND` means every lookup completed and
+  nothing matched (likely fabricated); `UNCHECKED` means the row carried no claim,
+  so a resolving DOI proved nothing. A match needs the first author, the year
+  (±1) and the title to agree. arXiv ids are fetched in batches so rate limits
+  cannot produce false NOT-FOUNDs. Accepts a citation list or `rows.json`
+  (`--rows`).
 - **`references.py`** rebuilds every reference from its verified DOI or arXiv id.
   `--audit` exits 1 on any defect and warns on near-duplicate rows and possibly
   mis-split surnames, which need a human verdict. `--repair` fixes string damage
   (markup, Unicode hyphens, `?.`) offline, without re-fetching or undoing hand
   fixes. Both stamp rows with `canonical_at`, which `common.write_rows` refuses
-  to overwrite.
+  to overwrite. A row whose fetch fails twice is named and the run exits 1;
+  `--only` rebuilds just the named rows.
 - **`sentence_case.py`** proposes APA-7 sentence case for a human to review.
   Project proper nouns go in `--proper`; `--vocab` reviews a large corpus by
   distinct word change rather than title by title.

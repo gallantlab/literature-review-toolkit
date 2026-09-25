@@ -22,7 +22,11 @@ Two conventions this template enforces, both learned the hard way:
     wipe the canonical references, the reviewed casing, and every hand fix.
 
 The `apa` field is left empty here on purpose: references.py rebuilds it from the
-DOI, and the audit gate refuses anything typed from memory.
+DOI, and the audit gate refuses anything typed from memory. What the search agent
+CLAIMED (first author, year, title) is kept as `search_author` / `search_year` /
+`search_title`: verify.py checks the DOI's record against that claim, so a real
+DOI attached to the wrong paper is caught. A row with no claim verifies as
+UNCHECKED, never OK.
 """
 import os
 import sys
@@ -37,15 +41,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # ============================================================
 # DATA (importable, no side effects)
 # ============================================================
-# One tuple per paper: (topic, ref, doi, summary, tag, source)
+# One tuple per paper: (topic, ref, doi, author, year, title, summary, tag, source)
 #   topic   one of the project's topic lanes (the spreadsheet's Topic column)
 #   ref     stable row key, e.g. "M1" — never reuse one across batches
 #   doi     bare DOI ("10.1038/…"); "" for a book/report (kept as a manual ref)
+#   author, year, title   the search agent's claim, exactly as it reported them
 #   summary 3-5 sentences: what the paper did and why it matters for the topic
 #   tag     see PLAYBOOK Phase 2 (classic / method / review / …)
 #   source  "search" | "xref" | "anteced" | "source-doc" | "lab" (row color)
 PAPERS = [
-    # ("Multimodal networks", "M1", "10.1038/nn.4244",
+    # ("Multimodal networks", "M1", "10.1038/nn.4244", "Huth, A. G.", 2016,
+    #  "Natural speech reveals the semantic maps that tile human cerebral cortex",
     #  "Mapped semantic selectivity across cortex with natural narrative speech …",
     #  "classic", "search"),
 ]
@@ -53,10 +59,11 @@ PAPERS = [
 
 def rows():
     out = []
-    for topic, ref, doi, summary, tag, source in PAPERS:
+    for topic, ref, doi, author, year, title, summary, tag, source in PAPERS:
         out.append({"topic": topic, "ref": ref, "doi": doi,
                     "link": f"https://doi.org/{doi}" if doi else "",
                     "apa": "",                     # filled by references.py
+                    "search_author": author, "search_year": year, "search_title": title,
                     "summary": summary, "tag": tag, "source": source})
     refs = [r["ref"] for r in out]
     assert len(refs) == len(set(refs)), "duplicate ref ids"

@@ -79,6 +79,11 @@ its abstract page before including it.
 Format as a numbered list grouped by tag. No process notes — just the
 curated list.
 
+**Never drop an on-topic paper because another search might own it.** Include it
+and add `lane_fit: <the better-fitting area>`; duplicates are removed later by DOI.
+After the list, add a short **Deferred** section naming every paper you found but
+left out on purpose, with one line on why. An empty Deferred section is fine.
+
 Cap output at ~{TARGET_COUNT} papers. Quality over quantity for
 pre-{TIER_BOUNDARY_YEAR}, err toward inclusion for recent work.
 
