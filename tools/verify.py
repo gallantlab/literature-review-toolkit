@@ -54,6 +54,7 @@ re-verifies only the rows that were not OK and splices them back into the report
 (--only A-01,B-02 names rows explicitly).
 """
 import argparse
+import datetime
 import json
 import os
 import re
@@ -215,6 +216,43 @@ def merge_reports(old, new):
     by = {r.get("label"): r for r in new}
     out = [by.pop(r.get("label"), r) for r in old]
     return out + list(by.values())
+
+
+def stamp_rows(rows, results, keyf, asof):
+    """Write each result onto its row as `verified` (every verdict, not only OK,
+    so the audit can name an unresolved MISMATCH). Returns the number stamped.
+    Pass only results verified in THIS run: a verdict copied from an older
+    report may be for ids the row no longer has."""
+    by = {r.get("label"): r for r in results}
+    n = 0
+    for row in rows:
+        res = by.get(row.get(keyf))
+        if res is None:
+            continue
+        doi, aid = common.ids_of(row)
+        row["verified"] = {"verdict": res.get("verdict"), "doi": doi, "arxiv": aid,
+                           "source": res.get("source"), "issues": list(res.get("issues") or []), "at": asof}
+        n += 1
+    return n
+
+
+def override(rows, keyf, ref, reason, asof):
+    """Clear a false alarm (e.g. a preprint retitled on publication) on the record.
+    Refused without a stamp, when the ids changed since verification, or without a reason."""
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValueError("--override needs a non-empty --reason")
+    row = next((r for r in rows if r.get(keyf) == ref), None)
+    if row is None:
+        raise ValueError(f"no row {ref!r}")
+    st = row.get("verified")
+    if not isinstance(st, dict):
+        raise ValueError(f"{ref} has no verify stamp; run verify.py --rows first")
+    if common.stamp_ids(st) != common.ids_of(row):
+        raise ValueError(f"{ref}'s DOI/arXiv id changed since it was verified; re-verify it")
+    doi, aid = common.ids_of(row)
+    row["verify_override"] = {"reason": reason, "overrode": st.get("verdict"),
+                              "doi": doi, "arxiv": aid, "at": asof}
 
 
 # Title similarity lives in common (merge_lanes and handcheck use it too). On
@@ -451,6 +489,13 @@ def main():
                     help="pause after each row that made a request (default 0.4 s)")
     ap.add_argument("--retry-wait", type=float, default=60.0,
                     help="cool-down before ERROR rows get their second try (default 60 s)")
+    ap.add_argument("--no-stamp", action="store_true",
+                    help="with --rows: report only, do not write `verified` onto the rows")
+    ap.add_argument("--override", metavar="REF",
+                    help="with --rows: record that REF's non-OK verdict is a false alarm (needs --reason)")
+    ap.add_argument("--reason", help="why the --override verdict is a false alarm")
+    ap.add_argument("--asof", default=datetime.date.today().isoformat(),
+                    help="date written into stamps (default: today)")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"),
                     help="Contact email for NCBI/CrossRef User-Agent (required; "
                          "or set LITREVIEW_EMAIL env var)")
@@ -460,6 +505,18 @@ def main():
         ap.error("--email or LITREVIEW_EMAIL required "
                  "(NCBI/CrossRef expect a contact email in the User-Agent)")
     set_user_agent(args.email)
+
+    if args.override:
+        if not args.rows:
+            ap.error("--override needs --rows")
+        rows = common.load_json(args.rows)
+        try:
+            override(rows, common.key_field(rows, args.key), args.override, args.reason, args.asof)
+        except ValueError as e:
+            ap.error(str(e))
+        common.dump_json(rows, args.rows)
+        print(f"recorded an override for {args.override}", file=sys.stderr)
+        return
 
     if args.citations:
         cits = common.load_json(args.citations)
@@ -472,9 +529,12 @@ def main():
     prior = common.load_json(args.retry_from) if args.retry_from else None
     only = {x.strip() for x in args.only.split(",") if x.strip()} if args.only else None
     cits = select_citations(cits, only=only, retry_from=prior)
-    out = verify_all(cits, sleep=args.sleep, retry_wait=args.retry_wait)
-    if prior is not None:
-        out = merge_reports(prior, out)
+    fresh = verify_all(cits, sleep=args.sleep, retry_wait=args.retry_wait)
+    out = merge_reports(prior, fresh) if prior is not None else fresh
+    if args.rows and not args.no_stamp:
+        n = stamp_rows(rows, fresh, common.key_field(rows, args.key), args.asof)
+        common.dump_json(rows, args.rows)
+        print(f"  stamped {n} row(s) in {args.rows}", file=sys.stderr)
 
     if args.out:
         common.dump_json(out, args.out)

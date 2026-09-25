@@ -1599,6 +1599,56 @@ check("load_optional_json returns the default for a missing file",
       common.load_optional_json("/nonexistent/litreview.json", {}), {})
 
 
+# ---- reference gates: verify stamps (added 2026-09-26) ---------------------
+import tempfile as _tmpf  # noqa: E402
+
+_rows = [{"ref": "V1", "doi": "10.1/v1"}, {"ref": "V2", "doi": "10.1/v2"}]
+_n = verify.stamp_rows(_rows, [{"label": "V1", "verdict": "OK", "source": "doi", "issues": []}],
+                       "ref", "2026-09-26")
+check("stamp_rows stamps only rows it has a result for", (_n, "verified" in _rows[1]), (1, False))
+check("the stamp records verdict, ids and date",
+      {k: _rows[0]["verified"][k] for k in ("verdict", "doi", "arxiv", "at")},
+      {"verdict": "OK", "doi": "10.1/v1", "arxiv": "", "at": "2026-09-26"})
+
+_rows = [_stamp({"ref": "O1", "doi": "10.1/o1"}, "MISMATCH")]
+verify.override(_rows, "ref", "O1", "preprint retitled on publication", "2026-09-26")
+check_true("an override makes the row verified", common.verified_ok(_rows[0]))
+check("the override records what it overrode", _rows[0]["verify_override"]["overrode"], "MISMATCH")
+for _bad, _why in [([{"ref": "O2", "doi": "10.1/o2"}], "no stamp"),
+                   ([dict(_stamp({"ref": "O2", "doi": "10.1/o2"}, "MISMATCH"), doi="10.1/new")], "ids changed")]:
+    check_true(f"override refused: {_why}", _raises(lambda: verify.override(_bad, "ref", "O2", "r", "2026-09-26")))
+check_true("override refused: empty reason",
+           _raises(lambda: verify.override([_stamp({"ref": "O3", "doi": "10.1/o3"}, "MISMATCH")],
+                                           "ref", "O3", "  ", "2026-09-26")))
+
+# Entrance test: --retry-from splices OLD verdicts into the report; only the
+# rows verified in THIS run may be stamped.
+_d = _tmpf.mkdtemp()
+_rp, _prior, _rep = (os.path.join(_d, f) for f in ("rows.json", "prior.json", "report.json"))
+common.dump_json([{"ref": "R1", "doi": "10.1/r1", "search_title": "T"},
+                  {"ref": "R2", "doi": "10.1/r2", "search_title": "T"}], _rp)
+common.dump_json([{"label": "R1", "verdict": "OK"}, {"label": "R2", "verdict": "ERROR"}], _prior)
+
+
+def _fake_verify_all(cits, **k):
+    return [{"label": c["label"], "verdict": "OK", "found": None, "source": "doi", "issues": []} for c in cits]
+
+
+_argv = sys.argv
+sys.argv = ["verify.py", "--rows", _rp, "--retry-from", _prior, "--out", _rep, "--email", "t@example.org"]
+try:
+    with _patched(verify, verify_all=_fake_verify_all):
+        verify.main()
+except SystemExit:
+    pass
+finally:
+    sys.argv = _argv
+_after = {r["ref"]: r for r in common.load_json(_rp)}
+check("verify --retry-from stamps the re-verified row", _after["R2"].get("verified", {}).get("verdict"), "OK")
+check_true("verify --retry-from does not stamp a row it only copied from the old report",
+           "verified" not in _after["R1"])
+
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
