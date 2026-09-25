@@ -337,14 +337,27 @@ def duplicate_scan(rows, keyf, threshold=0.88):
 
 
 def warning_id(note):
-    """Stable id for an audit warning, so an acknowledgment survives reruns."""
+    """Stable id for an audit warning, so an acknowledgment survives reruns.
+
+    deposit-year and cached-year encode the two years in conflict, so
+    acknowledging one mismatch never silently covers a later, different
+    mismatch on the same row. glued-footnote has no year (or any other value)
+    in its note text to key on; this returns the bare category for it, and
+    audit_rows refines it further from the row's own title."""
     m = re.match(r"multi-word surname '(.+?)'", note)
     if m:
         return f"multi-word-surname:{m.group(1)}"
-    for prefix, wid in (("glued-footnote", "glued-footnote"), ("deposit-year", "deposit-year"),
-                        ("cached year", "cached-year")):
-        if note.startswith(prefix):
-            return wid
+    m = re.match(r"deposit-year: DOI encodes (\d+) but the reference says (\d+)", note)
+    if m:
+        return f"deposit-year:{m.group(1)}/{m.group(2)}"
+    m = re.match(r"cached year '(.+?)' is not a year \(apa says (\d+)\)", note)
+    if m:
+        return f"cached-year:{m.group(1)}/{m.group(2)}"
+    m = re.match(r"cached year (\S+) != apa year (\d+)", note)
+    if m:
+        return f"cached-year:{m.group(1)}/{m.group(2)}"
+    if note.startswith("glued-footnote"):
+        return "glued-footnote"
     return note
 
 
@@ -386,6 +399,10 @@ def load_acks(path):
     acks = common.load_optional_json(path, {})
     if not isinstance(acks, dict) or not all(isinstance(v, dict) for v in acks.values()):
         raise ValueError(f"{path} must map ref -> {{warning_id: reason}}")
+    for ref, ws in acks.items():
+        for wid, reason in ws.items():
+            if not isinstance(reason, str):
+                raise ValueError(f"{path}: {ref} [{wid}] must be a string reason, not {reason!r}")
     return acks
 
 
@@ -408,7 +425,14 @@ def audit_rows(rows, keyf, acks=None):
             if note.startswith("no DOI"):
                 manual[k] = note
             else:
-                warn(k, warning_id(note), note)
+                wid = warning_id(note)
+                if wid == "glued-footnote":
+                    # warning_id has no title to key on; the row does. Two different
+                    # rows glued-footnoted on different words must not share one ack.
+                    title = (common.parse_apa(r.get("apa", "")) or {}).get("title", "")
+                    last_word = title.split()[-1] if title.split() else ""
+                    wid = f"glued-footnote:{last_word}"
+                warn(k, wid, note)
         if gated:
             d += row_gate_defects(r, lambda wid, text, k=k: warn(k, wid, text))
         if d:
@@ -440,9 +464,10 @@ def print_report(report, n_rows):
               "acknowledgment checks are not enforced")
     for k, n in report["manual"].items():
         print(f"  · {k}: {n}")
+    unacked_set = {(k2, w) for k2, v in report["unacked"].items() for w, _ in v}
     for k, ws in report["warnings"].items():
         for wid, text in ws:
-            mark = "⚠" if (k, wid) in {(k2, w) for k2, v in report["unacked"].items() for w, _ in v} else "✓"
+            mark = "⚠" if (k, wid) in unacked_set else "✓"
             print(f"  {mark} {k} [{wid}]: {text}")
     for k, wid in report["stale_acks"]:
         print(f"  · stale acknowledgment {k} [{wid}]: no such warning any more; delete it")
@@ -529,6 +554,8 @@ def main():
     args = ap.parse_args()
     if args.repair and args.audit:
         ap.error("--repair writes; --audit reports. Run --repair, then --audit to confirm.")
+    if args.repair and args.list_acks:
+        ap.error("--repair writes; --list-acks reports. Run --repair, then --list-acks to confirm.")
     if not args.email:
         ap.error("--email or LITREVIEW_EMAIL required (CrossRef/arXiv polite pool)")
     common.set_user_agent(args.email)

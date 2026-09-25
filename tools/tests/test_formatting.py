@@ -1742,12 +1742,26 @@ def _codes(report, ref):
     return [d.split(" ")[0].rstrip(":") for d in report["defects"].get(ref, [])]
 
 
-check("warning ids are stable",
+check("warning ids are stable, and deposit-year/cached-year are instance-specific",
       [references.warning_id(n) for n in [
           "multi-word surname 'Lambon Ralph' — confirm it is not a mis-split given name",
-          "glued-footnote (a footnote digit ...)", "deposit-year: DOI encodes 1943 ...",
-          "cached year 2019 != apa year 2020 — fix ..."]],
-      ["multi-word-surname:Lambon Ralph", "glued-footnote", "deposit-year", "cached-year"])
+          "glued-footnote (a footnote digit stuck to the last title word — check the source)",
+          "deposit-year: DOI encodes 1943 but the reference says 2010 — likely a publisher "
+          "back-file/digitization date; verify by hand",
+          "cached year 2019 != apa year 2020 — fix whichever is wrong, or delete the stale cache field",
+          "cached year 'x' is not a year (apa says 2020)"]],
+      ["multi-word-surname:Lambon Ralph", "glued-footnote", "deposit-year:1943/2010",
+       "cached-year:2019/2020", "cached-year:x/2020"])
+_gf = dict(_grow(ref="GF1", doi="10.1/gf1"),
+          apa="Allport, G. W. (1962). The general and the unique in psychological science1. "
+              "Journal of Personality, 30(3), 405-422.")
+check("glued-footnote gets an instance-specific id from the row's title (audit_rows, not warning_id)",
+      [w for w, _ in references.audit_rows([_gf], "ref")["warnings"]["GF1"]], ["glued-footnote:science1"])
+_cy = _grow(ref="CY1", doi="10.1/cy1")
+_cy["year"] = 2018
+_rep = references.audit_rows([_cy], "ref", acks={"CY1": {"cached-year:2019/2020": "old, no longer matches"}})
+check("an ack tied to a stale year pair does not cover a new mismatch on the same row",
+      (_rep["failed"], _rep["stale_acks"]), (True, [("CY1", "cached-year:2019/2020")]))
 _rep = references.audit_rows([_grow()], "ref")
 check("a fully checked gated row passes", (_rep["gated"], _rep["failed"], _rep["defects"]), (True, False, {}))
 _rep = references.audit_rows([_grow(), dict(_grow("G2", "10.1/g2"), doi="10.1/changed")], "ref")
@@ -1773,6 +1787,15 @@ _rep = references.audit_rows([_na], "ref", acks={"G1": {"no-abstract": "editoria
 check("an acknowledged warning passes", _rep["failed"], False)
 _rep = references.audit_rows([_na], "ref", acks={"G1": {"no-abstract": " "}})
 check("an acknowledgment needs a reason", _rep["failed"], True)
+_ackp = os.path.join(_tmpf.mkdtemp(), "audit_acks.json")
+for _bad_reason in (True, ["a reason"], 5):
+    common.dump_json({"G1": {"no-abstract": _bad_reason}}, _ackp)
+    try:
+        references.load_acks(_ackp)
+        check_true("load_acks rejects a non-string reason", False, f"accepted {_bad_reason!r}")
+    except ValueError as exc:
+        check_true("load_acks rejects a non-string reason, naming ref and warning id",
+                   "G1" in str(exc) and "no-abstract" in str(exc), str(exc))
 _rep = references.audit_rows([_grow()], "ref", acks={"G1": {"glued-footnote": "fine"}})
 check("a stale acknowledgment is reported, not failed", (_rep["stale_acks"], _rep["failed"]),
       ([("G1", "glued-footnote")], False))
@@ -1807,6 +1830,51 @@ def _audit_exit():
 check("references --audit fails on an unacknowledged warning", _audit_exit(), 1)
 common.dump_json({"G1": {"no-abstract": "editorial, no abstract exists"}}, _ap)
 check("references --audit passes once it is acknowledged", _audit_exit(), 0)
+
+# Entrance test: --repair + --list-acks is refused, like --repair + --audit — otherwise
+# --list-acks's early exit would silently discard the repair (no write ever happens).
+_argv = sys.argv
+sys.argv = ["references.py", "--rows", _rp, "--repair", "--list-acks", "--email", "t@example.org"]
+_exit = None
+try:
+    references.main()
+except SystemExit as e:
+    _exit = e
+finally:
+    sys.argv = _argv
+check_true("--repair + --list-acks is refused with SystemExit(2)",
+           _exit is not None and _exit.code == 2, repr(_exit))
+
+# Entrance test: --list-acks prints REF<TAB>WARNING_ID<TAB>TEXT for every unacknowledged
+# warning and exits 1; once acknowledged it prints nothing and exits 0.
+import io  # noqa: E402
+
+_d2 = _tmpf.mkdtemp()
+_rp2, _ap2 = os.path.join(_d2, "rows.json"), os.path.join(_d2, "audit_acks.json")
+common.dump_json([_na], _rp2)
+
+
+def _list_acks():
+    _argv = sys.argv
+    sys.argv = ["references.py", "--rows", _rp2, "--acks", _ap2, "--list-acks", "--email", "t@example.org"]
+    buf = io.StringIO()
+    try:
+        with _ctx.redirect_stdout(buf):
+            references.main()
+        code = 0
+    except SystemExit as e:
+        code = e.code or 0
+    finally:
+        sys.argv = _argv
+    return code, buf.getvalue()
+
+
+_code, _out = _list_acks()
+check("references --list-acks prints REF\\tWARNING_ID\\tTEXT and exits 1 when unacknowledged",
+      (_code, _out.strip()), (1, "G1\tno-abstract\tthe summary has no abstract to be checked against"))
+common.dump_json({"G1": {"no-abstract": "editorial, no abstract exists"}}, _ap2)
+_code, _out = _list_acks()
+check("references --list-acks exits 0 and prints nothing once acknowledged", (_code, _out), (0, ""))
 
 
 # ---- report ---------------------------------------------------------------
