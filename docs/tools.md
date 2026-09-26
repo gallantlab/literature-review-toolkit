@@ -46,21 +46,48 @@ in `tools/README.md` and `PLAYBOOK.md`.
   so a resolving DOI proved nothing. A match needs the first author, the year
   (±1) and the title to agree. arXiv ids are fetched in batches so rate limits
   cannot produce false NOT-FOUNDs. Accepts a citation list or `rows.json`
-  (`--rows`).
+  (`--rows`). `--rows` stamps each row as `verified` (verdict, ids, source, date);
+  `--override REF --reason "..."` records a cleared false alarm, refused without an
+  existing stamp, without a reason, or if the row's ids changed since verification.
 - **`references.py`** rebuilds every reference from its verified DOI or arXiv id.
-  `--audit` exits 1 on any defect and warns on near-duplicate rows and possibly
-  mis-split surnames, which need a human verdict. `--repair` fixes string damage
-  (markup, Unicode hyphens, `?.`) offline, without re-fetching or undoing hand
-  fixes. Both stamp rows with `canonical_at`, which `common.write_rows` refuses
-  to overwrite. A row whose fetch fails twice is named and the run exits 1;
-  `--only` rebuilds just the named rows.
+  Its refusal to rebuild an unverified row is unconditional, on every table
+  including one predating the gates: an id that changed since verification, or a
+  row never verified, keeps its existing `apa` and the run exits 1. `--audit`
+  exits 1 on any defect and warns on near-duplicate rows, possibly mis-split
+  surnames, a deposit-year conflict, and a cached `year` that disagrees with the
+  `apa` — all need a human verdict. `--repair` fixes string damage (markup,
+  Unicode hyphens, `?.`) offline, without re-fetching or undoing hand fixes. Both
+  stamp rows with `canonical_at`, which `common.write_rows` refuses to overwrite.
+  A row whose fetch fails twice is named and the run exits 1; `--only` rebuilds
+  just the named rows. `--list-acks` prints every unacknowledged warning as
+  `REF<TAB>WARNING_ID<TAB>TEXT` and exits nonzero only on those — never on a
+  defect; `--audit` is the actual gate.
 - **`sentence_case.py`** proposes APA-7 sentence case for a human to review.
   Project proper nouns go in `--proper`; `--vocab` reviews a large corpus by
   distinct word change rather than title by title.
+- **`handcheck.py`** finds and records the hand check a DOI-less row needs, since
+  no API can verify it. `--prepare` searches CrossRef/OpenAlex for a DOI the row
+  turns out to have; `--adopt-dois` gives a row with exactly one candidate that
+  DOI, so it verifies normally; `--ingest` records `confirmed` / `corrected` /
+  `not-found` as `hand_verified`, with the source actually checked. A
+  `not-found` result exits nonzero.
 - **`spreadsheet.py`** adds the `Cite` and `Family` columns when rows carry them.
-  An unknown `source` renders white with a warning instead of failing.
+  An unknown `source` renders white with a warning instead of failing. It also
+  runs the same audit as `references.py --audit` and refuses to write a failing
+  gated table; `--draft` writes `<out>_DRAFT.xlsx` with a banner instead. A
+  candidate marked `"decision": "exclude"` gets its own "Considered and excluded"
+  sheet.
 - **`citations.py`** uses OpenAlex, corrects its undercounts against Semantic
   Scholar, and never queries Google Scholar (no API).
+- **`abstracts.py`** fetches each row's abstract once, from the most authoritative
+  source that has it (arXiv, then OpenAlex, then Semantic Scholar, then PubMed); a
+  hand-added entry is never overwritten, and a fetch failure is reported separately
+  from a genuine no-abstract miss.
+- **`summary_audit.py`** checks every summary against its abstract, by an agent with
+  no web access. `--ingest` records `summary_check` keyed to a hash of the summary,
+  so an edited summary is refused (or re-flagged unchecked) rather than trusted on
+  its old verdict. A row with no abstract is `no-abstract`, a warning to
+  acknowledge; a flagged (`unsupported`) summary is a defect.
 - **`xref.py`** builds the cross-citation table from the corpus's CrossRef
   reference lists. `--internal-out` writes within-corpus citation counts for
   the figure's landmark selection. Accepts `rows.json` (`--rows`).

@@ -460,8 +460,9 @@ def print_report(report, n_rows):
     print(f"{n_rows} refs | {len(report['defects'])} defects | {len(report['manual'])} manual (no-DOI) | "
           f"{nw} warnings ({nu} unacknowledged) | {len(report['dups'])} possible duplicates")
     if not report["gated"]:
-        print("  note: this corpus predates the reference gates; verify/hand-check/summary/"
-              "acknowledgment checks are not enforced")
+        print("  note: this corpus predates the reference gates, so they are not enforced here.")
+        print("  Rerunning a search on it switches them on for the whole table; see PLAYBOOK "
+              "'Upgrading an old corpus'.")
     for k, n in report["manual"].items():
         print(f"  · {k}: {n}")
     unacked_set = {(k2, w) for k2, v in report["unacked"].items() for w, _ in v}

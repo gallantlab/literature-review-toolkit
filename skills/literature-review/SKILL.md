@@ -2,7 +2,7 @@
 name: literature-review
 license: MIT
 metadata:
-  version: 1.15.0
+  version: 1.16.0
   author: Jack L. Gallant
 description: Structured academic literature review — search a topic and its antecedents, verify every citation against PMC/PubMed/CrossRef/arXiv, rebuild references into canonical APA form, count citations, cross-reference the set, and assemble an annotated xlsx bibliography, then offer an interactive lineage timeline of its theoretical families on every review. Use whenever the user asks for a lit review or literature review, wants to build or audit a bibliography, survey the literature on a topic, verify or canonicalize a list of citations, check which references cite which, gather citation counts, trace the intellectual lineage of a field, or review a lab's own corpus in the context of its field. PDF acquisition is opt-in and never runs by default.
 ---
@@ -70,3 +70,7 @@ missing email is an `argparse` error (exit 2), not a silent degradation.
   `download.py` when the user has asked for PDFs.
 - **Don't hand-curate what a script generates.** Reference formatting, citation
   counts, and the tool index all have scripts that own them. Fix the script.
+- **A deliverable is written only by `spreadsheet.py` after the audit passes.** It
+  runs the full gate (verify stamps, hand checks, summary checks, acknowledged
+  warnings) and refuses a failing table; `--draft` writes a clearly marked draft
+  instead, never the deliverable.

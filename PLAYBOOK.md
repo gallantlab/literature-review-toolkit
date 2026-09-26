@@ -12,15 +12,17 @@ summarized. Decide the mode first (Phase 0), then gather that mode's inputs.
 These are the load-bearing invariants. Everything below the contract is reference
 detail that elaborates them; when in doubt, obey this list. Section pointers are in
 parentheses. Treat bold emphasis elsewhere in this file as ordinary guidance — the
-genuinely inviolable rules are *only* the eight here.
+genuinely inviolable rules are *only* the nine here.
 
-1. **Verify EVERY citation before it enters a deliverable** (Phase 3). About 1 in 4
-   agent-returned refs has a fabricated author list, wrong year, reversed
-   conclusion, or bad DOI. No exceptions — preprints included.
+1. **Verify EVERY citation before it enters a deliverable** (Phase 3); `verify.py --rows`
+   stamps each row, canon refuses a row without an OK stamp for its current ids, and the
+   audit fails it. About 1 in 4 agent-returned refs has a fabricated author list, wrong
+   year, reversed conclusion, or bad DOI. No exceptions — preprints included.
 2. **Every reference is canonical** (Phase 3f). Rebuild each `apa` from the verified
    DOI/arXiv with `references.py`; never ship an agent-typed or OpenAlex-typed
-   string. `references.py --audit` is a hard gate (exit 1) — run it before every
-   deliverable.
+   string. Canon's refusal to rebuild an unverified row is unconditional — on every
+   table, including one built before the gates existed. `references.py --audit` is a
+   hard gate (exit 1) — run it before every deliverable.
 3. **One row per DOI** — global dedup; a paper appears once in `rows.json`. Bites
    hardest at the lab-mode merge, where one paper surfaces under several
    theme-searches and a lab paper can resurface as "field" (Phase L4c). (Distinct
@@ -40,6 +42,9 @@ genuinely inviolable rules are *only* the eight here.
    libproxy URL). Set a contact email (`LITREVIEW_EMAIL` or `--email`) for the API
    User-Agent.
 8. **PDFs are opt-in** (Phase 4) — default no, and never ask whether to fetch them.
+9. **The spreadsheet is the release gate.** `spreadsheet.py` runs the full audit and
+   refuses a failing table (verify stamps, hand checks for DOI-less rows, summary
+   checks, acknowledged warnings); `--draft` writes a file marked as a draft.
 
 **Default tier criteria.** Pre-2021: only highly cited / foundational. 2022+:
 promiscuous (no citation-count gate — too recent to have accrued cites). The
@@ -266,6 +271,14 @@ verify_report.json`, which re-verifies only the non-OK rows and splices the new
 verdicts into the report; `--only A-01,B-02` names rows explicitly. Never build a
 rerun input file by hand.
 
+**`--rows` stamps the row, not just the report.** Each checked row gets a `verified`
+field (verdict, DOI/arXiv id, source, issues, date), so canon and the audit gate know
+what was checked and against which ids without re-reading `verify_report.json`
+(`--no-stamp` reports without writing). A false alarm a human clears — a preprint
+retitled on publication, say — is recorded with `verify.py --rows rows.json --override
+REF --reason "..."`; it is refused without an existing stamp, without a reason, or if
+the row's DOI/arXiv id changed since it was verified.
+
 **Start verifying before the last lane lands.** Lanes finish minutes apart; run
 verify on each lane's rows as they arrive (`--only`), and dispatch the DOI-less
 hand check (Phase 3e) as soon as those rows exist, instead of after the merge.
@@ -292,6 +305,19 @@ page and confirm author/year. Don't rely on the agent's claim.
 - Title matches but agent's summary contradicts the abstract → fix summary.
 - Suspicious DOI (e.g. unusual prefix, no resolution) → drop unless you can
   confirm via web search.
+
+**Hand-checking references with no DOI or arXiv id.** A book, report, thesis or web
+essay cannot be machine-verified, so a gated table needs a recorded hand check
+instead — the audit fails a DOI-less row without one. `tools/handcheck.py --prepare`
+searches CrossRef and OpenAlex for a DOI the row turns out to have (title similarity
+≥ 0.9, same year) and writes the rest as a hand-check input plus a brief;
+`--adopt-dois` gives a row with exactly one candidate DOI that DOI, so it goes
+through `verify.py` like any other reference (a row with several candidates is left
+alone and named); `--ingest` records each checked row as `hand_verified` —
+`confirmed`, `corrected` (with the corrected APA), or `not-found` — with the source
+actually checked (a library catalog, the publisher's page, the post itself; never
+another paper's citation of it). Dispatch this as soon as a lane's DOI-less rows
+exist, alongside verify (see "Start verifying before the last lane lands" above).
 
 Common fabrication patterns to flag:
 - Author name that doesn't appear in any of the paper's actual authors.
@@ -340,6 +366,26 @@ science1`)**). The ONLY allowed non-fatal
 case is a DOI-less item (book, report, old proceedings) — it keeps its
 hand-written `apa` and is reported as a
 manual ref; verify those by hand. **Run the gate before every deliverable.**
+
+**Canon's refusal to rebuild an unverified row is unconditional.** It rebuilds only
+rows verified for their current DOI/arXiv id — on EVERY table, including one built
+before the reference gates existed. A row whose ids changed since verification, or
+that was never verified, keeps its existing `apa`, is named, and the run exits 1;
+re-verify those rows first (`verify.py --rows rows.json --only A-01,B-02`), then
+re-canon. Re-canoning rows of an old corpus with `references.py --only ...` needs the
+same `verify.py --rows ... --only ...` pass first — see "Upgrading an old corpus"
+below for bringing a whole legacy table up to date at once.
+
+**Acknowledging warnings.** Some audit findings need a human verdict, not a fix — a
+possible duplicate that turns out to be two distinct papers, a summary with no
+abstract to check it against, a multi-word surname that is genuinely compound. On a
+gated table, an unacknowledged warning fails the audit just like a defect. Record the
+verdict in `audit_acks.json` beside `rows.json` (`{ref: {warning_id: "why this is
+fine"}}`); `references.py --list-acks` prints every unacknowledged warning as
+`REF<TAB>WARNING_ID<TAB>TEXT` so you can build the file from it. `--list-acks` only
+lists — it exits nonzero when a warning is unacknowledged, never on a defect;
+`--audit` is the actual gate. A stale acknowledgment (the warning it named no longer
+applies) is reported, not failed; delete it.
 
 **arXiv is read in batches.** Canon prefetches every arXiv-routed id 50 per request,
 3 s apart (`common.arxiv_batch`, shared with verify). Until 2026-09-25 it sent one
@@ -471,6 +517,15 @@ Phase 5b has populated them.)
 header, sets the column widths and 110-pt row heights, and adds the `Family` and
 `Cite` columns when the rows carry them.
 
+**The spreadsheet is the release gate (contract rule 9).** `spreadsheet.py` runs the
+same audit as `references.py --audit` (verify stamps, hand checks, summary checks,
+acknowledged warnings) and refuses to write a failing gated table. Pass `--draft` to
+write one anyway, as `<out>_DRAFT.xlsx` with a red banner naming the failure count —
+never hand that file off as the deliverable. A candidate ledger entry marked
+`"decision": "exclude"` gets its own "Considered and excluded" sheet. A row with a
+checked summary carries a "Summary checked against" column, naming the abstract
+source or "no abstract".
+
 ### Phase 5b — Citation counts (standard; do this on every review)
 
 Add per-paper citation counts. **Google Scholar is not usable** — it has no
@@ -506,6 +561,35 @@ files, guard the xlsx-writing block under `if __name__ == "__main__":` so an
 import doesn't rewrite the spreadsheet as a side effect — or just keep all rows in
 one JSON and rebuild via `tools/spreadsheet.py` (the simpler path; see Lessons →
 On the spreadsheet).
+
+### Phase 5c — Abstracts and the summary check
+
+A summary can drift from what a paper actually found, the same way a citation can be
+fabricated, so check it the same way: against an authoritative record, by an agent
+that cannot see anything but that record.
+
+```bash
+python3 tools/abstracts.py --rows rows.json --email you@inst.edu
+python3 tools/summary_audit.py --rows rows.json --prepare
+# dispatch one checking agent per summary_audit/batch_NN.json; brief: summary_audit/brief.md
+python3 tools/summary_audit.py --rows rows.json --ingest
+```
+
+`abstracts.py` fetches every row's abstract once, from the most authoritative source
+that has it — the arXiv API for arXiv papers, then OpenAlex, then Semantic Scholar,
+then PubMed — into `abstracts.json`. A hand-added entry (`"source": "landing-page"`)
+is never overwritten, and a fetch failure is reported separately from a genuine
+no-abstract miss (re-run it; do not acknowledge a fetch failure as if it were
+"no abstract"). `summary_audit.py --prepare` splits the rows needing a check into
+batches of 40 (`--batch`) with each summary and its abstract, plus a brief; dispatch
+one checking agent per batch, with no web access — it judges only whether the
+abstract supports the summary, "supported" or "unsupported" with the unsupported
+clause quoted exactly. `--ingest` records the verdict as `summary_check`, keyed to a
+hash of the summary text, so a summary edited after `--prepare` is refused, and an
+edited summary is re-flagged as unchecked rather than trusted on its old check. A row
+with no abstract is recorded as `no-abstract` — a warning the audit makes you
+acknowledge (see the acknowledgments note under Phase 3f). A flagged summary is a
+defect: fix it and run `--prepare` again.
 
 ### Phase 6 — Cross-citation analysis (second pass)
 
@@ -1546,6 +1630,36 @@ they're scaffolding to keep the LLM judgment work fast.
 
 ---
 
+## Upgrading an old corpus
+
+Rerunning a search on an existing bibliography brings the WHOLE project up to the
+current standard, or redoes it if that is easier — it is never a lighter pass over
+just the new rows. The first verified row switches the reference gates on for the
+whole table (`common.is_gated`); once that happens, the audit and the spreadsheet
+gate fail every OLD row that lacks the new records, not just the new batch.
+
+Procedure, in order:
+
+1. `verify.py --rows rows.json` over the WHOLE table, not just the new rows —
+   canonical rows are checked against their own `apa`.
+2. Turn any existing hand checks (`verify_note` text, informal manual-check results)
+   into `handcheck.py --ingest` result files; re-check any whose source is not
+   recorded.
+3. `abstracts.py`, then `summary_audit.py --prepare` / dispatch checking agents /
+   `--ingest` (Phase 5c).
+4. Acknowledge each remaining warning (`references.py --list-acks`, then
+   `audit_acks.json`; Phase 3f).
+5. `candidates.py` over the existing xref output, to bring the excluded-candidates
+   ledger up to date.
+6. `references.py --audit`, then `spreadsheet.py`.
+
+**When a full redo is easier than upgrading in place:** few of the old rows carry a
+DOI, the rows lack the search agents' claims (`search_*` fields, so `verify.py` has
+nothing independent to check against), or the lanes are stale enough that a fresh
+search is simpler than reconciling one row at a time. Say which you chose, and why.
+
+---
+
 ## Quick start for a fresh Claude
 
 ```
@@ -1556,11 +1670,18 @@ they're scaffolding to keep the LLM judgment work fast.
    PDFs — the default is no (Phase 4 is opt-in only).
 4. Phase 1: collect baseline (source-doc citations).
 5. Phase 2: spawn search agent using tools/search_prompt_template.md.
-6. Phase 3: verify EVERY citation (tools/verify.py).
-6b. Phase 3f: canonicalize (tools/references.py), pass --audit, then
+6. Phase 3: verify EVERY citation (tools/verify.py --rows); it stamps each row.
+6a. Phase 3e: hand-check any DOI-less rows (tools/handcheck.py --prepare /
+    --adopt-dois / --ingest).
+6b. Phase 3f: canonicalize (tools/references.py), pass --audit (acknowledge any
+    remaining warnings via audit_acks.json / references.py --list-acks), then
     sentence-case titles in a reviewed pass (tools/sentence_case.py --proper).
-7. Phase 5: update spreadsheet (tools/spreadsheet.py) with DOI URLs as Link.
+7. Phase 5: update spreadsheet (tools/spreadsheet.py) with DOI URLs as Link — it
+   refuses a failing gated table; --draft writes a marked draft instead.
 8. Phase 5b: citation counts (tools/citations.py); attach to rows, rebuild.
+8b. Phase 5c: fetch abstracts (tools/abstracts.py) and check every summary against
+    its abstract (tools/summary_audit.py --prepare / dispatch checking agents /
+    --ingest).
 9. Phase 6: cross-citation pass (tools/xref.py); verify and append xref
    batch via Phases 3 + 5 again.
 9b. Phase 6b (ALWAYS OFFER): families + timeline — propose families, then pitch the
@@ -1580,6 +1701,8 @@ they're scaffolding to keep the LLM judgment work fast.
     asks for PDFs.
 12. If you changed any tool/phase/command, update the matching docs/ page
     (see "Documentation site — keep it in sync" above).
+13. Extending or rerunning an EXISTING corpus is not a lighter pass — see
+    "Upgrading an old corpus" above: the first verified row gates the whole table.
 ```
 
 Plan on hours, not minutes. A 475-ref, 11-lane build took about

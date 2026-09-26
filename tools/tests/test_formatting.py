@@ -1860,6 +1860,18 @@ _legacy = [{"ref": "L1", "doi": "10.1/l1", "canonical_at": "2026-08-18",
 _rep = references.audit_rows(_legacy, "ref")
 check("a legacy table is audited as before: warnings do not fail", (_rep["gated"], _rep["failed"]), (False, False))
 
+# Entrance test (controller ruling, Task 10 addendum): the legacy note must say WHY the
+# gates are off and point at the upgrade procedure, not just assert "not enforced".
+import io  # noqa: E402
+
+_buf = io.StringIO()
+with _ctx.redirect_stdout(_buf):
+    references.print_report(_rep, len(_legacy))
+_note = _buf.getvalue()
+check_true("the legacy note explains why the gates are off and names the upgrade procedure",
+           "predates the reference gates, so they are not enforced here" in _note
+           and "Upgrading an old corpus" in _note, _note)
+
 # Entrance test: --audit exits 1 on an unacknowledged warning in a gated table, 0 once acknowledged.
 _d = _tmpf.mkdtemp()
 _rp, _ap = os.path.join(_d, "rows.json"), os.path.join(_d, "audit_acks.json")

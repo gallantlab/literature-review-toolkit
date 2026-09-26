@@ -6,9 +6,12 @@ returned, and then hands everything to the shared tools:
 
     python3 build_rows.py                                   # -> rows.json (guarded)
     python3 tools/verify.py     --rows rows.json --out verify_report.json
+    python3 tools/handcheck.py  --rows rows.json --prepare             # DOI-less rows only
     python3 tools/references.py --rows rows.json --out rows.json      # canon + canonical_at stamp
     python3 tools/references.py --rows rows.json --audit              # hard gate
     python3 tools/citations.py  --rows rows.json --out citation_counts.json
+    python3 tools/abstracts.py  --rows rows.json
+    python3 tools/summary_audit.py --rows rows.json --prepare          # then --ingest
     python3 tools/spreadsheet.py --rows rows.json --out <topic>_bibliography.xlsx
 
 Two conventions this template enforces, both learned the hard way:
