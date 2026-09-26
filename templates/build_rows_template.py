@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Template — copy this into a new review directory as `build_rows.py` and edit.
 
-It emits the project's `rows.json` ONCE, from the papers a search agent
-returned, and then hands everything to the shared tools:
+**The default way to build `rows.json` is `tools/merge_lanes.py --raw
+search_raw --out rows.json`**, from the schema-2 lane files the search agents
+write (see `tools/search_prompt_template.md` and PLAYBOOK.md Phase 2c). Use
+THIS template instead only for a small, hand-curated batch with no lane
+files — e.g. a handful of papers you already know and want to add directly.
+
+It emits the project's `rows.json` ONCE, from the papers listed below, and
+then hands everything to the shared tools:
 
     python3 build_rows.py                                   # -> rows.json (guarded)
     python3 tools/verify.py     --rows rows.json --out verify_report.json

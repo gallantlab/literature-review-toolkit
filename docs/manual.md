@@ -32,8 +32,8 @@ paper. Nothing downstream trusts an unverified reference.
 flowchart TD
     subgraph TOPIC["Topic mode"]
       T1["① Scope the topic<br/>(human decision)"]
-      T2["② Search agent<br/>forward search"]
-      T2b["②b Antecedents pass<br/>(REQUIRED)"]
+      T2["② Search agents<br/>forward + antecedent lanes"]
+      T2b["②c Merge lanes<br/>(fails on a lost deferral)"]
       T1 --> T2 --> T2b
     end
 
@@ -51,21 +51,21 @@ flowchart TD
     C["③f Canonicalize EVERY reference<br/>APA-7 + hard audit gate"]
     S["⑤ Build spreadsheet (.xlsx)"]
     CC["⑤b Citation counts<br/>OpenAlex + Semantic Scholar"]
-    X["⑥ Cross-citation pass<br/>(mine + add high-value papers)"]
+    X["⑥ Cross-citation pass<br/>xref + forward; every candidate decided"]
     F["⑥b Families<br/>always offered: use, edit or skip"]
     FIG["⑥b Lineage figure<br/>(interactive HTML + svg/png/pdf)"]
     W["⑦ Review article (optional)<br/>authored + priority audit"]
     H["⑧ Hand off"]
 
     V --> C --> S --> CC --> X
-    X -->|"add batch → re-verify"| V
+    X -->|"append included batch → re-verify"| V
     X --> F --> FIG --> W --> H
     X --> H
 
     classDef human fill:#fff3cd,stroke:#d39e00,color:#000;
     classDef gate fill:#e8f5e9,stroke:#2e7d32,color:#000;
     class T1,L2,F human;
-    class V,C gate;
+    class V,C,T2b gate;
 ```
 
 <small>**Two front ends feed one verified backbone.** Topic mode (left) starts from
@@ -76,6 +76,33 @@ any error. Papers added by the cross-citation pass (⑥) loop back through
 verification, so no reference reaches a deliverable unchecked. The timeline is
 offered on every review; the direct path from ⑥ to hand-off is taken only when you
 skip it.</small>
+
+### 1.1a The pipeline as commands
+
+```
+ 1. Scope the topic (human decision). Write lane briefs with the schema-2
+    output format; launch the forward and antecedent lanes together.
+ 2. merge_lanes.py --raw search_raw --out rows.json     — fails on a lost
+    deferral: send it to one recovery lane, add its file, and re-merge.
+ 3. verify.py --rows rows.json --out verify_report.json — fix or drop each
+    MISMATCH/NOT-FOUND, or override with a reason. In parallel: handcheck.py
+    --prepare / the hand-check agent / --ingest, for the DOI-less rows.
+ 4. Pitch the proposed families to the user.
+ 5. In parallel: references.py (canon; refuses an unverified row),
+    citations.py, xref.py (Semantic Scholar for arXiv reference lists),
+    forward.py, abstracts.py.
+ 6. candidates.py --add for the xref and forward results; decide each with a
+    reason; --export-included, merge_lanes.py --append, then verify/canon/
+    citations for the new rows.
+ 7. sentence_case.py in a reviewed pass, and post-canon hand fixes;
+    acknowledge every remaining audit warning in audit_acks.json.
+ 8. abstracts.py, then summary_audit.py: --prepare, checking agents, --ingest.
+    Fix flagged summaries and re-check.
+ 9. Assign families (families.py) and render the timeline
+    (families_figure.py).
+10. spreadsheet.py — runs the full audit and writes the deliverable only if
+    it passes.
+```
 
 ### 1.2 The three decisions that are yours
 
@@ -110,7 +137,7 @@ meant to be read and adapted. Run any with `--help`.
 | Variable | Required | Purpose |
 |---|---|---|
 | `LITREVIEW_EMAIL` | yes | Contact email that NCBI and CrossRef require; it buys polite rate limits. Or pass `--email` to each tool. |
-| `S2_API_KEY` | no | Avoids Semantic Scholar rate limits (HTTP 429) on large corpora. Without it, S2 coverage is partial and OpenAlex undercounts go uncaught. |
+| `S2_API_KEY` | no | Avoids Semantic Scholar rate limits (HTTP 429) on large corpora. Without it, S2 coverage is partial and OpenAlex undercounts go uncaught. `xref.py` also uses it to fetch arXiv papers' reference lists (CrossRef has none); without a fetch it exits 1 unless `--allow-incomplete`. |
 | `LITREVIEW_LAB_AUTHOR` | no | Comma-separated surnames whose papers the figure stars as home-lab work. Off by default. See [§7.2](#72-the-lineage-figure). |
 
 ```bash
@@ -242,6 +269,30 @@ searches three kinds of roots:
 Reuse the search template with the tier flipped to favor classics, and fold the
 results into the existing lanes. Pre-2000 classics, books and chapters often have
 no DOI. Keep those as hand-written APA and exclude them from citation counting.
+
+**Phase 2c: merge the lanes.** Each lane writes its schema-2 JSON object into
+`search_raw/`; merge them into `rows.json` once every lane and the antecedents
+pass have finished:
+
+```bash
+python3 ../tools/merge_lanes.py --raw search_raw --out rows.json
+```
+
+`merge_lanes.py` dedups by DOI, then arXiv id, then normalized title + year,
+keeping each lane's claim as `search_author`/`search_year`/`search_title`. A
+title+year match alone is a hint, not a merge: it counts as the same paper only
+when the lanes' claimed author/year agree and the rows do not carry two
+*different* journal DOIs (a preprint DOI and its own journal DOI are not a
+conflict). Otherwise both rows are kept and reported as a possible pair.
+
+**`merge_lanes.py` fails on a lost deferral** — a paper a lane left out on
+purpose (`deferred`) that no lane's `papers` matched by DOI, arXiv id, or title
+(similarity ≥ 0.85, corroborated by `first_author`/`year` when given). Send the
+lost papers to one recovery lane, add its file to `search_raw/`, and re-merge.
+A lane that returned under 60% of its target, or exhausted its search budget,
+is printed as thin — resume it, don't re-spawn it. Later additions (a recovery
+lane, or the cross-citation pass in [§5.6](#56-phase-6-cross-citation-pass)) use
+`--append FILE --into rows.json` instead, which never touches an existing row.
 
 ### 4.2 Lab mode
 
@@ -463,23 +514,58 @@ A flagged summary is a defect: fix it and run `--prepare` again.
 
 ### 5.6 Phase 6: cross-citation pass
 
+Two directions, one recorded decision each. **Backward** (`xref.py`): what does
+the corpus cite often that it does not contain? **Forward** (`forward.py`): what
+cites the corpus's own landmark papers? Every candidate either pass turns up
+gets an include/exclude decision in `candidates.json` (`candidates.py`) — the
+audit gate fails while any candidate is still pending.
+
 ```bash
-python3 ../tools/xref.py --rows rows.json --exclude existing_dois.json \
-        --out xref_my_topic.json --min-cites 4 --resolve-unknown \
-        --internal-out internal_citations.json
+python3 ../tools/xref.py --rows rows.json --out xref_my_topic.json \
+        --min-cites 4 --resolve-unknown --internal-out internal_citations.json
+python3 ../tools/forward.py --rows rows.json --out forward_candidates.json
 ```
 
 `xref.py` tallies the corpus's own reference lists (from CrossRef) to find papers
-the corpus cites often but does not contain. It usually finds 25–35 per topic.
-Append the high-value ones to `rows.json` and send the batch back through Phases
-3, 3f and 5.
+the corpus cites often but does not contain. For an arXiv DOI, and for any paper
+whose CrossRef record has no reference list, it asks **Semantic Scholar**
+instead — set `S2_API_KEY` — normalizing a cited arXiv id to
+`10.48550/arxiv.<id>` so it matches a corpus DOI. A paper whose references could
+not be fetched makes the run incomplete, and xref exits 1 unless
+`--allow-incomplete`. It usually finds 25–35 candidates per topic.
 
 - Four or more citations across about 40 papers is a strong signal; three is
   borderline.
 - CrossRef coverage varies by publisher. Nature, Cell, OUP and J Neurosci deposit
   complete reference lists; some smaller journals deposit none.
 - `--internal-out` records how often each paper is cited within the corpus. The
-  timeline uses this to choose landmarks, and reads it from beside `rows.json`.
+  timeline uses this to choose landmarks, and `forward.py` uses it to pick which
+  papers are landmarks in the first place, reading it from beside `rows.json`.
+
+`forward.py` picks the landmarks (top `--landmarks` by within-corpus in-degree,
+then citation count), asks OpenAlex for the most-cited papers citing each one
+(up to `--per-landmark`), and scores each citing paper by how many corpus papers
+it also cites; one citing at least `--min-shared` becomes a candidate. Because
+each pull is citation-ordered, very recent papers are under-represented — the
+output says so. A corpus row with no DOI cannot be excluded from the candidates.
+
+```bash
+python3 ../tools/candidates.py --rows rows.json --add xref_my_topic.json --source xref
+python3 ../tools/candidates.py --rows rows.json --add forward_candidates.json --source forward
+python3 ../tools/candidates.py --rows rows.json --list pending
+python3 ../tools/candidates.py --rows rows.json --decide 10.1038/xxxxx \
+        --decision exclude --reason "methods paper, not on topic"
+python3 ../tools/candidates.py --rows rows.json --export-included xref_lane.json --lane X
+python3 ../tools/merge_lanes.py --append xref_lane.json --into rows.json
+```
+
+`candidates.py` merges both passes' output into one ledger by DOI, keeping every
+source and score. `--decide` requires a `--reason`; `--export-included` writes a
+schema-2 lane file of the `include`d papers not yet in the corpus, ready for
+`merge_lanes.py --append`. Send the appended batch back through Phases 3, 3f and
+5b. Excluded candidates are not discarded: `spreadsheet.py` lists them, with
+their reason, on a "Considered and excluded" sheet, so a paper missing from the
+review is visibly one that was looked at.
 
 !!! warning "Keep ids unique across merges"
     Assert `len(refs) == len(set(refs))` after merging, and attach citation counts
@@ -786,8 +872,13 @@ row that lacks the new records, not just the new batch.
    `--ingest` ([§5.5b](#55b-summaries-checking-them-against-the-abstract)).
 4. Acknowledge each remaining warning (`references.py --list-acks`, then
    `audit_acks.json`; [§5.2b](#52b-acknowledging-warnings)).
-5. `candidates.py` over the existing xref output, to bring the excluded-candidates
-   ledger up to date.
+5. `candidates.py --rows rows.json --add xref.json --source xref` (and
+   `--add forward_candidates.json --source forward` if you have one), then
+   decide any still-pending entries (`--list pending`, `--decide DOI
+   include|exclude --reason "..."`), to bring the candidate ledger up to date.
+   A gated table with no `candidates.json` fails the audit with
+   `no-candidate-ledger` under `*` in `audit_acks.json`; acknowledge that if the
+   corpus genuinely never ran xref/forward.
 6. `references.py --audit`, then `spreadsheet.py`.
 
 **When a full redo is easier than upgrading in place:** few of the old rows carry a

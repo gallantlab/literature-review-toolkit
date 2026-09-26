@@ -152,7 +152,9 @@ template in `tools/search_prompt_template.md` and fill in:
 - `{TODAY}` — current date (gives the agent a recency anchor)
 - `{TIER_BOUNDARY_YEAR}`
 - `{TARGET_COUNT}` — usually 25-40 papers
-- `{OUTPATH}` — the lane file path the agent writes its JSON object to
+- `{OUTPATH}` — the lane file path the agent writes its JSON object to; put it
+  inside a `search_raw/` directory beside `rows.json` (`search_raw/<lane>.json`),
+  since Phase 2c's `merge_lanes.py --raw search_raw` reads every file there
 - `{LANE_KEY}` — this lane's short key, used in `"lane"` and each `ref` prefix
 
 The agent writes one JSON object (schema 2: `status`, `papers`, `deferred`,
@@ -163,13 +165,14 @@ paper's claimed first author, year and title as `search_author` / `search_year` 
 **With several lanes, no paper may fall between them.** The template already tells
 each agent never to drop an on-topic paper because another lane might own it —
 include it and name the lane it fits better (`lane_fit`), since the merge dedups on
-DOI and arXiv id. Anything left out on purpose goes in `deferred`, which the merge
-checks against the merged table. Do not cap DOI-less items per lane. Three recent
-builds lost 14, 6 and 4 papers at their seams, and each loss cost a recovery lane
-after the fact.
+DOI and arXiv id. Anything left out on purpose goes in `deferred`, with its
+`first_author` and `year` when known, so Phase 2c's merge can confirm a deferred
+paper by title alone. Do not cap DOI-less items per lane. Three recent builds lost
+14, 6 and 4 papers at their seams, and each loss cost a recovery lane after the fact
+— Phase 2c now catches this in code instead of relying on a session to notice.
 
 **Do not act on the agent's output yet.** It will contain errors. Proceed
-to Phase 2b, then Phase 3.
+to Phase 2b, then Phase 2c, then Phase 3.
 
 ### Phase 2b — Antecedents (the foundations pass) — REQUIRED
 
@@ -223,6 +226,43 @@ mid-20th century) while most papers cluster in the last decade. Set the figure's
 `--min-year` to the earliest antecedent and add `--time-warp` so the sparse early
 decades compress and the dense recent years expand — otherwise the modern
 literature collapses into an unreadable clump at the right. See Phase 6b.
+
+### Phase 2c — Merge the lanes (`tools/merge_lanes.py`) — a gate
+
+Once every Phase-2 and Phase-2b lane has written its file into `search_raw/`:
+
+```bash
+python3 tools/merge_lanes.py --raw search_raw --out rows.json
+```
+
+It dedups by DOI, then arXiv id, then normalized title + year, and records the
+other lanes that returned a paper (`also_lanes`). A title+year match alone is
+only a hint, not a merge: it is treated as the same paper only when the lanes'
+claimed author/year agree and the rows do not carry two *different* journal DOIs
+(an arXiv preprint's DOI and its own journal DOI are the same paper and still
+merge). When the hint fails that check, both rows are kept and reported as a
+**possible pair** for a person to look at — the same warning the audit's
+duplicate scan raises.
+
+**Every `deferred` entry must match a merged row**, by DOI, arXiv id, or title
+(similarity ≥ 0.85, corroborated by `first_author`/`year` when the lane gave
+them). Every title-only match is printed for you to check
+(`matched_by_title`). **`merge_lanes.py` fails on a lost deferral** — an entry no
+lane's papers matched — and exits 1: send the lost papers to one recovery lane,
+add its file to `search_raw/`, and re-merge. A lane that returned under 60% of
+its target, or ran out of search budget, is printed as thin — resume it through
+SendMessage rather than re-spawning it.
+
+**Later additions** (xref/forward candidates via Phase 6, a recovery lane after
+Phase 2c itself) use `--append` instead, which never touches an existing row:
+
+```bash
+python3 tools/merge_lanes.py --append recovery.json --into rows.json
+```
+
+A schema-1 lane file (a bare array, from an old prompt) is refused with the
+schema it expects, unless `--allow-v1` — in which case that lane's deferrals
+cannot be checked and the merge says so.
 
 ### Phase 3 — Verify EVERY citation (CRITICAL)
 
@@ -594,39 +634,78 @@ defect: fix it and run `--prepare` again.
 ### Phase 6 — Cross-citation analysis (second pass)
 
 Run after Phase 5 is committed. The point: find high-impact papers the
-initial search missed by looking at what the papers we DO have cite repeatedly.
+initial search missed, both by what the papers we DO have cite repeatedly
+(backward, `xref.py`) and by what cites our own landmark papers (forward,
+`forward.py`). Every paper either pass suggests gets a recorded decision
+(`candidates.py`) — the audit gate fails while any candidate is still pending.
 
-**6a. Fetch reference lists.** For each paper with a DOI, call CrossRef:
-`https://api.crossref.org/works/<doi>`. The `message.reference[]` field has
-the cited refs. Most have a `DOI` field; some have only unstructured strings.
-For papers without DOIs (arxiv-only), fall back to extracting DOIs from the
-PDF text via `pdftotext -layout <pdf> - | grep -oE '10\.\d+/...'`. This is
-crude but recovers some.
+**6a. Backward: fetch reference lists (`tools/xref.py`).** For each paper with a
+DOI, call CrossRef: `https://api.crossref.org/works/<doi>`. The
+`message.reference[]` field has the cited refs. For an arXiv DOI, and for any
+paper whose CrossRef record has no reference list, xref asks **Semantic
+Scholar** instead (`paper/batch` with reference ids, chunked; `paper/{id}/references`
+paged for long lists) — set `S2_API_KEY`. A cited arXiv id is normalized to
+`10.48550/arxiv.<id>` so it matches a corpus DOI. A probe on 2026-09-25 found
+reference lists for 16 of 20 sampled arXiv papers this way (OpenAlex had 4 of
+39). A paper whose references could not be fetched makes the run **incomplete**
+and xref exits 1, same as a genuine fetch failure — pass `--allow-incomplete`
+to accept a partial table (it says so in its output) rather than re-running
+immediately.
 
-**6b. Build the frequency table.** For each cited DOI, count how many of
-your N papers cite it. `tools/xref.py` does this. It skips arXiv DOIs without a
-request (CrossRef has none, so each was a certain 404: 69% of one arXiv-heavy
-build's xref requests) and retries an incomplete fetch once at the end of the run before it
-reports the table as undercounted.
+```bash
+python3 tools/xref.py --rows rows.json --out xref_<topic>.json --min-cites 4 \
+        --resolve-unknown --internal-out internal_citations.json
+```
 
-**6c. Resolve unknowns.** Many cited refs have only a DOI in the CrossRef
-response, no title/author. Look these up via CrossRef metadata
-(`api.crossref.org/works/<doi>` again, but for the cited DOI).
+**6b. Build the frequency table.** For each cited DOI, count how many of your N
+papers cite it — `xref.py` does this as part of the same run above, and retries
+an incomplete CrossRef fetch once at the end of the run before it reports the
+table as undercounted.
 
-**6d. Filter and select.** Take refs cited by `≥4` of your papers
-(definite-include) plus selected `≥3`-cited foundational classics. Filter
-out:
-- Refs already in the spreadsheet (check by DOI normalized to lowercase).
-- Methods/software citations (SciPy, NumPy, FreeSurfer, fMRIPrep, etc.)
-  unless the topic is methods.
-- Off-topic refs that just happened to be popular (e.g. a stats paper).
+**6c. Resolve unknowns.** `--resolve-unknown` looks up titles for top-cited DOIs
+that came back with no title/author (many cited refs have only a DOI in the
+CrossRef response).
 
-Aim for ~25-35 additions. More than that and the spreadsheet becomes
-unwieldy; less and you've under-mined.
+**6d. Forward: papers citing our landmarks (`tools/forward.py`).** Picks the
+corpus's landmarks (top 30 by within-corpus in-degree — from
+`--internal-out` above — then citation count), asks OpenAlex for the most-cited
+papers citing each one (up to 200 per landmark), and scores each citing paper
+by how many corpus papers it also cites. A citing paper that cites at least 3
+corpus papers becomes a candidate. Because each pull is ordered by citation
+count, very recent papers are under-represented — the output says so. A
+corpus row with no DOI (or whose OpenAlex id lookup failed) cannot be excluded
+from the candidates, so it may reappear as its own "candidate"; check by hand.
 
-**6e. Repeat Phases 3-5** for the new batch. Verify every citation, attempt
-PDF download, append to spreadsheet (with the green color and Xref column
-populated).
+```bash
+python3 tools/forward.py --rows rows.json --out forward_candidates.json
+```
+
+**6e. Every candidate gets a recorded decision (`tools/candidates.py`).** Add
+both passes' results to one ledger, decide each with a reason, and export the
+included ones as a lane file:
+
+```bash
+python3 tools/candidates.py --rows rows.json --add xref_<topic>.json --source xref
+python3 tools/candidates.py --rows rows.json --add forward_candidates.json --source forward
+python3 tools/candidates.py --rows rows.json --list pending
+python3 tools/candidates.py --rows rows.json --decide 10.1038/xxxxx \
+        --decision exclude --reason "methods paper, not on topic"
+python3 tools/candidates.py --rows rows.json --export-included xref_lane.json --lane X
+```
+
+Aim for ~25-35 *included* additions per pass. More than that and the spreadsheet
+becomes unwieldy; less and you've under-mined. The excluded ones are not
+discarded — they stay in `candidates.json` with their reason, and
+`spreadsheet.py` lists them on a "Considered and excluded" sheet, so a paper
+missing from the review is visibly one that was considered. The audit gate
+fails while any candidate is pending, or while an `include`d candidate is not
+actually in the table.
+
+**6f. Repeat Phases 3, 3f and 5b** for the new batch: `merge_lanes.py --append
+xref_lane.json --into rows.json` adds the exported rows without touching any
+existing row, then `verify.py --rows --only <new refs>`, `references.py`, and
+`citations.py` bring them up to the same standard as every other row (with the
+green color and Xref column populated).
 
 ### Phase 6b — Families and the timeline (offered on EVERY review)
 
@@ -1652,8 +1731,13 @@ Procedure, in order:
    `--ingest` (Phase 5c).
 4. Acknowledge each remaining warning (`references.py --list-acks`, then
    `audit_acks.json`; Phase 3f).
-5. `candidates.py` over the existing xref output, to bring the excluded-candidates
-   ledger up to date.
+5. `candidates.py --rows rows.json --add xref_<topic>.json --source xref` (and
+   `--add forward_candidates.json --source forward` if you have one) over the
+   existing xref/forward output, then decide any still-pending entries
+   (`--list pending`, `--decide DOI include|exclude --reason "..."`), to bring
+   the candidate ledger up to date. A gated table with no `candidates.json` at
+   all fails the audit with `no-candidate-ledger` under `*` — acknowledge that
+   in `audit_acks.json` if the corpus genuinely never ran xref/forward.
 6. `references.py --audit`, then `spreadsheet.py`.
 
 **When a full redo is easier than upgrading in place:** few of the old rows carry a
@@ -1665,48 +1749,63 @@ search is simpler than reconciling one row at a time. Say which you chose, and w
 
 ## Quick start for a fresh Claude
 
+Read this playbook, then read any existing `rows.json` — after Phase 3f it is the
+live table and the xlsx is only a rendering of it (xlsxwriter is write-only).
+Confirm topic + criteria with the user; do NOT ask whether to download PDFs, the
+default is no (Phase 4 is opt-in only). Then the pipeline, in order:
+
 ```
-1. Read this playbook.
-2. Read the existing `rows.json` — after Phase 3f it is the live table and
-   the xlsx is only a rendering of it (xlsxwriter is write-only).
-3. Confirm topic + criteria with the user. Do NOT ask whether to download
-   PDFs — the default is no (Phase 4 is opt-in only).
-4. Phase 1: collect baseline (source-doc citations).
-5. Phase 2: spawn search agent using tools/search_prompt_template.md.
-6. Phase 3: verify EVERY citation (tools/verify.py --rows); it stamps each row.
-6a. Phase 3e: hand-check any DOI-less rows (tools/handcheck.py --prepare /
-    --adopt-dois / --ingest).
-6b. Phase 3f: canonicalize (tools/references.py), pass --audit (acknowledge any
-    remaining warnings via audit_acks.json / references.py --list-acks), then
-    sentence-case titles in a reviewed pass (tools/sentence_case.py --proper).
-7. Phase 5: update spreadsheet (tools/spreadsheet.py) with DOI URLs as Link — it
-   refuses a failing gated table; --draft writes a marked draft instead.
-8. Phase 5b: citation counts (tools/citations.py); attach to rows, rebuild.
-8b. Phase 5c: fetch abstracts (tools/abstracts.py) and check every summary against
-    its abstract (tools/summary_audit.py --prepare / dispatch checking agents /
-    --ingest).
-9. Phase 6: cross-citation pass (tools/xref.py); verify and append xref
-   batch via Phases 3 + 5 again.
-9b. Phase 6b (ALWAYS OFFER): families + timeline — propose families, then pitch the
-    timeline: the user uses them, changes them, or skips the timeline. If not skipped:
-    assign → tools/families.py validates/stamps → tools/families_figure.py draws the
-    timeline with its standard defaults and auto-labels landmarks (only arrows/notes
-    are editorial).
-9c. Phase 7 (OPTIONAL): review article — author prose into content.json,
-    gate it with tools/cite_check.py, then render with tools/review_paper.py
-    (APA-7 refs from rows.json). If AI-authored, state the AI author + a
-    verification disclosure. REQUIRED before delivery: run the priority audit
-    (origin claims must cite the EARLIEST paper, oldest-first), and the
-    concision pass with tools/prose_audit.py (keep a pre-revision copy and
-    re-run with --baseline: a rewrite must not drop a citation) — see Phase 7.
-10. Phase 8: report to user.
-11. Phase 4 (PDF download) is OPTIONAL. Only run if the user explicitly
-    asks for PDFs.
-12. If you changed any tool/phase/command, update the matching docs/ page
-    (see "Documentation site — keep it in sync" above).
-13. Extending or rerunning an EXISTING corpus is not a lighter pass — see
-    "Upgrading an old corpus" above: the first verified row gates the whole table.
+ 1. Scope the topic (Phase 1, your decision). Write the lane briefs with the
+    schema-2 output format (tools/search_prompt_template.md); launch the
+    forward-search and antecedent lanes in one fan-out (Phases 2 + 2b), each
+    writing its file into search_raw/.
+
+ 2. python3 tools/merge_lanes.py --raw search_raw --out rows.json      (Phase 2c)
+    Lost deferrals fail the merge: send them to one recovery lane, add its
+    file to search_raw/, and re-merge. Resume any lane it flags as thin.
+
+ 3. python3 tools/verify.py --rows rows.json --out verify_report.json  (Phase 3)
+    Fix or drop each MISMATCH and NOT-FOUND, or clear a false alarm with
+    --override REF --reason "...". In parallel: tools/handcheck.py --prepare
+    for the DOI-less rows, the hand-check agent, then --ingest (Phase 3e).
+
+ 4. Pitch the families to the user (Phase 6b step 2): propose ~3-8 families
+    (tools/families.py --digest) and let them use, change, or skip them.
+
+ 5. In parallel, once rows are verified: canon (tools/references.py — refuses
+    an unverified row; Phase 3f), citation counts (tools/citations.py; Phase
+    5b), cross-citation via Semantic Scholar (tools/xref.py; Phase 6), forward
+    citations of the landmarks (tools/forward.py; Phase 6), and abstracts
+    (tools/abstracts.py; Phase 5c).
+
+ 6. tools/candidates.py --add for both the xref and forward results; decide
+    each pending one with a reason; --export-included the decided-in papers,
+    tools/merge_lanes.py --append them into rows.json, then verify, canon and
+    citation counts for the new rows (Phase 6).
+
+ 7. Sentence-case titles in a reviewed pass (tools/sentence_case.py --proper)
+    and any post-canon hand fixes (mojibake, compound surnames); acknowledge
+    every remaining audit warning in audit_acks.json (references.py
+    --list-acks) (Phase 3f).
+
+ 8. tools/summary_audit.py --prepare; dispatch checking agents with no web
+    access; --ingest. Fix any flagged summary and re-run --prepare (Phase 5c).
+
+ 9. Assign families (tools/families.py --assign --out families.json) and
+    render the timeline (tools/families_figure.py) — only if not skipped at
+    step 4 (Phase 6b).
+
+10. python3 tools/spreadsheet.py --rows rows.json --out <topic>_bibliography.xlsx
+    It runs the full audit and writes the deliverable only if it passes;
+    --draft writes a marked draft instead (Phase 5).
 ```
+
+Then Phase 7 (review article, OPTIONAL) and Phase 8 (report to the user). Phase 4
+(PDF download) is OPTIONAL — only run if the user explicitly asks. If you changed
+any tool/phase/command, update the matching docs/ page (see "Documentation site —
+keep it in sync" above). Extending or rerunning an EXISTING corpus is not a
+lighter pass — see "Upgrading an old corpus" above: the first verified row gates
+the whole table.
 
 Plan on hours, not minutes. A 475-ref, 11-lane build took about
 4 hours on 2026-09-24: ~20 min of web search, ~85 min in the network tools (53 of

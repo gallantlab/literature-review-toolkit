@@ -42,6 +42,15 @@ in `tools/README.md` and `PLAYBOOK.md`.
 
 ## What each tool refuses to guess
 
+- **`merge_lanes.py`** dedups schema-2 lane files by DOI, then arXiv id, then
+  normalized title + year; a title+year match alone is treated as the same
+  paper only when the lanes' claims agree and the rows do not carry two
+  different journal DOIs, otherwise both rows are kept as a possible pair.
+  Every `deferred` entry must match a merged row (DOI, arXiv id, or title
+  similarity ≥ 0.85 corroborated by `first_author`/`year`); a lost deferral
+  exits 1. A lane under 60% of its target, or out of search budget, is
+  flagged thin. `--append FILE --into ROWS` adds a lane's papers to a table
+  that may already be canonical, never touching an existing row.
 - **`verify.py`** returns `OK`, `MISMATCH`, `NOT-FOUND`, `ERROR` or `UNCHECKED`.
   `ERROR` means a lookup could not complete (it is retried once in the run, then
   re-checked with `--retry-from`); `NOT-FOUND` means every lookup completed and
@@ -92,8 +101,24 @@ in `tools/README.md` and `PLAYBOOK.md`.
   its old verdict. A row with no abstract is `no-abstract`, a warning to
   acknowledge; a flagged (`unsupported`) summary is a defect.
 - **`xref.py`** builds the cross-citation table from the corpus's CrossRef
-  reference lists. `--internal-out` writes within-corpus citation counts for
-  the figure's landmark selection. Accepts `rows.json` (`--rows`).
+  reference lists. For an arXiv DOI, or any paper whose CrossRef record has no
+  reference list, it asks Semantic Scholar instead (`S2_API_KEY`), normalizing
+  a cited arXiv id to `10.48550/arxiv.<id>`. A paper whose references could not
+  be fetched makes the run incomplete and it exits 1 unless
+  `--allow-incomplete`. `--internal-out` writes within-corpus citation counts
+  for the figure's landmark selection. Accepts `rows.json` (`--rows`).
+- **`forward.py`** picks the corpus's landmarks (top in-degree, then citation
+  count), pulls the most-cited papers citing each from OpenAlex, and keeps
+  those citing at least `--min-shared` corpus papers as candidates. Because
+  each pull is citation-ordered, recent papers are under-represented; a corpus
+  row with no DOI cannot be excluded from the candidates.
+- **`candidates.py`** is the shared ledger for `xref.py` and `forward.py`
+  output: `--add` merges candidates in by DOI, keeping every source and score;
+  `--decide DOI include|exclude --reason "..."` is required before the audit
+  will pass; `--export-included` writes a schema-2 lane file for
+  `merge_lanes.py --append`. The audit fails while any candidate is pending, or
+  while an `include`d one is missing from the table, and a gated table with no
+  `candidates.json` at all needs the `no-candidate-ledger` warning acknowledged.
 - **`families.py`** validates an agent-proposed, human-approved grouping: every
   paper in exactly one family, 2–9 families (3–8 recommended). Never build
   families by clustering embeddings.
