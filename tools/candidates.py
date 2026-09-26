@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """The candidate ledger: every paper xref or forward citations suggest gets a recorded decision.
 
-candidates.json maps DOI -> {title, year, first_author, sources, decision, reason, at}.
+candidates.json maps DOI -> {title, year, first_author, sources, decision, reason, at},
+plus `_runs`: {source: {at, n}}, recorded by each --add, so the audit can tell
+that xref and forward citations were actually run. Keys starting with "_" are
+records, not candidates.
 The audit fails while any candidate is pending, and the spreadsheet lists every
 excluded one with its reason, so a paper that is not in the review was visibly
 considered and set aside.
@@ -27,13 +30,22 @@ def _doi(d):
     return re.sub(r"(?i)^https?://(dx\.)?doi\.org/", "", (d or "").strip()).lower()
 
 
+def entries(ledger):
+    """(doi, candidate) pairs, sorted; skips "_" record keys such as _runs."""
+    return [(d, c) for d, c in sorted(ledger.items()) if not d.startswith("_")]
+
+
 def corpus_dois(rows):
     return {_doi(common.doi_of(r)) for r in rows if common.doi_of(r)}
 
 
-def add(ledger, entries, source, corpus):
+def add(ledger, found, source, corpus, asof=None):
+    """Record `found` (xref / forward output) as candidates, and the run itself
+    under ledger["_runs"][source]."""
+    runs = ledger.setdefault("_runs", {})
+    runs[source] = {"at": asof or datetime.date.today().isoformat(), "n": len(found)}
     added = skipped = 0
-    for e in entries:
+    for e in found:
         d = _doi(e.get("doi"))
         if not d:
             continue
@@ -57,7 +69,7 @@ def add(ledger, entries, source, corpus):
 
 def decide(ledger, doi, decision, reason, asof):
     d = _doi(doi)
-    if d not in ledger:
+    if d not in ledger or d.startswith("_"):
         raise ValueError(f"{doi} is not in the ledger")
     if decision not in ("include", "exclude"):
         raise ValueError("--decision must be include or exclude")
@@ -68,7 +80,7 @@ def decide(ledger, doi, decision, reason, asof):
 
 def export_included(ledger, corpus, lane):
     papers = []
-    for d, c in sorted(ledger.items()):
+    for d, c in entries(ledger):
         if c.get("decision") == "include" and d not in corpus:
             papers.append({"ref": f"{lane}-{len(papers) + 1:02d}", "doi": d, "arxiv": "",
                            "link": f"https://doi.org/{d}", "first_author": c.get("first_author", ""),
@@ -81,10 +93,10 @@ def export_included(ledger, corpus, lane):
 
 def candidate_defects(ledger, corpus):
     out = []
-    pending = [d for d, c in ledger.items() if c.get("decision") not in ("include", "exclude")]
+    pending = [d for d, c in entries(ledger) if c.get("decision") not in ("include", "exclude")]
     if pending:
         out.append(f"candidates-pending: {len(pending)} undecided (candidates.py --list pending)")
-    for d, c in sorted(ledger.items()):
+    for d, c in entries(ledger):
         if c.get("decision") == "include" and d not in corpus:
             out.append(f"candidate {d} is marked include but is not in the table (export, append, verify)")
     return out
@@ -111,7 +123,7 @@ def main():
     if args.add:
         if not args.source:
             ap.error("--add needs --source")
-        a, s = add(ledger, common.load_json(args.add), args.source, corpus)
+        a, s = add(ledger, common.load_json(args.add), args.source, corpus, args.asof)
         common.dump_json(ledger, path)
         print(f"added {a} candidate(s), skipped {s} already in the corpus -> {path}")
     elif args.decide:
@@ -127,7 +139,7 @@ def main():
         print(f"{len(lane['papers'])} included paper(s) -> {args.export_included}; "
               f"next: merge_lanes.py --append {args.export_included} --into {args.rows}")
     elif args.list:
-        for d, c in sorted(ledger.items()):
+        for d, c in entries(ledger):
             if args.list == "all" or c.get("decision") == args.list:
                 print(f"{d}\t{c.get('decision')}\t{c.get('year')}\t{c.get('first_author')}\t{c.get('title')}\t"
                       f"{c.get('sources')}\t{c.get('reason')}")

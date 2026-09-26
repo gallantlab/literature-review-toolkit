@@ -464,6 +464,12 @@ def audit_rows(rows, keyf, acks=None, ledger=None):
              "recorded; run candidates.py, or acknowledge why this review has none")
     elif gated and ledger is not None:
         corpus += candidates.candidate_defects(ledger, candidates.corpus_dois(rows))
+        runs = ledger.get("_runs") if isinstance(ledger.get("_runs"), dict) else {}
+        for src, what in (("xref", "backward cross-citation (xref.py)"),
+                          ("forward", "forward citation (forward.py)")):
+            if src not in runs:
+                warn("*", f"no-{src}-run", f"the candidate ledger records no {what} run: run it and "
+                     f"candidates.py --add ... --source {src}, or acknowledge why this review has none")
     unacked = {}
     for k, ws in warnings.items():
         for wid, text in ws:

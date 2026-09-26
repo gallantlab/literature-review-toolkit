@@ -42,6 +42,7 @@ import sys
 
 import xlsxwriter
 
+import candidates
 import common
 import references
 
@@ -218,7 +219,7 @@ def main():
         else:
             print("  (legacy corpus: written despite the audit findings above)", file=sys.stderr)
     ledger_dict = ledger if isinstance(ledger, dict) else {}
-    excluded = [dict(v, doi=d) for d, v in sorted(ledger_dict.items()) if v.get("decision") == "exclude"]
+    excluded = [dict(v, doi=d) for d, v in candidates.entries(ledger_dict) if v.get("decision") == "exclude"]
     for src in unknown_sources(rows):
         print(f"  ⚠ source={src!r} has no color rule (known: {', '.join(COLORS)}); "
               "rendered white", file=sys.stderr)

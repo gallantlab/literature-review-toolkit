@@ -1929,7 +1929,9 @@ check_true("the legacy note explains why the gates are off and names the upgrade
 _d = _tmpf.mkdtemp()
 _rp, _ap = os.path.join(_d, "rows.json"), os.path.join(_d, "audit_acks.json")
 common.dump_json([_na], _rp)
-common.dump_json({}, os.path.join(_d, "candidates.json"))
+# a gated table's ledger records that xref and forward ran (final fixes I8)
+_RUNS_LEDGER = {"_runs": {"xref": {"at": "2026-09-25", "n": 0}, "forward": {"at": "2026-09-25", "n": 0}}}
+common.dump_json(_RUNS_LEDGER, os.path.join(_d, "candidates.json"))
 
 
 def _audit_exit():
@@ -1969,7 +1971,7 @@ import io  # noqa: E402
 _d2 = _tmpf.mkdtemp()
 _rp2, _ap2 = os.path.join(_d2, "rows.json"), os.path.join(_d2, "audit_acks.json")
 common.dump_json([_na], _rp2)
-common.dump_json({}, os.path.join(_d2, "candidates.json"))
+common.dump_json(_RUNS_LEDGER, os.path.join(_d2, "candidates.json"))
 
 
 def _list_acks():
@@ -2004,7 +2006,7 @@ def _sheet_main(rows, *extra, candidates={}):
     rp, out = os.path.join(d, "rows.json"), os.path.join(d, "bib.xlsx")
     common.dump_json(rows, rp)
     if candidates is not None:
-        common.dump_json(candidates, os.path.join(d, "candidates.json"))
+        common.dump_json({**_RUNS_LEDGER, **candidates}, os.path.join(d, "candidates.json"))
     argv = sys.argv
     sys.argv = ["spreadsheet.py", "--rows", rp, "--out", out, *extra]
     code = 0
@@ -2769,6 +2771,61 @@ common.dump_json(_lane("A", [_p("A-01", doi="10.1/a")]), os.path.join(_i7d, "raw
 os.remove(os.path.join(_i7d, "rows.json"))
 check("a clean merge writes rows.json", (_merge_exit(os.path.join(_i7d, "raw"), os.path.join(_i7d, "rows.json")),
                                          os.path.exists(os.path.join(_i7d, "rows.json"))), (0, True))
+
+# ---- final fixes I8: the ledger records that xref/forward ran (2026-09-25) -----
+_i8L = {}
+candidates.add(_i8L, [{"doi": "10.9/a", "n_citations": 4}, {"doi": "10.1/in", "n_citations": 3}], "xref",
+               {"10.1/in"}, asof="2026-09-25")
+check("candidates.add records the run", _i8L.get("_runs"), {"xref": {"at": "2026-09-25", "n": 2}})
+check("candidate_defects ignores the _runs record", candidates.candidate_defects({"_runs": _i8L["_runs"]}, set()),
+      [])
+candidates.decide(_i8L, "10.9/a", "include", "on topic", "2026-09-25")
+check("export_included ignores the _runs record",
+      [p["doi"] for p in candidates.export_included(_i8L, set(), "X")["papers"]], ["10.9/a"])
+_rep = references.audit_rows([_grow()], "ref", ledger={})
+check("a gated ledger with no xref/forward run warns under *",
+      sorted(w for w, _ in _rep["unacked"].get("*", [])), ["no-forward-run", "no-xref-run"])
+check("...and fails the audit until acknowledged", _rep["failed"], True)
+_rep = references.audit_rows([_grow()], "ref", ledger={"_runs": {"xref": {"at": "d", "n": 1}}})
+check("a ledger with an xref run still warns about forward",
+      [w for w, _ in _rep["unacked"].get("*", [])], ["no-forward-run"])
+_rep = references.audit_rows([_grow()], "ref", ledger=dict(_RUNS_LEDGER))
+check("a ledger recording both runs passes", (_rep["failed"], "*" in _rep["warnings"]), (False, False))
+check("a legacy table is not asked for runs", "*" in references.audit_rows(_legacy, "ref", ledger={})["warnings"],
+      False)
+_i8d = _tmpf.mkdtemp()
+_i8rp = os.path.join(_i8d, "rows.json")
+common.dump_json([{"ref": "A", "doi": "10.1/a", "cite_openalex": 5}], _i8rp)
+
+
+def _i8_forward(*extra):
+    def boom(wid, per, email):
+        raise urllib.error.URLError("down")
+    argv = sys.argv
+    sys.argv = ["forward.py", "--rows", _i8rp, "--email", "t@example.org", *extra]
+    try:
+        with _patched(forward, openalex_ids=lambda dois, email: {"10.1/a": "W1"}, citing=boom), _sleeps(), \
+                _ctx.redirect_stdout(io.StringIO()), _ctx.redirect_stderr(io.StringIO()):
+            forward.main()
+        return 0
+    except SystemExit as e:
+        return e.code or 0
+    finally:
+        sys.argv = argv
+
+
+check("forward.py exits 1 when a landmark pull failed", _i8_forward(), 1)
+check("...unless --allow-incomplete", _i8_forward("--allow-incomplete"), 0)
+common.dump_json(_i8L, os.path.join(_i8d, "candidates.json"))
+_argv = sys.argv
+sys.argv = ["candidates.py", "--rows", _i8rp, "--list", "all"]
+_i8out = io.StringIO()
+try:
+    with _ctx.redirect_stdout(_i8out), _ctx.redirect_stderr(io.StringIO()):
+        candidates.main()
+finally:
+    sys.argv = _argv
+check_true("candidates --list skips the _runs record", "_runs" not in _i8out.getvalue(), _i8out.getvalue())
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

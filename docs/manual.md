@@ -570,6 +570,7 @@ then citation count), asks OpenAlex for the most-cited papers citing each one
 it also cites; one citing at least `--min-shared` becomes a candidate. Because
 each pull is citation-ordered, very recent papers are under-represented — the
 output says so. A corpus row with no DOI cannot be excluded from the candidates.
+A failed landmark pull exits 1 unless `--allow-incomplete`.
 
 ```bash
 python3 ../tools/candidates.py --rows rows.json --add xref_my_topic.json --source xref
@@ -587,7 +588,10 @@ schema-2 lane file of the `include`d papers not yet in the corpus, ready for
 `merge_lanes.py --append`. Send the appended batch back through Phases 3, 3f and
 5b. Excluded candidates are not discarded: `spreadsheet.py` lists them, with
 their reason, on a "Considered and excluded" sheet, so a paper missing from the
-review is visibly one that was looked at.
+review is visibly one that was looked at. Each `--add` also records the run
+(`_runs` in the ledger); on a gated table the audit warns `no-xref-run` /
+`no-forward-run` under `*` until both passes are in, or the warning is
+acknowledged.
 
 !!! warning "Keep ids unique across merges"
     Assert `len(refs) == len(set(refs))` after merging, and attach citation counts

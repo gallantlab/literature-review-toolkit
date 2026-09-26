@@ -28,7 +28,7 @@ in `tools/README.md` and `PLAYBOOK.md`.
 | `abstracts.py` | 5c | Fetch the abstract of every row, in batches, into abstracts.json. | `--email` `--key` `--out` `--rows` |
 | `summary_audit.py` | 5c | Check every row's summary against its abstract, by checking agents with no web access. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
 | `candidates.py` | 6 | The candidate ledger: every paper xref or forward citations suggest gets a recorded decision. | `--add` `--asof` `--decide` `--decision` `--export-included` `--lane` `--ledger` `--list` `--reason` `--rows` `--source` |
-| `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
+| `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
 | `xref.py` | 6 | Build a cross-citation index from a list of papers. | `--allow-incomplete` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
 | `families.py` | 6b | Phase 6b — validate an LLM-proposed family taxonomy against the bibliography, stamp `family` onto rows.json, and emit families.json (the reproducible cache) + families.md (grouped tables + a family x topic cross-tab). | `--asof` `--assign` `--digest` `--md` `--out` `--rows` |
 | `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |
@@ -123,7 +123,8 @@ in `tools/README.md` and `PLAYBOOK.md`.
   count), pulls the most-cited papers citing each from OpenAlex, and keeps
   those citing at least `--min-shared` corpus papers as candidates. Because
   each pull is citation-ordered, recent papers are under-represented; a corpus
-  row with no DOI cannot be excluded from the candidates.
+  row with no DOI cannot be excluded from the candidates. A failed landmark
+  pull exits 1 unless `--allow-incomplete`.
 - **`candidates.py`** is the shared ledger for `xref.py` and `forward.py`
   output: `--add` merges candidates in by DOI, keeping every source and score;
   `--decide DOI include|exclude --reason "..."` is required before the audit
@@ -131,6 +132,8 @@ in `tools/README.md` and `PLAYBOOK.md`.
   `merge_lanes.py --append`. The audit fails while any candidate is pending, or
   while an `include`d one is missing from the table, and a gated table with no
   `candidates.json` at all needs the `no-candidate-ledger` warning acknowledged.
+  Each `--add` records its run under `_runs`; a gated ledger missing the xref or
+  forward run warns `no-xref-run` / `no-forward-run` until acknowledged.
 - **`families.py`** validates an agent-proposed, human-approved grouping: every
   paper in exactly one family, 2–9 families (3–8 recommended). Never build
   families by clustering embeddings.

@@ -699,6 +699,8 @@ corpus papers becomes a candidate. Because each pull is ordered by citation
 count, very recent papers are under-represented — the output says so. A
 corpus row with no DOI (or whose OpenAlex id lookup failed) cannot be excluded
 from the candidates, so it may reappear as its own "candidate"; check by hand.
+A landmark whose pull failed makes `forward.py` exit 1 (its citing papers are
+missing from the candidates); re-run it, or pass `--allow-incomplete`.
 
 ```bash
 python3 tools/forward.py --rows rows.json --out forward_candidates.json
@@ -723,7 +725,10 @@ discarded — they stay in `candidates.json` with their reason, and
 `spreadsheet.py` lists them on a "Considered and excluded" sheet, so a paper
 missing from the review is visibly one that was considered. The audit gate
 fails while any candidate is pending, or while an `include`d candidate is not
-actually in the table.
+actually in the table. Each `--add` also records the run in the ledger
+(`_runs`: source, date, count), and on a gated table the audit warns
+`no-xref-run` / `no-forward-run` under `*` until both passes have been added —
+acknowledge one only if this review genuinely skipped that pass.
 
 **6f. Repeat Phases 3, 3f and 5b** for the new batch: `merge_lanes.py --append
 xref_lane.json --into rows.json` adds the exported rows without touching any
@@ -1713,7 +1718,7 @@ it is stale); the per-tool detail is in `tools/README.md` and `docs/tools.md`.
 | `abstracts.py` | 5c | Fetch the abstract of every row, in batches, into abstracts.json. | `--email` `--key` `--out` `--rows` |
 | `summary_audit.py` | 5c | Check every row's summary against its abstract, by checking agents with no web access. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
 | `candidates.py` | 6 | The candidate ledger: every paper xref or forward citations suggest gets a recorded decision. | `--add` `--asof` `--decide` `--decision` `--export-included` `--lane` `--ledger` `--list` `--reason` `--rows` `--source` |
-| `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
+| `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
 | `xref.py` | 6 | Build a cross-citation index from a list of papers. | `--allow-incomplete` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
 | `families.py` | 6b | Phase 6b — validate an LLM-proposed family taxonomy against the bibliography, stamp `family` onto rows.json, and emit families.json (the reproducible cache) + families.md (grouped tables + a family x topic cross-tab). | `--asof` `--assign` `--digest` `--md` `--out` `--rows` |
 | `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |

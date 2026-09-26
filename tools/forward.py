@@ -90,6 +90,8 @@ def main():
     ap.add_argument("--landmarks", type=int, default=30)
     ap.add_argument("--per-landmark", type=int, default=200)
     ap.add_argument("--min-shared", type=int, default=3)
+    ap.add_argument("--allow-incomplete", action="store_true",
+                    help="exit 0 even when some landmark pulls failed (said in the output)")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"))
     args = ap.parse_args()
     if not args.email:
@@ -101,7 +103,7 @@ def main():
     dois = sorted({common.doi_of(r, lower=True) for r in rows if common.doi_of(r)})
     wids = openalex_ids(dois, args.email)
     marks = pick_landmarks(rows, keyf, indeg, args.landmarks)
-    by_landmark = {}
+    by_landmark, failed = {}, []
     for r in marks:
         wid = wids.get(common.doi_of(r, lower=True))
         if not wid:
@@ -111,12 +113,17 @@ def main():
             by_landmark[r.get(keyf)] = citing(wid, args.per_landmark, args.email)
         except Exception as e:
             print(f"  ✗ {r.get(keyf)}: {type(e).__name__}: {e}", file=sys.stderr)
+            failed.append(r.get(keyf))
         time.sleep(0.2)
     cands, n_nodoi = score(by_landmark, set(wids.values()), set(dois), args.min_shared)
     out = args.out or os.path.join(here, "forward_candidates.json")
     common.dump_json(cands, out)
     print(f"{len(cands)} candidate(s) from {len(by_landmark)} landmark(s) -> {out} "
           f"({n_nodoi} more had no DOI). Recent papers are under-represented (pulls are citation-ordered).")
+    if failed:
+        print(f"WARNING: {len(failed)} landmark pull(s) failed, so their citing papers are missing from "
+              f"the candidates: {', '.join(failed)}. Re-run.", file=sys.stderr)
+        sys.exit(0 if args.allow_incomplete else 1)
 
 
 if __name__ == "__main__":
