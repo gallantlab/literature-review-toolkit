@@ -1472,28 +1472,64 @@ check("http: no Retry-After falls back to exponential backoff", _sl, [3])
 _bodies = []
 
 
-def _s2_ok(url, data=None, headers=None, **k):
+def _s2_ok(url, retries=5, timeout=30, data=None, headers=None):
     ids = json.loads(data)["ids"]
     _bodies.append(len(ids))
     return [{"citationCount": 1, "influentialCitationCount": 0} for _ in ids]
 
 
 _items = [(f"k{n}", f"10.1/{n}") for n in range(1200)]
-with _patched(citations, http_json=_s2_ok), _sleeps():
+common._S2_LAST[0] = 0.0
+with _patched(common, http_json=_s2_ok), _sleeps():
     _got = citations.fetch_s2(_items)
 check("s2: 1200 ids go out in chunks of <=500", _bodies, [500, 500, 200])
 check("s2: every chunk's results are mapped back", len(_got), 1200)
 _n400 = []
 
 
-def _s2_400(url, data=None, headers=None, **k):
+def _s2_400(url, retries=5, timeout=30, data=None, headers=None):
     _n400.append(1)
     raise urllib.error.HTTPError("u", 400, "bad", {}, None)
 
 
-with _patched(citations, http_json=_s2_400), _sleeps() as _sl:
+common._S2_LAST[0] = 0.0
+with _patched(common, http_json=_s2_400), _sleeps() as _sl:
     citations.fetch_s2(_items[:10])
 check("s2: a 400 is not retried or slept on", (len(_n400), _sl), (1, []))
+
+# ---- Semantic Scholar pacer (2026-09-26) -----------------------------------
+_s2calls = []
+
+
+def _s2_seq(*codes):
+    seq = list(codes)
+
+    def f(url, retries=5, timeout=30, data=None, headers=None):
+        _s2calls.append((url, retries, dict(headers or {})))
+        c = seq.pop(0) if seq else 200
+        if c != 200:
+            raise urllib.error.HTTPError(url, c, "x", {}, None)
+        return {"ok": True}
+    return f
+
+
+common._S2_LAST[0] = 0.0
+with _patched(common, http_json=_s2_seq()), _sleeps() as _sl:
+    common.s2_request("paper/batch?fields=title", {"ids": ["DOI:10.1/a"]})
+    common.s2_request("paper/batch?fields=title", {"ids": ["DOI:10.1/b"]})
+check_true("s2_request paces consecutive requests >= ~1.1 s", len(_sl) == 1 and 1.0 < _sl[0] <= 1.1, str(_sl))
+check("s2_request lets common.http make exactly one attempt", _s2calls[-1][1], 1)
+common._S2_LAST[0] = 0.0
+with _patched(common, http_json=_s2_seq(429, 429)), _sleeps() as _sl:
+    common.s2_request("paper/batch", {"ids": []})
+check_true("s2_request backs off 20 s then 40 s after 429s", 20 in _sl and 40 in _sl, str(_sl))
+common._S2_LAST[0] = 0.0
+with _patched(common, http_json=_s2_seq(429, 429, 429)), _sleeps():
+    check_true("s2_request gives up after the backoff", _raises(lambda: common.s2_request("paper/batch", {"ids": []})))
+with _patched(os, environ=dict(os.environ, S2_API_KEY="k-test")), _patched(common, http_json=_s2_seq()), _sleeps():
+    common._S2_LAST[0] = 0.0
+    common.s2_request("paper/x")
+check("s2_request sends the key when set", _s2calls[-1][2].get("x-api-key"), "k-test")
 
 # T6 — the duplicate-scan prefilter must not change a single pair.
 import difflib as _dl  # noqa: E402

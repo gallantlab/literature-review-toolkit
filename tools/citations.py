@@ -25,7 +25,6 @@ Counts are a snapshot at run time; re-run to refresh. See PLAYBOOK Phase 5b.
 """
 import argparse
 import datetime
-import json
 import os
 import sys
 import time
@@ -95,22 +94,15 @@ S2_BATCH = 500   # the /paper/batch endpoint's documented cap on ids per request
 def fetch_s2(items):
     """items: list of (key, doi). Returns {key: (count, influential)}. Best-effort.
 
-    One POST per <=500 ids. There is one retry layer, common.http's (which
-    honors Retry-After on a 429). A non-transient error such as a 400 stops S2
-    at once: in every logged run a 400 failed all four of the old outer retries
-    and only added 150 s of sleep."""
+    One POST per <=500 ids. Requests go through common.s2_request, which paces
+    them and backs off after a 429; any other error stops S2 for the run."""
     out = {}
-    headers = {"Content-Type": "application/json"}
-    if os.environ.get("S2_API_KEY"):
-        headers["x-api-key"] = os.environ["S2_API_KEY"]
-    url = ("https://api.semanticscholar.org/graph/v1/paper/batch"
-           "?fields=citationCount,influentialCitationCount")
     pairs = [(key, s2_id(doi)) for key, doi in items]
     for i in range(0, len(pairs), S2_BATCH):
         chunk = pairs[i:i + S2_BATCH]
-        body = json.dumps({"ids": [sid for _, sid in chunk]}).encode()
         try:
-            res = http_json(url, data=body, headers=headers)
+            res = common.s2_request("paper/batch?fields=citationCount,influentialCitationCount",
+                                    {"ids": [sid for _, sid in chunk]})
         except Exception as e:
             code = getattr(e, "code", None)
             print(f"  S2 batch {i}: {f'HTTP {code}' if code else type(e).__name__}; "
