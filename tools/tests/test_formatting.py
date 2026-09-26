@@ -4676,6 +4676,15 @@ check_true("R3.3: every listed group word marks a group",
                "Program", "Programme", "Alliance", "Federation", "Union", "Trust", "Partnership", "Panel",
                "Editors")))
 
+# ---- author fix round 3, item 4: list-shaped claims (2026-09-26) ----
+check("R3.4: 'Smith JL, Jones K' matches 'Smith J'", _mA("Smith JL, Jones K", "Smith J"), [])
+check("R3.4: 'Smith J; Jones K' matches 'Smith J'", _mA("Smith J; Jones K", "Smith J"), [])
+for _lin, _lout in (("Smith JL, Jones K", "Smith"), ("Smith J; Jones K", "Smith"), ("Smith J, K. Jones", "Smith"),
+                    ("Smith, J. L.", "Smith"), ("Smith, J.", "Smith"), ("Doe, John", "Doe"),
+                    ("Doe, John Paul", "Doe"), ("Smith, J., Jones, K.", "Smith"),
+                    ("Lambon Ralph, M. A.", "Lambon Ralph")):
+    check(f"R3.4: claim_surname({_lin!r})", verify.claim_surname(_lin), _lout)
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

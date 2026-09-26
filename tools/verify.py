@@ -196,21 +196,40 @@ def lookup_arxiv_batch(aids, chunk=50, sleep=3.0):
 # A generational suffix PubMed puts after the initials ("Hagler DJ Jr", "Smith EL 3rd").
 
 
+def _is_another_name(seg):
+    """True when the text after a comma is a second person rather than a given
+    name: a word followed by initials ("Jones K") or initials then a word
+    ("K. Jones"). "J. L.", "John" and "John Paul" are given names."""
+    toks = seg.split()
+    if len(toks) < 2:
+        return False
+    if common.words_then_initials(toks):
+        return True
+    k = 0
+    while k < len(toks) and common.is_initials(toks[k]):
+        k += 1
+    return 0 < k < len(toks) and all(len(t) >= 2 and not common.is_initials(t) for t in toks[k:])
+
+
 def claim_surname(name):
     """Surname out of whatever shape a search agent reported a first author in:
     'Gilbert, C. D.' / 'C. D. Gilbert' / 'Gilbert CD' / 'Gilbert' -> 'Gilbert'.
-    A comma means family-first (APA); so do words followed only by initials
+    A list gives its first name ("Smith J; Jones K", "Smith JL, Jones K"). A
+    comma otherwise means family-first (APA); so do words followed only by initials
     ('Smith J', 'Smith JL', 'Smith J.-L.', 'Van Essen DC', PubMed style), which
     give all the words, and an all-caps PubMed form made only of initials-shaped
     tokens ('LI J', 'AN J', 'O K'), which gives its first token. A trailing
     'Jr'/'Sr'/'3rd' is dropped; a name opening with a particle ('de Lange Dzn')
     or a group name (common.is_group) is returned whole; otherwise the last
     token that is not an initial."""
-    name = re.sub(r"\s*(?:,?\s*et al\.?|&.*)$", "", (name or "").strip())
+    name = re.sub(r"\s*(?:,?\s*et al\.?|&.*)$", "", (name or "").split(";")[0].strip())
     if not name:
         return ""
     if "," in name:
-        return name.split(",")[0].strip()
+        first, rest = (x.strip() for x in name.split(",", 1))
+        if _is_another_name(rest.split(",")[0]):
+            return claim_surname(first)   # a list: "Smith JL, Jones K" -> its first name
+        return first                      # family-first: "Smith, J. L.", "Doe, John"
     toks = name.split()
     if len(toks) > 1 and common.is_group(name):
         return name   # a group ("ATLAS Collaboration"): its last word is no surname
