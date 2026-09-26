@@ -255,7 +255,8 @@ in the other — a short title inside a longer one is not a match), confirmed by
 the deferral's `first_author`/`year`. Every title-only match is printed for you
 to check (`matched_by_title`). **`merge_lanes.py` fails on a lost deferral** — an
 entry no lane's papers matched — and on an **unconfirmed** one — a title-only
-match whose deferral gives neither `first_author` nor `year` — and exits 1: add
+match whose deferral gives neither `first_author` nor `year`, or an unreadable
+`first_author` such as "?" — and exits 1: add
 the missing fields and re-merge, or send the papers to one recovery lane, add
 its file to `search_raw/`, and re-merge. It also fails on a **rejected**
 paper — one with no DOI, no arXiv id and no APA string, which can be neither
@@ -328,11 +329,15 @@ record's surname, or one part of a hyphenated one ("Heuvel" / "van den Heuvel",
 and any further word of a compound claim surname must appear in the record's name
 ("Lambon Ralph" does not match "Ralph J"; a record that shortened a compound
 surname, "Quian Quiroga" to "Quiroga", is a mismatch to confirm by hand). A group
-author (a name with Collaboration, Consortium, Institute, Laboratory, Team, ... in
-it, or opening with "The") is compared whole, so "CMS Collaboration" does not match
-"ATLAS Collaboration"; "An" is a surname, not an article; a record author with no
-readable word fails the check. merge_lanes.py uses the same comparison for its
-duplicate and deferral checks. Then the year
+author (a name with Collaboration, Consortium, Institute, Laboratory, University,
+Company, Research, Staff, Team, ... in it, or opening with "The") is compared
+whole, so "CMS Collaboration" does not match "ATLAS Collaboration"; "An" is a
+surname, not an article. Initials are 1-2 capitals, or 3-4 that are not a word
+("JLK", "CYC"), so "Hao CHEN" is read as Chen and "Cavanaugh JR" keeps JR as
+initials; a list "Smith J; Jones K" gives its first name. An unknown name on
+either side ("?", "anon", "unknown", or no readable word) fails the check.
+merge_lanes.py uses the same comparison for its duplicate and deferral checks:
+an unknown author never merges two rows or confirms a deferral. Then the year
 (±1, since a preprint and its version of record differ), and the **title**
 (agreement ≥ 0.5). Title agreement requires the two titles to actually match, not
 merely one to be *contained in* the other — a short claim such as "Deep learning"

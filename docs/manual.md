@@ -292,7 +292,8 @@ regardless of year or DOI) and lists any close pair as a possible duplicate too.
 purpose (`deferred`) that no lane's `papers` matched by DOI, arXiv id, or title
 (similarity ≥ 0.9, or each title's words ≥ 90% contained in the other),
 confirmed by the deferral's `first_author`/`year`. A title-only match whose
-deferral gives neither is **unconfirmed** and fails the merge too. Send the
+deferral gives neither, or gives an unreadable `first_author` such as "?", is
+**unconfirmed** and fails the merge too. Send the
 lost papers to one recovery lane, add its file to `search_raw/`, and re-merge.
 It also fails on a **rejected** paper — no DOI, no arXiv id and no APA string,
 so it can be neither verified nor hand-checked — the same way: give it a DOI
@@ -372,10 +373,13 @@ word of the record's, or one part of a hyphenated one ("Heuvel" / "van den Heuve
 "Hanna" / "Andrews-Hanna", but not "Han"), and a particle alone is not enough, so
 "Van Essen" does not match "Van Dijk". Every word of a compound claim surname must
 appear in the record's name, so "Lambon Ralph" does not match "Ralph J". Initials
-of any script count as initials ("Nowak Ł" does not match "Kowalski Ł"). A group
-author ("ATLAS Collaboration", "The pandas development team") is compared whole,
-"An" stays a surname, and a record author with no readable word fails the check.
-merge_lanes.py uses the same comparison for its duplicate and deferral checks.
+of any script count as initials ("Nowak Ł" does not match "Kowalski Ł"), but a
+capitalized word does not ("Hao CHEN" is Chen), and a list "Smith J; Jones K" gives
+its first name. A group author ("ATLAS Collaboration", "Stanford University",
+"The pandas development team") is compared whole, and "An" stays a surname. An
+unknown name on either side ("?", "anon", no readable word) fails the check.
+merge_lanes.py uses the same comparison for its duplicate and deferral checks, and
+never merges on or confirms a deferral by an unknown author.
 
 | Verdict | Meaning | Action |
 |---|---|---|

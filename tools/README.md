@@ -68,15 +68,18 @@ there counts the same as resolving in CrossRef, and a 404 from both registries i
 "does not resolve" even when the DataCite fetch fell back to curl. The
 first-author check compares surnames: it takes the surname out of both the claim
 and the record ("Smith J", "J. Smith", "Smith, J." and an arXiv "John Smith" all
-give Smith; initials of any script, "Ł" or "И", count as initials), ignores
+give Smith; initials of any script, "Ł" or "И", count as initials, while a
+capitalized word such as "CHEN" or "WANG" is a surname, not initials; a list
+"Smith J; Jones K" gives its first name), ignores
 initials and given names, and needs the claim's surname to match a whole word of
 the record's ("Tang" matches "Tang J", "Heuvel" matches "van den Heuvel M", "Hanna"
 matches "Andrews-Hanna J"; "Van Essen" does not match "Van Dijk", nor "Min"
 "Seung-Min Park", nor "Lambon Ralph" "Ralph J"). A group author ("ATLAS
-Collaboration", "Allen Institute for Brain Science") is compared whole, and a
-record author with no readable word is a mismatch, not a skipped check.
-merge_lanes.py uses the same comparison to tell a duplicate from two papers that
-share a title.
+Collaboration", "Stanford University", "Google Research") is compared whole. An
+unknown name on either side ("?", "anon", "unknown", or no readable word) is an
+author issue, never a match. merge_lanes.py uses the same comparison to tell a
+duplicate from two papers that share a title, and never merges on, or confirms a
+deferral by, an unknown author.
 
 **Verdicts.**
 

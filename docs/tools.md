@@ -52,7 +52,7 @@ in `tools/README.md` and `PLAYBOOK.md`.
   too. Every `deferred` entry must match a merged row (DOI, arXiv id, or a
   symmetric title match confirmed by `first_author`/`year`); a lost deferral
   exits 1, and so does an unconfirmed one (a title-only match whose deferral
-  gives neither field). So does a **rejected** paper — no DOI, arXiv id or APA string, so it
+  gives neither field, or an unreadable `first_author` such as "?"). So does a **rejected** paper — no DOI, arXiv id or APA string, so it
   can be neither verified nor hand-checked — give it a DOI/arXiv id or have the
   lane write its full APA string, then re-merge. A failed merge writes
   `merge_report.json` but not `rows.json`. A lane under 60% of its
