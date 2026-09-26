@@ -21,7 +21,7 @@ are not used as the primary link. `PDF (local)` is empty unless Phase 4 was
 opted into.
 
 Color codes by `source` (see COLORS; an unknown value renders white + a warning):
-  source-doc -> white | search -> cream (#FFF7E0) | xref -> green (#E2F0D9)
+  source-doc -> white | search -> cream (#FFF7E0) | xref / forward / survey -> green (#E2F0D9)
   lab -> blue (#DDEBF7) | anteced / anteced-nosrc -> lilac (#F3E6F5)
 
 Input format (JSON list):
@@ -49,6 +49,8 @@ import references
 PHASE = "5"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 COLORS = {"source-doc": None, "search": "#FFF7E0", "xref": "#E2F0D9", "lab": "#DDEBF7",
+          # Phase 6 candidates found by forward citation or a survey share xref's green
+          "forward": "#E2F0D9", "survey": "#E2F0D9",
           # Phase 2b antecedents (foundations pass): a distinct band. DOI'd classics
           # get the fill; no-DOI hand-cited classics ("anteced-nosrc") share it.
           "anteced": "#F3E6F5", "anteced-nosrc": "#F3E6F5"}

@@ -89,10 +89,12 @@ def export_included(ledger, corpus, lane):
     papers = []
     for d, c in entries(ledger):
         if c.get("decision") == "include" and d not in corpus:
+            srcs = sorted(c.get("sources") or {}) or ["xref"]
+            src = "xref" if "xref" in srcs else srcs[0]      # the pass that found it
             papers.append({"ref": f"{lane}-{len(papers) + 1:02d}", "doi": d, "arxiv": "",
                            "link": f"https://doi.org/{d}", "first_author": c.get("first_author", ""),
                            "year": c.get("year", ""), "title": c.get("title", ""), "apa": "", "summary": "",
-                           "tag": "xref", "topic": "", "source": "xref", "note": "", "lane_fit": ""})
+                           "tag": src, "topic": "", "source": src, "note": "", "lane_fit": ""})
     return {"schema": 2, "lane": lane, "status": {"target": len(papers), "returned": len(papers),
                                                   "websearch_exhausted": False, "notes": "candidate ledger"},
             "papers": papers, "deferred": [], "could_not_confirm": []}

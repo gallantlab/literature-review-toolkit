@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Build a cross-citation index from a list of papers.
 
-For each paper with a DOI, fetch its reference list from CrossRef.
+For each paper with a DOI, fetch its reference list from CrossRef, or from
+Semantic Scholar for an arXiv paper or one CrossRef holds no list for.
 Build a frequency table: which DOIs are cited by ≥N of the input papers.
 Resolve unknown DOIs to titles via CrossRef metadata.
 
@@ -122,7 +123,7 @@ def _ref_doi(ext):
     if ext.get("DOI"):
         return ext["DOI"].lower()
     if ext.get("ArXiv"):
-        return f"10.48550/arxiv.{ext['ArXiv']}".lower()
+        return f"10.48550/arxiv.{common.norm_arxiv(ext['ArXiv'])}".lower()
     return ""
 
 
@@ -345,6 +346,9 @@ def main():
         print(f"{r['n_citations']:>3}  {r['doi']:40s}  {(au + ' ' + yr)[:25]:25s}  {ti}", file=sys.stderr)
     print(f"\nTotal DOIs cited by >= {args.min_cites}: {len(out)}", file=sys.stderr)
     print(f"Wrote {args.out}", file=sys.stderr)
+    zero = [slug for slug, refs in all_refs.items() if not refs]
+    if zero:
+        print(f"\n{len(zero)} paper(s) contributed zero references: {', '.join(zero)}", file=sys.stderr)
     if incomplete:
         print(f"\nWARNING: {len(incomplete)} reference-list fetch(es) could not complete "
               f"(throttle/network) even after a retry: {', '.join(incomplete)}\n"

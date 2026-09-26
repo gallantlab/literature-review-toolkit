@@ -576,7 +576,8 @@ Phase 5b has populated them.)
 `spreadsheet.py`'s `COLORS`, and an unknown value renders white with a warning):
 - White: refs from the source paper (`source-doc`).
 - Cream `#FFF7E0`: refs added in the search passes (`search`).
-- Green `#E2F0D9`: refs added via cross-citation analysis, Phase 6 (`xref`).
+- Green `#E2F0D9`: refs added via cross-citation analysis, Phase 6 (`xref`, or
+  `forward` / `survey` for candidates only those passes found).
 - Blue `#DDEBF7`: the lab's own papers in lab mode (`lab`).
 - Lilac `#F3E6F5`: Phase-2b antecedents (`anteced`; `anteced-nosrc` for
   hand-cited classics with no DOI).

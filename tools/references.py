@@ -372,6 +372,9 @@ def row_gate_defects(r, warn):
     """Defects the reference gates add for one row of a GATED table; `warn(wid,
     text)` records a warning that must be acknowledged."""
     d = []
+    m = re.match(r"(?i)https?://(dx\.)?doi\.org/(.+)$", (r.get("link") or "").strip())
+    if m and r.get("doi") and m.group(2).lower() != common.ids_of(r)[0]:
+        d.append(f"link-doi-mismatch (link {r['link']} is not the row's DOI {r['doi']})")
     if doi_of(r) or r.get("arxiv"):
         if not common.verified_ok(r):
             st = r.get("verified")

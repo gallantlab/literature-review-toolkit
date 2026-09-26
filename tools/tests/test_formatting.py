@@ -1868,8 +1868,8 @@ check("an ack tied to a stale year pair does not cover a new mismatch on the sam
 _rep = references.audit_rows([_grow()], "ref")
 check("a fully checked gated row passes", (_rep["gated"], _rep["failed"], _rep["defects"]), (True, False, {}))
 _rep = references.audit_rows([_grow(), dict(_grow("G2", "10.1/g2"), doi="10.1/changed")], "ref")
-check("a DOI edited after verify fails the audit (verify and summary check both lapse)", _codes(_rep, "G2"),
-      ["unverified", "summary-unchecked"])
+check("a DOI edited after verify fails the audit (verify and summary check both lapse; the stale link is named)",
+      _codes(_rep, "G2"), ["link-doi-mismatch", "unverified", "summary-unchecked"])
 _nd = {"ref": "B1", "apa": "Kuhn, T. S. (1962). The structure of scientific revolutions. U Chicago Press.",
        "summary": "", "canonical_at": common.GATES_SINCE}
 check("a DOI-less row without a hand check fails", _codes(references.audit_rows([_grow(), _nd], "ref"), "B1"),
@@ -2031,6 +2031,7 @@ check("spreadsheet refuses a failing gated table",
       (_code, os.path.exists(os.path.join(_dd, "bib.xlsx"))), (1, False))
 _code, _dd = _sheet_main([dict(_grow(), doi="10.1/changed")], "--draft")
 check_true("--draft writes a file named as a draft", _code == 0 and os.path.exists(os.path.join(_dd, "bib_DRAFT.xlsx")))
+check("--draft does not write the deliverable name", os.path.exists(os.path.join(_dd, "bib.xlsx")), False)
 check_true("the draft carries a banner", "DRAFT" in _xlsx_text(os.path.join(_dd, "bib_DRAFT.xlsx")))
 _code, _dd = _sheet_main([_grow()])
 check("a passing table is written", (_code, os.path.exists(os.path.join(_dd, "bib.xlsx"))), (0, True))
@@ -2944,6 +2945,47 @@ check("xref.rows_to_papers falls back to the arXiv DOI form",
 check("candidates.corpus_dois falls back to the arXiv DOI form",
       candidates.corpus_dois([{"ref": "X", "arxiv": "2301.00001v2"}, {"ref": "D", "doi": "10.1/D"}]),
       {"10.48550/arxiv.2301.00001", "10.1/d"})
+
+# ---- final fixes: minors (2026-09-25) --------------------------------------
+_code, _dd = _sheet_main([_grow()], candidates={"10.9/p": {"title": "P", "sources": {"xref": 4},
+                                                           "decision": "pending"}})
+check("spreadsheet refuses a gated table with a pending candidate",
+      (_code, os.path.exists(os.path.join(_dd, "bib.xlsx"))), (1, False))
+_code, _dd = _sheet_main([_grow()], candidates={"10.9/inc": {"title": "Inc", "sources": {"xref": 4},
+                                                             "decision": "include", "reason": "on topic"}})
+check("spreadsheet refuses a gated table with an included candidate missing from it",
+      (_code, os.path.exists(os.path.join(_dd, "bib.xlsx"))), (1, False))
+_mn = dict(_grow(), link="https://doi.org/10.1/other")
+check("a doi.org link that disagrees with the DOI is a defect",
+      _codes(references.audit_rows([_mn], "ref"), "G1"), ["link-doi-mismatch"])
+check("a doi.org link in another case is not a mismatch",
+      _codes(references.audit_rows([dict(_grow(), link="https://doi.org/10.1/G1")], "ref"), "G1"), [])
+check("_ref_doi strips an arXiv version", xref._ref_doi({"ArXiv": "1706.03762v5"}), "10.48550/arxiv.1706.03762")
+with open(xref.__file__, encoding="utf-8") as _fh:
+    _XDOC = _fh.read().split('"""')[1]
+check_true("xref's docstring names Semantic Scholar as a reference-list source",
+           "Semantic Scholar" in " ".join(_XDOC.splitlines()[2:4]), _XDOC.splitlines()[2])
+_mL = {"10.9/f": {"title": "F", "sources": {"forward": 5}, "decision": "include", "reason": "r"}}
+_mx = candidates.export_included(_mL, set(), "X")["papers"][0]
+check("export_included takes tag/source from the ledger's sources", (_mx["source"], _mx["tag"]),
+      ("forward", "forward"))
+check_true("a forward-sourced row has a spreadsheet color", "forward" in spreadsheet.COLORS)
+_mrp = os.path.join(_tmpf.mkdtemp(), "rows.json")
+common.dump_json([{"ref": "Z1", "doi": "10.1/z1"}, {"ref": "Z2", "doi": "10.1/z2"}], _mrp)
+_argv = sys.argv
+sys.argv = ["xref.py", "--rows", _mrp, "--out", os.path.join(os.path.dirname(_mrp), "x.json"),
+            "--email", "t@example.org"]
+_merr = io.StringIO()
+try:
+    with _patched(xref, fetch_all=lambda papers, sleep=0.4, retry_wait=60.0: (
+            {"Z1": [{"doi": "10.1/c"}], "Z2": []}, [])), _ctx.redirect_stderr(_merr):
+        xref.main()
+except SystemExit:
+    pass
+finally:
+    sys.argv = _argv
+check_true("xref names the papers that contributed zero references",
+           "1 paper(s) contributed zero references: Z2" in _merr.getvalue(), _merr.getvalue()[-300:])
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
