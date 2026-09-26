@@ -3542,6 +3542,27 @@ _e = _i10_run(sc, ["sentence_case.py", "--rows", _t4rp, "--apply"],
 check_true("sentence_case --apply refuses a rows.json that changed since load",
            isinstance(_e, RuntimeError) and "changed since it was loaded" in str(_e), repr(_e))
 
+# Task 5 addendum (Task 4 review): --apply --out <other file> writes THAT file
+# and leaves --rows untouched (no concurrent-write guard needed on it either --
+# nothing else is writing to a file this run never touches).
+_t4od = _tmpf.mkdtemp()
+_t4orp = os.path.join(_t4od, "rows.json")
+_t4oout = os.path.join(_t4od, "other.json")
+_t4orows = [{"ref": "A", "apa": "Doe, J. (2020). A Study Of Cognitive Behavior. Journal."}]
+common.dump_json(_t4orows, _t4orp)
+_argv = sys.argv
+sys.argv = ["sentence_case.py", "--rows", _t4orp, "--apply", "--out", _t4oout]
+try:
+    with _sleeps(), _ctx.redirect_stdout(io.StringIO()), _ctx.redirect_stderr(io.StringIO()):
+        sc.main()
+except SystemExit:
+    pass
+finally:
+    sys.argv = _argv
+check("sentence_case --apply --out leaves --rows untouched", common.load_json(_t4orp), _t4orows)
+check("sentence_case --apply --out writes the changed title to the other file",
+      common.load_json(_t4oout)[0]["apa"], "Doe, J. (2020). A study of cognitive behavior. Journal.")
+
 _t4frp = os.path.join(_t4d, "families_rows.json")
 common.dump_json([{"ref": "F1", "apa": "Doe, J. (2020). Title. J."}], _t4frp)
 _t4assign = os.path.join(_t4d, "assign.json")
