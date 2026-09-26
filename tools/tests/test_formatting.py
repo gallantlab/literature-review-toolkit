@@ -4327,6 +4327,16 @@ check("M9: --ingest refuses a row whose shown search_apa changed since --prepare
 _n, _err = handcheck.ingest([dict(_m9row)], "ref", _m9res, _m9in, "2026-09-26")
 check("M9: ...and accepts the unchanged row", (_n, _err), (1, []))
 
+# ---- final review C1 (self-review): a comma-split group is still caught (2026-09-26) ----
+# "Family, Given" splitting a group name with no nameType ("Allen Institute for
+# Brain Science, Seattle") yields a multi-word family name; the audit's
+# multi-word-surname warning is the net that asks a human about it.
+_c1b = common.datacite_record(_dc_attrs(creators=[{"name": "Allen Institute for Brain Science, Seattle"}]))
+_c1b_apa = common.build_datacite_apa(_c1b["people"], "2020", "Atlas", None, "Dataset", "Zenodo")
+check_true("C1: a comma-split multi-word family name raises the audit's multi-word-surname warning",
+           any("multi-word surname 'Allen Institute for Brain Science'" in n
+               for n in references.audit(_c1b_apa, True)[1]), _c1b_apa)
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
