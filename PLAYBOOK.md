@@ -1675,7 +1675,7 @@ about Content-Encoding degrades to a JSON parse error instead of killing the run
 | Semantic Scholar (counts) | `POST https://api.semanticscholar.org/graph/v1/paper/batch?fields=citationCount,influentialCitationCount` body `{"ids":["DOI:..","ARXIV:.."]}` | citation + influential counts; 429s without `S2_API_KEY` |
 | EuropePMC search | `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=<q>&format=json` | Full search |
 | EuropePMC PDF | `https://europepmc.org/articles/<PMCID>?pdf=render` | PDF (often) |
-| arxiv API | `http://export.arxiv.org/api/query?search_query=all:<q>` | Atom XML |
+| arxiv API | `https://export.arxiv.org/api/query?search_query=all:<q>` | Atom XML |
 | arxiv PDF | `https://arxiv.org/pdf/<id>.pdf` | PDF |
 | Nature direct | `https://www.nature.com/articles/<id>.pdf` | PDF (if OA) |
 
