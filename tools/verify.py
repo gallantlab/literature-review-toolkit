@@ -239,6 +239,8 @@ def _full_name(toks):
 def _claim_shape(name):
     """A CLAIMED first author -> (family, given words, ambiguous). See claim_surname."""
     name = re.sub(r"\s*(?:,?\s*et al\.?|&.*)$", "", str(name or "").split(";")[0].strip())
+    if not common.is_group(name):
+        name = re.split(r"(?i)\s+and\s+", name)[0].strip()   # a list: "Smith J and Jones K"
     if not name:
         return "", [], False
     if "," in name:
@@ -277,7 +279,8 @@ def _claim_shape(name):
 def claim_surname(name):
     """Surname out of whatever shape a search agent reported a first author in:
     'Gilbert, C. D.' / 'C. D. Gilbert' / 'Gilbert CD' / 'Gilbert' -> 'Gilbert'.
-    A list gives its first name ("Smith J; Jones K", "Smith JL, Jones K"). A comma
+    A list gives its first name ("Smith J; Jones K", "Smith J and Jones K",
+    "Smith JL, Jones K"). A comma
     otherwise means family-first ("Lambon Ralph, Matthew A." -> Lambon Ralph); so
     do words followed only by unambiguous initials ('Smith J', 'Smith JLK',
     'Smith J.-L.', 'Van Essen DC', PubMed style), which give all the words, and an

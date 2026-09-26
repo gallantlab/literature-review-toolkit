@@ -4851,6 +4851,13 @@ check("R5.3: 'VAN Essen' matches 'Van Essen D'", _mA("VAN Essen", "Van Essen D")
 check_true("R5.3: 'VAN Essen' mismatches 'Van J'", _mA("VAN Essen", "Van J") != [])
 check("R5.3: 'CHEN Hao' is still the capitalized surname", verify.claim_surname("CHEN Hao"), "CHEN")
 
+# ---- author fix round 5, item 4: " and " separates a list-shaped claim (2026-09-26) ----
+check("R5.4: claim_surname('Smith J and Jones K')", verify.claim_surname("Smith J and Jones K"), "Smith")
+check("R5.4: 'Smith J and Jones K' matches 'Smith J'", _mA("Smith J and Jones K", "Smith J"), [])
+check_true("R5.4: ...and not 'Jones K'", _mA("Smith J and Jones K", "Jones K") != [])
+check("R5.4: a group name with 'and' in it stays whole",
+      verify.claim_surname("Committee on Science and Technology"), "Committee on Science and Technology")
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
