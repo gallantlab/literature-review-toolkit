@@ -68,9 +68,9 @@ in `tools/README.md` and `PLAYBOOK.md`.
   (±1) and the title to agree — two-way, not merely one title's words found
   inside the other, though one title equaling the other's main title (before a
   subtitle break) still agrees when that main title has at least 3 content
-  words; the first author is compared by whole words (either part of a
-  hyphenated surname counts), ignoring initials and a leading "The", with a
-  claim "Smith J" read family-first. A journal DOI is verified only by its own CrossRef record, or
+  words; the first author is compared surname to surname (the surname is
+  taken out of the claim and the record alike, so initials and given names are
+  ignored; either part of a hyphenated surname counts). A journal DOI is verified only by its own CrossRef record, or
   DataCite on a CrossRef 404 (any other CrossRef error is an ERROR), so a DOI
   that resolves in neither is a MISMATCH even when a PubMed or title search
   finds the claimed paper; a DataCite 404 stays a 404 when its fetch falls back

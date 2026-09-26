@@ -193,9 +193,6 @@ def lookup_arxiv_batch(aids, chunk=50, sleep=3.0):
     return results, errored
 
 
-# An initials token: 1-3 capitals, dotted or not, hyphenated or not ("J", "JL",
-# "JLK", "J.L.", "J.-L.", "J-R"). Judged on the raw token, before any casing.
-_INITIALS = re.compile(r"^[A-ZÀ-Ý]\.?(?:-?[A-ZÀ-Ý]\.?){0,2}$")
 # A generational suffix PubMed puts after the initials ("Hagler DJ Jr", "Smith EL 3rd").
 _SUFFIX = re.compile(r"(?i)^(?:jr|sr|[2-9](?:nd|rd|th))\.?$")
 
@@ -220,14 +217,10 @@ def claim_surname(name):
         return name   # a group ("The pandas development team"): its last word is no surname
     while len(toks) > 1 and _SUFFIX.match(toks[-1]):
         toks.pop()
-    k = len(toks)
-    while k > 1 and _INITIALS.match(toks[k - 1]):
-        k -= 1
-    # a particle is a word even in capitals ("VAN DER TWEEL LH", "DE LANGE DZN H")
-    if k < len(toks) and all(len(t) >= 2 and (not _INITIALS.match(t) or t.lower() in common.PARTICLES)
-                             for t in toks[:k]):
-        return " ".join(toks[:k])
-    if len(toks) > 1 and all(_INITIALS.match(t) for t in toks):
+    split = common.words_then_initials(toks)   # particles are words even in capitals
+    if split:
+        return split[0]
+    if len(toks) > 1 and all(common.INITIALS.match(t) for t in toks):
         return toks[0]
     if len(toks) > 1 and toks[0].lower() in common.PARTICLES:
         return " ".join(toks)   # opens with a particle: already a surname ("de Lange Dzn")

@@ -363,12 +363,15 @@ there counts the same as resolving in CrossRef. Only a CrossRef 404 sends a DOI
 to DataCite; any other CrossRef error is an `ERROR` to re-run. A DOI that does
 not resolve in EITHER registry is a `MISMATCH`, even when a PubMed or title
 search finds the claimed paper, and a DataCite 404 stays a 404 even when the
-fetch has to fall back to curl. The first-author check compares whole words,
-either way round ("Tang" matches "Tang J"; either part of a hyphenated surname
-matches it, "Hanna" / "Andrews-Hanna", but "Han" does not). It ignores initials,
-so "J. Smith" cannot match "Jones J" on the J, and reads a claim "Smith J" or
-"Van Essen DC" family-first. It ignores a leading "The", so a group such as "The
-pandas development team" does not match "Matthews", while "An" stays a surname.
+fetch has to fall back to curl. The first-author check compares surnames: it
+takes the surname out of both the claim and the record the same way ("Smith J",
+"J. Smith" and "Smith, J." all give Smith; an arXiv "Aaron van den Oord" gives
+"van den Oord"), so initials and given names are ignored and "J. Smith" cannot
+match "Jones J", nor "Min" "Seung-Min Park". The claim's surname must be a whole
+word of the record's, or one part of a hyphenated one ("Heuvel" / "van den Heuvel",
+"Hanna" / "Andrews-Hanna", but not "Han"), and a particle alone is not enough, so
+"Van Essen" does not match "Van Dijk". A group such as "The pandas development
+team" is compared whole, and "An" stays a surname.
 
 | Verdict | Meaning | Action |
 |---|---|---|
@@ -457,8 +460,8 @@ deposits register there — and rebuilt as `Authors (Year). Title (Version v)
 and `(Version …)` omitted when DataCite has none. The title is DataCite's main
 title plus its subtitle. A creator with no given name is split when that is safe
 ("Doe, John"; a personal name such as "Jagroop Singh Doad" or "Doad J S" becomes
-"Doad, J. S."; a `familyName`, when given, is always the surname), never into a
-one-letter surname; one that is not ("The pandas development team") is kept whole
+"Doad, J. S."; a `familyName`, when given, is the surname if `name` contains it as
+a whole word), never on trailing initials or into a one-letter surname; one that is not ("The pandas development team") is kept whole
 and flagged
 `datacite-unsplit-author:<name>`, and a DataCite record that is not software or a
 data set is flagged `datacite-deposit` (a repository copy: cite the version of

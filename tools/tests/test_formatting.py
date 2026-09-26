@@ -4489,6 +4489,14 @@ check("C: a familyName absent from `name` keeps the name whole, unsplit",
 check("C: a hyphenated familyName is still found whole",
       _c1_people([{"name": "Anna Doad-Smith", "familyName": "Doad-Smith"}]), (["Doad-Smith, A."], []))
 
+# ---- author fix round 1, D: one initials regex, one family extractor (2026-09-26) ----
+check("D: apa_families lists every initialed family, in order",
+      common.apa_families("Smith, J. A., O, K., & van den Heuvel, M. P. (2020). T. V."),
+      ["Smith", "O", "van den Heuvel"])
+check_true("D: verify uses common's initials regex", not hasattr(verify, "_INITIALS"))
+check("C: a Personal 'An Nguyen' is a person, not a group", _c1_people([{"name": "An Nguyen", "nameType": "Personal"}]),
+      (["Nguyen, A."], []))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

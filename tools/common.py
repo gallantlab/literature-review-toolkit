@@ -633,6 +633,17 @@ def fix_fam(fam):
     return fam
 
 
+def apa_families(apa):
+    """The family name of every author in `apa` that is followed by initials
+    ('Smith, J. A., & O, K.' -> Smith, O), in order; [] if it does not parse."""
+    p = parse_apa(apa)
+    if not p:
+        return []
+    # the last author is joined with "& " (or "… " past 20), which is not part of the surname
+    return [re.sub(r"^[&…]\s*", "", f).strip()
+            for f in re.findall(r"(?:^|,\s|…\s)([^,]+?),\s+(?:[A-ZÀ-Ý]\.)", p["authors"])]
+
+
 def suspect_surnames(apa):
     """Family names in `apa` that may be a mis-split given name — a WARNING, not
     a defect, because it cannot be decided automatically.
@@ -643,13 +654,8 @@ def suspect_surnames(apa):
     excluded because split_name already handles them. Everything returned needs a
     human verdict; re-running the formatter reintroduces whatever was wrong.
     """
-    p = parse_apa(apa)
-    if not p:
-        return []
     out = []
-    for fam in re.findall(r"(?:^|,\s|…\s)([^,]+?),\s+(?:[A-ZÀ-Ý]\.)", p["authors"]):
-        # the last author is joined with "& ", which is not part of the surname
-        fam = re.sub(r"^[&…]\s*", "", fam).strip()
+    for fam in apa_families(apa):
         toks = fam.split()
         if len(toks) > 1 and not any(t.lower().strip(".") in PARTICLES for t in toks):
             out.append(fam)
@@ -660,12 +666,7 @@ def single_letter_surnames(apa):
     """Family names in `apa` that are one letter ("S, D. J."): usually a name
     deposited family-first with trailing initials ("Doad J S") and split on its
     last token. A WARNING, not a defect: real one-letter surnames ("O") exist."""
-    p = parse_apa(apa)
-    if not p:
-        return []
-    fams = (re.sub(r"^[&…]\s*", "", f).strip()
-            for f in re.findall(r"(?:^|,\s|…\s)([^,]+?),\s+(?:[A-ZÀ-Ý]\.)", p["authors"]))
-    return sorted({f for f in fams if len(f.strip(".")) == 1})
+    return sorted({f for f in apa_families(apa) if len(f.strip(".")) == 1})
 
 
 def split_name(display):
@@ -888,7 +889,7 @@ def _spaced_initials(toks):
     return " ".join(toks)
 
 
-def _words_then_initials(toks):
+def words_then_initials(toks):
     """'Van Essen DC' -> ('Van Essen', 'D C'): words (particles count as words,
     even in capitals) followed only by initials, the PubMed family-first shape.
     None when the tokens are not that shape."""
@@ -940,7 +941,7 @@ def _datacite_creator(c):
     toks = name.split()
     if kind == "Personal" and len(toks) >= 2 and toks[0].lower() != "the":
         if INITIALS.match(toks[-1]):
-            split = _words_then_initials(toks)
+            split = words_then_initials(toks)
             return (split[0], split[1], False) if split else (name, "", True)
         fam, given = split_name(name)
         if len(fam.strip(".")) > 1:

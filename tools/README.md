@@ -65,10 +65,12 @@ DOI CrossRef does not hold (Zenodo, figshare, OSF, Dryad software/data-set
 deposits) is checked against DataCite next, on a CrossRef 404 only; resolving
 there counts the same as resolving in CrossRef, and a 404 from both registries is
 "does not resolve" even when the DataCite fetch fell back to curl. The
-first-author check compares whole words ("Tang" matches "Tang J"), either way
-round, ignoring initials and a leading "The"; one part of a hyphenated surname is
-enough ("Hanna" matches "Andrews-Hanna J"). A claim written "Smith J" is read as
-the surname Smith.
+first-author check compares surnames: it takes the surname out of both the claim
+and the record ("Smith J", "J. Smith", "Smith, J." and an arXiv "John Smith" all
+give Smith), ignores initials and given names, and needs the claim's surname to
+match a whole word of the record's ("Tang" matches "Tang J", "Heuvel" matches "van
+den Heuvel M", "Hanna" matches "Andrews-Hanna J"; "Van Essen" does not match "Van
+Dijk", nor "Min" "Seung-Min Park").
 
 **Verdicts.**
 
@@ -111,8 +113,9 @@ published paper is cited by its version of record.
   (Zenodo, figshare, OSF, Dryad): `Authors (Year). Title (Version v)
   [Data set|Computer software|Preprint]. Publisher.`, with the bracket and
   version omitted when DataCite has none. A creator with no given name is split
-  when safe ("Jagroop Singh Doad" or "Doad J S" → "Doad, J. S."; a `familyName`
-  is always kept as the surname), never into a one-letter surname; one kept whole is flagged
+  when safe ("Jagroop Singh Doad" or "Doad J S" → "Doad, J. S."; "Kim J-H" →
+  "Kim, J.-H."; a `familyName` is the surname when `name` contains it as a whole
+  word), never on trailing initials or into a one-letter surname; one kept whole is flagged
   `datacite-unsplit-author:<name>`, and a record that is not software or a data
   set is flagged `datacite-deposit`. Both are stored as the row's
   `canon_warnings` and must be acknowledged in the audit.

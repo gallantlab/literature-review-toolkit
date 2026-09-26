@@ -314,12 +314,16 @@ record as well. Do not write a per-project
 converter script: fourteen projects did, each with its own first-author regex, and
 five more wrote `make_verify_input.py` because the `apa`-only path verified nothing.
 
-What a verdict checks: the first-author surname (whole words, either way round:
-"Tang" matches "Tang J", and either part of a hyphenated surname matches it,
-"Hanna" / "Andrews-Hanna", but "Han" does not; initials are ignored, so "J. Smith"
-cannot match "Jones J" on the J, and a claim "Smith J" or "Van Essen DC" is read
-family-first; a leading "The" is ignored, so the group "The pandas development
-team" does not match "Matthews", while "An" is a surname, not an article), the year
+What a verdict checks: the first-author **surname**, surname against surname. The
+surname is taken out of both the claim and the record the same way ("Smith J",
+"Smith JL", "J. Smith", "Smith, J.", "LI J", "Van Essen DC", "Hagler DJ Jr"; an
+arXiv author "Aaron van den Oord" is read as "van den Oord"), so initials and given
+names never take part: "J. Smith" cannot match "Jones J", "Ma" cannot match "Smith
+MA", "Min" cannot match "Seung-Min Park". The claim's first surname word that is
+not a particle must be a whole word of the record's surname, or one part of a
+hyphenated one ("Heuvel" / "van den Heuvel", "Hanna" / "Andrews-Hanna"; not "Han",
+and "Van Essen" does not match "Van Dijk"). A group name opening with "The" is
+compared whole; "An" is a surname, not an article. Then the year
 (±1, since a preprint and its version of record differ), and the **title**
 (agreement ≥ 0.5). Title agreement requires the two titles to actually match, not
 merely one to be *contained in* the other — a short claim such as "Deep learning"
@@ -476,10 +480,12 @@ omitted when absent. The title is DataCite's main title (the one with no
 `titleType`) plus its `Subtitle` after ": ". A creator DataCite gives no given
 name is split when that is safe ("Doe, John" on its comma; a Personal name such as
 "Jagroop Singh Doad" on its last word, giving "Doad, J. S."; one deposited
-family-first with trailing initials, "Doad J S", on its first word; a `familyName`,
-when DataCite gives one, is always the surname). A split never produces a
-one-letter surname; a name that cannot be split safely ("The pandas development
-team", "Jagroop Singh D") is kept whole and flagged
+family-first with trailing initials is split before them, "Doad J S" giving "Doad,
+J. S." and "Kim J-H" "Kim, J.-H."; a `familyName`, when DataCite gives one, is the
+surname if `name` contains it as a whole word, and "Doad" is not a word of "Anna
+Doad-Smith"). A split never takes initials or a single letter as the surname; a
+name that cannot be split safely ("The pandas development team", "J S") is kept
+whole and flagged
 `datacite-unsplit-author:<name>`, and a DataCite record that is not software or a
 data set (or whose publisher is "Unpublished") is flagged `datacite-deposit`: a
 repository copy of a paper, which should cite the version of record's DOI if one
