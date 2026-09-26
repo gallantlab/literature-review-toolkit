@@ -230,6 +230,12 @@ def _caps_word(tok):
     return 3 <= len(letters) <= 4 and letters.isalpha() and letters.isupper() and not common.is_initials(tok)
 
 
+def _caps_word_any(tok):
+    """A capitalized word of 2+ letters that is not initials ("CHEN", "SMITH")."""
+    letters = tok.replace(".", "").replace("-", "")
+    return len(letters) >= 2 and letters.isalpha() and letters.isupper() and not common.is_initials(tok)
+
+
 def _full_name(toks):
     """A whole name rather than a bare family: words then initials ("Smith JL")
     or initials then a word ("K. Jones")."""
@@ -476,8 +482,11 @@ def _record_parts(first_author):
         return name, []
     toks = common.strip_suffixes(toks)
     mixed = any(ch.islower() for t in toks for ch in t)
-    # exactly ONE trailing token is the initials: "Van DAM J" is Van DAM, not Van
-    if len(toks) > 1 and (common.is_initials(toks[-1]) or (mixed and _caps_short(toks[-1]))):
+    # exactly ONE trailing token is the initials: "Van DAM J" is Van DAM, not Van;
+    # and a family of two or more words never ends in a particle ("John VAN DAM"
+    # keeps DAM; a one-word particle family, "Le Q", is a surname)
+    if (len(toks) > 1 and (common.is_initials(toks[-1]) or (mixed and _caps_short(toks[-1])))
+            and not (len(toks) > 2 and toks[-2].lower() in common.PARTICLES)):
         return " ".join(toks[:-1]), toks[-1:]
     return " ".join(toks), []
 
@@ -613,8 +622,9 @@ def _no_given_name(first_author, flagged=False):
     """True for a record first author the "Family INITIALS" contract cannot be
     trusted to read: flagged by the registry (`first_author_unsplit`: not
     deposited as family + given name), a bare name of two or more words that ends in no
-    initial ("Hae-Jeong Park", "Richard Ngo"), or one that ends in "JR"/"SR" after
-    two or more words ("John Smith JR"). A one-word name or a group
+    initial ("Hae-Jeong Park", "Richard Ngo", "John VAN DAM"), one that ends in
+    "JR"/"SR" after two or more words ("John Smith JR"), or one whose family puts a
+    mixed-case word before a capitalized one ("Hao CHEN J"). A one-word name or a group
     has no given name to mistake for the surname, so it is compared as usual."""
     name = str(first_author or "").strip()
     if common.is_group(name):
@@ -624,6 +634,10 @@ def _no_given_name(first_author, flagged=False):
         return False
     if toks[-1] in ("JR", "SR") and len([t for t in toks[:-1] if t.lower() not in common.PARTICLES]) >= 2:
         return True   # "John Smith JR": a given-first name + suffix, or a compound family + initials?
+    fam = _record_parts(name)[0].split()
+    if any(_has_lower(a) and a.lower() not in common.PARTICLES and _caps_word_any(b)
+           for i, a in enumerate(fam) for b in fam[i + 1:]):
+        return True   # "Hao CHEN J": a given name before a capitalized surname, not a family
     return bool(flagged) or not _record_parts(name)[1]
 
 

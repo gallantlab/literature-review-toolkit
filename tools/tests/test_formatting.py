@@ -4923,6 +4923,14 @@ for _f4n, _f4c, _f4a in (("Hao Chen", "Chen H", "Chen H"), ("J. R. Smith", "Smit
                                                  verify._author_issue({"expect_first_author": _f4c}, _f4r)),
           (_f4a, False, []))
 
+# ---- author fix final, extra: two record shapes no "Family INITIALS" deposit has (2026-09-26) ----
+for _e1c, _e1r in (("John", "John VAN DAM"), ("Chen", "Hao CHEN J"), ("Hao", "Hao CHEN J")):
+    check(f"F.E1: {_e1c!r} vs the record {_e1r!r} fails closed", _mA(_e1c, _e1r), [_R51.format(_e1r)])
+check("F.E1: record_surname never ends a family in a particle", verify.record_surname("John VAN DAM"), "John VAN DAM")
+for _e1c, _e1r in (("Van Dam J", "Van DAM J"), ("de la Rosa", "de la ROSA J"), ("Collins A", "Collins AGE"),
+                   ("Le Mao", "Le MAO J")):
+    check(f"F.E1: {_e1c!r} still matches {_e1r!r}", _mA(_e1c, _e1r), [])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
