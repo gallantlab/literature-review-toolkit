@@ -4845,6 +4845,12 @@ for _ce, _ra in (("Van J", "Van DAM J"), ("Da J", "Da LUZ J"), ("La J", "de la R
     check_true(f"R5.2: {_ce!r} mismatches {_ra!r}", _mA(_ce, _ra) != [])
 check("R5.2: 'de Lange Dzn' still matches 'DE LANGE DZN H'", _mA("de Lange Dzn", "DE LANGE DZN H"), [])
 
+# ---- author fix round 5, item 3: a leading capitalized PARTICLE is not the family (2026-09-26) ----
+check("R5.3: claim_surname('VAN Essen') is the particle surname", verify.claim_surname("VAN Essen"), "VAN Essen")
+check("R5.3: 'VAN Essen' matches 'Van Essen D'", _mA("VAN Essen", "Van Essen D"), [])
+check_true("R5.3: 'VAN Essen' mismatches 'Van J'", _mA("VAN Essen", "Van J") != [])
+check("R5.3: 'CHEN Hao' is still the capitalized surname", verify.claim_surname("CHEN Hao"), "CHEN")
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

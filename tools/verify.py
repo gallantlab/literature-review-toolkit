@@ -259,8 +259,8 @@ def _claim_shape(name):
         return toks[0], [], False   # all-caps PubMed: "LI J", "O K"
     first = toks[0].replace("-", "")
     if (len(toks) > 1 and first.isalpha() and first.isupper() and not common.is_initials(toks[0])
-            and all(_has_lower(t) for t in toks[1:])):
-        return toks[0], [], False   # a surname in capitals, then given names: "CHEN Hao"
+            and toks[0].lower() not in common.PARTICLES and all(_has_lower(t) for t in toks[1:])):
+        return toks[0], [], False   # a surname in capitals, then given names: "CHEN Hao" (never "VAN")
     if len(toks) > 1 and _caps_word(toks[-1]) and any(_has_lower(t) for t in toks[:-1]):
         return name, [], True       # "Hao CHEN" or "Collins AGE": which is the surname?
     if len(toks) > 1 and toks[0].lower() in common.PARTICLES:
