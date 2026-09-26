@@ -2101,6 +2101,24 @@ spreadsheet.build([{"ref": "A", "apa": "A, B. (2020). T. V.", "source": "search"
 check_true("the spreadsheet marks a summary with no abstract",
            "Summary checked against" in _xlsx_text(_tmpx) and "no abstract" in _xlsx_text(_tmpx))
 
+# fix round 1: an abstract that arrives between --prepare and --ingest must block the
+# no-abstract stamp, not be silently overridden by it.
+_S3 = [{"ref": "D", "summary": "No abstract here."}]
+_b3, _na3, _man3 = summary_audit.prepare(_S3, "ref", {})
+_n3, _err3 = summary_audit.ingest(_S3, "ref", [], {"D": {"text": "Backfilled abstract.", "source": "openalex"}},
+                                  _man3, "2026-09-26")
+check("an abstract that appeared since --prepare blocks the no-abstract stamp",
+      ("summary_check" in _S3[0], _err3), (False, ["D: an abstract is now available; re-run --prepare"]))
+
+# fix round 1: two results for the same ref must stamp neither, and be reported once.
+_S4 = [{"ref": "A", "summary": "It found X."}]
+_b4, _na4, _man4 = summary_audit.prepare(_S4, "ref", {"A": {"text": "We found X.", "source": "openalex"}})
+_n4, _err4 = summary_audit.ingest(_S4, "ref", [{"ref": "A", "verdict": "supported"},
+                                               {"ref": "A", "verdict": "unsupported", "unsupported_clause": "X"}],
+                                  {"A": {"text": "We found X.", "source": "openalex"}}, _man4, "2026-09-26")
+check("a duplicate result for the same ref stamps neither and is reported once",
+      (_n4, "summary_check" in _S4[0], _err4), (0, False, ["A: more than one result; keep one"]))
+
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

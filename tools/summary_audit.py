@@ -77,10 +77,19 @@ def ingest(rows, keyf, results, abstracts, manifest, asof):
                                 "abstract_source": (abstracts.get(k) or {}).get("source"),
                                 "summary_sha": common.summary_sha(row.get("summary")), "at": asof}
 
+    counts = {}
+    for res in results:
+        counts[res.get("ref")] = counts.get(res.get("ref"), 0) + 1
+    dupes, reported = {k for k, c in counts.items() if c > 1}, set()
     for res in results:
         k, v = res.get("ref"), res.get("verdict")
-        row = by.get(k)
         seen.add(k)
+        if k in dupes:
+            if k not in reported:
+                errors.append(f"{k}: more than one result; keep one")
+                reported.add(k)
+            continue
+        row = by.get(k)
         if row is None or k not in manifest["refs"]:
             errors.append(f"{k}: not in this summary audit")
             continue
@@ -101,9 +110,13 @@ def ingest(rows, keyf, results, abstracts, manifest, asof):
             errors.append(f"{k}: no result returned")
     for k in manifest["no_abstract"]:
         row = by.get(k)
-        if row is not None and common.summary_sha(row.get("summary")) == manifest["sha"].get(k):
-            stamp(row, k, "no-abstract", "")
-            n += 1
+        if row is None or common.summary_sha(row.get("summary")) != manifest["sha"].get(k):
+            continue
+        if ((abstracts.get(k) or {}).get("text") or "").strip():
+            errors.append(f"{k}: an abstract is now available; re-run --prepare")
+            continue
+        stamp(row, k, "no-abstract", "")
+        n += 1
     return n, errors
 
 
