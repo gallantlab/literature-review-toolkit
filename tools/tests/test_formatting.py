@@ -2459,6 +2459,48 @@ check_true("pending candidates fail the audit", _rep["failed"] and _rep["corpus"
 _rep = references.audit_rows(_legacy, "ref", ledger=references.LEDGER_MISSING)
 check("a legacy table is not asked for a ledger", "*" in _rep["warnings"], False)
 
+# ---- validate_ledger: a corrupted candidates.json is named, not crashed on (2026-09-26) ----
+candidates.validate_ledger({"10.1/a": {"decision": "pending"}, "_runs": {"xref": {"complete": True}}})
+check_true("validate_ledger accepts a well-formed ledger", True)   # no exception raised above
+check_true("validate_ledger refuses a non-object ledger",
+           _raises(lambda: candidates.validate_ledger(["not", "a", "dict"])))
+check_true("validate_ledger refuses an entry that is not an object",
+           _raises(lambda: candidates.validate_ledger({"10.1/a": "pending"})))
+check_true("validate_ledger refuses an entry with a bad decision",
+           _raises(lambda: candidates.validate_ledger({"10.1/a": {"decision": "maybe"}})))
+try:
+    candidates.validate_ledger({"10.1/a": {"decision": "maybe"}})
+    _vl_msg = ""
+except ValueError as e:
+    _vl_msg = str(e)
+check_true("validate_ledger names the bad entry", "10.1/a" in _vl_msg, _vl_msg)
+check_true("validate_ledger refuses a non-dict _runs",
+           _raises(lambda: candidates.validate_ledger({"_runs": ["xref"]})))
+
+# references.audit_rows: a corrupted ledger is reported as a corpus defect, not a crash.
+_bad_ledger = {"10.1/bad": "not-a-dict"}
+_rep = references.audit_rows([_grow()], "ref", ledger=_bad_ledger)
+check_true("a corrupted ledger fails the audit as a named corpus defect, not a crash",
+           _rep["failed"] and any("10.1/bad" in c for c in _rep["corpus"]), _rep["corpus"])
+
+# Entrance test: candidates.py itself refuses a corrupted candidates.json cleanly
+# (an argparse error), instead of an unhandled AttributeError from --list.
+_cvd = _tmpf.mkdtemp()
+_cvrp, _cvlp = os.path.join(_cvd, "rows.json"), os.path.join(_cvd, "candidates.json")
+common.dump_json([_grow()], _cvrp)
+common.dump_json({"10.1/bad": "not-a-dict"}, _cvlp)
+_argv = sys.argv
+sys.argv = ["candidates.py", "--rows", _cvrp, "--list", "pending"]
+_exit = None
+try:
+    candidates.main()
+except SystemExit as e:
+    _exit = e
+finally:
+    sys.argv = _argv
+check_true("candidates.py refuses a corrupted ledger with SystemExit(2), naming the bad entry",
+           _exit is not None and _exit.code == 2, repr(_exit))
+
 # ---- final fixes C1: every row emitter stamps built_at (2026-09-25) ---------
 import importlib.util as _ilu  # noqa: E402
 

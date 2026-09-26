@@ -499,17 +499,24 @@ def audit_rows(rows, keyf, acks=None, ledger=None):
         warn("*", "no-candidate-ledger", "no candidates.json: xref/forward candidates were never "
              "recorded; run candidates.py, or acknowledge why this review has none")
     elif gated and ledger is not None:
-        corpus += candidates.candidate_defects(ledger, candidates.corpus_dois(rows))
-        runs = ledger.get("_runs") if isinstance(ledger.get("_runs"), dict) else {}
-        for src, what in (("xref", "backward cross-citation (xref.py)"),
-                          ("forward", "forward citation (forward.py)")):
-            if src not in runs:
-                warn("*", f"no-{src}-run", f"the candidate ledger records no {what} run: run it and "
-                     f"candidates.py --add ... --source {src}, or acknowledge why this review has none")
-            elif not (runs[src] or {}).get("complete"):
-                warn("*", f"incomplete-{src}-run", f"the last {what} run did not complete (some "
-                     "fetches failed): re-run it, or acknowledge why this review proceeds without "
-                     "full coverage")
+        try:
+            candidates.validate_ledger(ledger)
+        except ValueError as e:
+            # A hand-edited or truncated candidates.json must fail the audit as a
+            # named corpus defect, not crash inside candidate_defects()/entries().
+            corpus.append(str(e))
+        else:
+            corpus += candidates.candidate_defects(ledger, candidates.corpus_dois(rows))
+            runs = ledger.get("_runs") if isinstance(ledger.get("_runs"), dict) else {}
+            for src, what in (("xref", "backward cross-citation (xref.py)"),
+                              ("forward", "forward citation (forward.py)")):
+                if src not in runs:
+                    warn("*", f"no-{src}-run", f"the candidate ledger records no {what} run: run it and "
+                         f"candidates.py --add ... --source {src}, or acknowledge why this review has none")
+                elif not (runs[src] or {}).get("complete"):
+                    warn("*", f"incomplete-{src}-run", f"the last {what} run did not complete (some "
+                         "fetches failed): re-run it, or acknowledge why this review proceeds without "
+                         "full coverage")
     unacked = {}
     for k, ws in warnings.items():
         for wid, text in ws:

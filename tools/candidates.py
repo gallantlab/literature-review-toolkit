@@ -37,6 +37,28 @@ def entries(ledger):
     return [(d, c) for d, c in sorted(ledger.items()) if not d.startswith("_")]
 
 
+def validate_ledger(ledger):
+    """Raise ValueError naming the bad entry when `ledger` is not a candidate
+    ledger of the shape every reader assumes: a JSON object, each non-"_" key
+    mapping to an object whose decision is pending/include/exclude, and
+    `_runs` (when present) an object. Every common.load_optional_json(...,
+    default) caller for candidates.json calls this right after loading, so a
+    hand-edited or truncated file is reported by name -- as a candidates.py
+    argparse error, or a references.py audit corpus defect -- instead of an
+    AttributeError deep inside entries()/candidate_defects()."""
+    if not isinstance(ledger, dict):
+        raise ValueError(f"candidate ledger is not a JSON object (got {type(ledger).__name__})")
+    if "_runs" in ledger and not isinstance(ledger["_runs"], dict):
+        raise ValueError(f"candidate ledger: _runs is not an object (got {type(ledger['_runs']).__name__})")
+    for d, c in ledger.items():
+        if d.startswith("_"):
+            continue
+        if not isinstance(c, dict):
+            raise ValueError(f"candidate ledger: entry {d!r} is not an object")
+        if c.get("decision") not in ("pending", "include", "exclude"):
+            raise ValueError(f"candidate ledger: entry {d!r} has an invalid decision {c.get('decision')!r}")
+
+
 def corpus_dois(rows):
     """Every row's DOI, lowercased; an arXiv-only row counts by its arXiv DOI."""
     out = set()
@@ -133,6 +155,10 @@ def main():
     rows = common.load_json(args.rows)
     path = args.ledger or os.path.join(os.path.dirname(os.path.abspath(args.rows)), "candidates.json")
     ledger = common.load_optional_json(path, {})
+    try:
+        validate_ledger(ledger)
+    except ValueError as e:
+        ap.error(str(e))
     corpus = corpus_dois(rows)
     if args.add:
         if not args.source:
