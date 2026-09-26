@@ -4656,8 +4656,9 @@ for _ae, _aa in (("MARK KING", "King M"), ("van der Meer", "VAN DER MEER J"), ("
 check_true("R3.2: 'Van, A.' mismatches 'VAN DER MEER J'", _mA("Van, A.", "VAN DER MEER J") != [])
 for _cin, _cout in (("J WANG", "WANG"), ("Y ZHAO", "ZHAO"), ("Smith JLKM", "Smith")):
     check(f"R3.2: claim_surname({_cin!r})", verify.claim_surname(_cin), _cout)
-check("R3.2: DataCite Personal 'Hao CHEN' -> 'Chen, H.'",
-      _c1_people([{"name": "Hao CHEN", "nameType": "Personal"}]), (["Chen, H."], []))
+# (round 4, C: "Hao CHEN" is ambiguous, so DataCite keeps it whole and flags it)
+check("R3.2: DataCite Personal 'Hao CHEN' is kept whole and listed unsplit",
+      _c1_people([{"name": "Hao CHEN", "nameType": "Personal"}]), (["Hao CHEN"], ["Hao CHEN"]))
 _r32rows = merge_lanes.merge([
     _lane("R1", [_p("R1-01", doi="10.1/r1", title="Another shared title", year=2021, au="Hao, J.")]),
     _lane("R2", [_p("R2-01", doi="10.1/r2", title="Another shared title", year=2021, au="Hao CHEN")])])[0]
@@ -4735,6 +4736,21 @@ check("R4.B: 'Lambon Ralph' matches 'Lambon Ralph M'", _mA("Lambon Ralph", "Lamb
 check_true("R4.B: 'Dupré la Tour' mismatches 'Tour X'", _mA("Dupré la Tour", "Tour X") != [])
 check("R4.B: 'CHEN Hao' matches 'Chen H'", _mA("CHEN Hao", "Chen H"), [])
 check("R4.B: merge never treats an ambiguous claim as agreeing", verify.claims_agree("Hao, J.", "Hao CHEN"), None)
+
+# ---- author fix round 4, C: DataCite never takes a family from a capitalized word (2026-09-26) ----
+for _cn, _cw in (("Collins AGE", "Collins AGE"), ("Hao CHEN", "Hao CHEN"), ("MARK KING", "Mark King")):
+    check(f"R4.C: DataCite Personal {_cn!r} is kept whole and listed unsplit",
+          _c1_people([{"name": _cn, "nameType": "Personal"}]), ([_cw], [_cn]))
+check("R4.C: DataCite Personal 'Smith EJM' -> 'Smith, E. J. M.' (EJM is not a word)",
+      _c1_people([{"name": "Smith EJM", "nameType": "Personal"}]), (["Smith, E. J. M."], []))
+check_true("R4.C: a 3-4 capital token is a word only if it could be one",
+           all(common.is_initials(t) for t in ("EJM", "ABC", "DCE", "JLK", "CYC", "IIA"))
+           and not any(common.is_initials(t) for t in ("AGE", "CHEN", "WANG", "KING", "ANNA", "MEER", "EUN", "ZHAO")))
+_r4c = dict(common.datacite_record(_dc_attrs(creators=[{"name": "Collins AGE", "nameType": "Personal"}])))
+with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_r4c)):
+    _r4c_res = references.canonical(_dc_row("R4C"))
+check("R4.C: ...and canon warns datacite-unsplit-author for it", _r4c_res.get("warn"),
+      ["datacite-unsplit-author:Collins AGE"])
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

@@ -911,19 +911,41 @@ def crossref_work(doi, fallback_venue=""):
 _VOWELS = set("aeiou" "аеёиоуыэюя" "αεηιουω")   # Latin (accents folded), Cyrillic, Greek
 
 
+# two-consonant clusters a 3-4 letter name can open or close with ("CHEN", "WANG")
+_ONSETS = {"BL", "BR", "CH", "CL", "CR", "DR", "FL", "FR", "GL", "GR", "KH", "KL", "KR", "PH", "PL",
+           "PR", "SC", "SH", "SK", "SL", "SM", "SN", "SP", "ST", "SW", "SZ", "TH", "TR", "TS", "TW",
+           "WH", "WR", "ZH"}
+_CODAS = {"NG", "NK", "NN", "NT", "ND", "NS", "NZ", "NC", "CH", "SH", "TH", "GH", "PH", "CK", "LL",
+          "LT", "LD", "LK", "LM", "LF", "LP", "LS", "RT", "RD", "RK", "RN", "RS", "RM", "RG", "RL",
+          "RB", "RF", "RP", "RC", "SS", "ST", "SK", "SP", "TT", "TZ", "TS", "MP", "MB", "MM", "MS",
+          "FF", "FT", "PT", "KT", "HN", "HL", "HM", "HR", "WN", "WS", "XT", "CT"}
+
+
+def _wordlike(letters):
+    """Could these 3-4 capitals be a word? A vowel (A E I O U, accents folded;
+    Cyrillic and Greek too) and a consonant, no run of three consonants, and any
+    two-consonant opening or closing one a name uses ("CHEN", "WANG", "AGE" yes;
+    "EJM", "DCE", "CYC", "IIA" no)."""
+    up = [fold(ch).upper() for ch in letters]
+    shape = "".join("V" if ch.lower() in _VOWELS else "C" for ch in up)
+    if "V" not in shape or "C" not in shape or "CCC" in shape:
+        return False
+    if shape.startswith("CC") and "".join(up[:2]) not in _ONSETS:
+        return False
+    return not (shape.endswith("CC") and "".join(up[-2:]) not in _CODAS)
+
+
 def is_initials(tok):
     """True for an initials token, any script, dotted or not, hyphenated or not:
-    1-2 uppercase letters ("J", "JL", "J.-L.", "Ł", "ĐT", "И"), or 3-4 that are
-    not a pronounceable word ("JLK", "JLKM", "DZN"; "CYC", "GWY" with only a Y;
-    "IIA" with no consonant). A word has a vowel (A E I O U, accents folded) and
-    a consonant: "CHEN", "WANG", "KING", "MEER", "ANNA" are words, not initials.
-    Judged on the raw token, before any casing."""
+    1-2 uppercase letters ("J", "JL", "J.-L.", "Ł", "ĐT", "И"), or 3-4 that could
+    not be a word (_wordlike: "JLK", "JLKM", "DZN", "EJM", "CYC", "IIA"). "CHEN",
+    "WANG", "KING", "MEER", "ANNA", "AGE" are words, not initials. Judged on the
+    raw token, before any casing."""
     parts = (tok or "").replace(".", "").split("-")
     letters = "".join(parts)
     if not (all(parts) and 1 <= len(letters) <= 4 and all(ch.isalpha() and ch.isupper() for ch in letters)):
         return False
-    vowel = [fold(ch).lower() in _VOWELS for ch in letters]
-    return len(letters) <= 2 or not (any(vowel) and not all(vowel))
+    return len(letters) <= 2 or not _wordlike(letters)
 
 
 _SUFFIX = re.compile(r"^(?:Jr|Sr)\.?$|^[2-9](?:nd|rd|th)\.?$")   # "JR"/"SR" in capitals are initials
@@ -978,7 +1000,9 @@ def _datacite_creator(c):
     a `familyName` found in `name` as a whole word (a hyphen is part of a word:
     "Doad" is not found in "Anna Doad-Smith") is the family and the given name is
     the rest of `name`; one not found keeps the name whole. "Family, Given"
-    splits on its first ", ". A Personal name whose last token is initials is
+    splits on its first ", ". A Personal name ending in a 3-4 letter capitalized
+    word ("Collins AGE", "Hao CHEN") stays whole: it cannot be told whether that
+    word is initials or the surname. A Personal name whose last token is initials is
     never split there: words followed only by initials ("Doad J S", "Van Essen
     DC", "Kim J-H") are family + initials, and any other shape stays whole. Any
     other Personal name of 2+ tokens that does not open with "The" ("The pandas
@@ -1007,6 +1031,10 @@ def _datacite_creator(c):
         return fam.strip(), given.strip(), False
     toks = strip_suffixes(name.split())
     if kind == "Personal" and len(toks) >= 2 and toks[0].lower() != "the":
+        last = toks[-1].replace(".", "").replace("-", "")
+        if 3 <= len(last) <= 4 and last.isalpha() and last.isupper() and not is_initials(toks[-1]):
+            # "Collins AGE" (family + initials) or "Hao CHEN" (given + family)? Never guessed.
+            return name, "", True
         if is_initials(toks[-1]):
             split = words_then_initials(toks)
             return (split[0], split[1], False) if split else (name, "", True)
