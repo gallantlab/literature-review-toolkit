@@ -5,8 +5,11 @@ xref.py looks backward (what corpus papers cite); this looks forward. It takes t
 landmarks (top N by within-corpus in-degree, then citation count), asks OpenAlex
 for the most-cited papers citing each (up to --per-landmark), and scores each
 citing paper by how many corpus papers it cites. Papers citing at least
---min-shared corpus papers become candidates for candidates.py. Because each pull
-is ordered by citation count, very recent papers are under-represented.
+--min-shared corpus papers become candidates for candidates.py. A citing paper is
+recognized as already being in the corpus by its OpenAlex id or its DOI, so a
+corpus row with no DOI (and whose id lookup failed) cannot be excluded from the
+candidates. Because each pull is ordered by citation count, very recent papers
+are under-represented.
 
     python3 tools/forward.py --rows rows.json --out forward_candidates.json --email you@inst.edu
 """

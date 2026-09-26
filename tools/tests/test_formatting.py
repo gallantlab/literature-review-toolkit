@@ -2360,6 +2360,19 @@ _cands, _nodoi = forward.score({"A": [_w("W9", "10.9/new", ["W1", "W2", "W3"], 4
 check("score keeps papers citing >= 3 corpus papers, outside the corpus, with a DOI",
       [(c["doi"], c["shared"], sorted(c["cites_landmarks"])) for c in _cands], [("10.9/new", 3, ["A", "C"])])
 check("score counts candidates dropped for lacking a DOI", _nodoi, 1)
+# A citing work can carry a DOI that is already in the corpus even though OpenAlex
+# assigned it a *different* work id than any corpus row resolved to (a merged/
+# duplicate OpenAlex record, or a corpus row whose id lookup failed) -- exclude by
+# DOI too, not only by OpenAlex id.
+_cands_doi_excl, _ = forward.score({"A": [_w("W99", "10.1/b", ["W1", "W2", "W3"])]},
+                                   _corpus_w, {"10.1/a", "10.1/b", "10.1/c"}, 3)
+check("score excludes a citing work whose DOI (not OpenAlex id) is already in the corpus",
+      _cands_doi_excl, [])
+# OpenAlex DOIs are lowercase, but a corpus DOI is not guaranteed to already be
+# lowercased before it reaches score() -- the match must not be case-sensitive.
+_cands_case, _ = forward.score({"A": [_w("W99", "10.1/B", ["W1", "W2", "W3"])]},
+                               _corpus_w, {"10.1/a", "10.1/b", "10.1/c"}, 3)
+check("score matches a corpus DOI case-insensitively", _cands_case, [])
 with _patched(common, http_json=lambda url, **k: {"results": [{"id": "https://openalex.org/W1",
                                                                "doi": "https://doi.org/10.1/A"}]}), _sleeps():
     check("openalex_ids maps DOIs to short work ids", forward.openalex_ids(["10.1/a"], "t@example.org"),
