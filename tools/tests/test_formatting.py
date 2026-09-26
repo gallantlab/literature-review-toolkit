@@ -1507,6 +1507,8 @@ def _s2_seq(*codes):
     def f(url, retries=5, timeout=30, data=None, headers=None):
         _s2calls.append((url, retries, dict(headers or {})))
         c = seq.pop(0) if seq else 200
+        if isinstance(c, Exception):
+            raise c
         if c != 200:
             raise urllib.error.HTTPError(url, c, "x", {}, None)
         return {"ok": True}
@@ -1530,6 +1532,19 @@ with _patched(os, environ=dict(os.environ, S2_API_KEY="k-test")), _patched(commo
     common._S2_LAST[0] = 0.0
     common.s2_request("paper/x")
 check("s2_request sends the key when set", _s2calls[-1][2].get("x-api-key"), "k-test")
+common._S2_LAST[0] = 0.0
+with _patched(common, http_json=_s2_seq(503, 200)), _sleeps() as _sl:
+    _got = common.s2_request("paper/x")
+check_true("s2_request retries a 503 and returns", _got == {"ok": True} and 20 in _sl, str(_sl))
+common._S2_LAST[0] = 0.0
+with _patched(common, http_json=_s2_seq(urllib.error.URLError("reset"), 200)), _sleeps():
+    _got = common.s2_request("paper/x")
+check("s2_request retries a network error (URLError) and returns", _got, {"ok": True})
+common._S2_LAST[0] = 0.0
+with _patched(common, http_json=_s2_seq(400)), _sleeps() as _sl:
+    _raised = _raises(lambda: common.s2_request("paper/x"))
+check_true("s2_request raises a 400 at once with no backoff sleep",
+           _raised and 20 not in _sl and 40 not in _sl, str(_sl))
 
 # T6 — the duplicate-scan prefilter must not change a single pair.
 import difflib as _dl  # noqa: E402

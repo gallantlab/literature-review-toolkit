@@ -729,7 +729,7 @@ def arxiv_batch(ids, chunk=50, sleep=3.0):
 # ---- Semantic Scholar ---------------------------------------------------------
 # Every S2 call goes through s2_request. The per-key limit is strict and its 429s
 # carry no Retry-After, so the toolkit paces itself: at least S2_MIN_INTERVAL
-# between requests, then S2_BACKOFF after a 429.
+# between requests, then S2_BACKOFF after a 429 or other transient failure.
 S2_API = "https://api.semanticscholar.org/graph/v1/"
 S2_MIN_INTERVAL = 1.1
 S2_BACKOFF = (20, 40)
@@ -737,7 +737,10 @@ _S2_LAST = [0.0]
 
 
 def s2_request(path, body=None):
-    """GET (or POST `body` as JSON) S2_API + path; returns parsed JSON."""
+    """GET (or POST `body` as JSON) S2_API + path; returns parsed JSON.
+
+    Backs off (S2_BACKOFF) and retries after a 429 or other transient failure
+    (is_transient); a non-transient error (400, 404) raises immediately."""
     hdrs = dict(HDRS)
     if body is not None:
         hdrs["Content-Type"] = "application/json"
@@ -752,8 +755,8 @@ def s2_request(path, body=None):
         _S2_LAST[0] = time.monotonic()
         try:
             return http_json(S2_API + path, retries=1, data=data, headers=hdrs)
-        except urllib.error.HTTPError as e:
-            if e.code == 429 and attempt < len(S2_BACKOFF):
+        except Exception as e:
+            if is_transient(e) and attempt < len(S2_BACKOFF):
                 time.sleep(S2_BACKOFF[attempt])
                 continue
             raise
