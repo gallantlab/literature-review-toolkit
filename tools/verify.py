@@ -152,7 +152,7 @@ def lookup_crossref(doi):
             raise
         r = None
     if r:
-        return {k: r[k] for k in ("title", "year", "first_author", "journal")}
+        return _registry_found(r)
     try:
         r = common.datacite_work(doi)
     except urllib.error.HTTPError as e:
@@ -161,8 +161,18 @@ def lookup_crossref(doi):
         return None
     if not r:
         return None
-    rec = {k: r[k] for k in ("title", "year", "first_author", "journal")}
+    rec = _registry_found(r)
     rec["source"] = "datacite"
+    return rec
+
+
+def _registry_found(r):
+    """A CrossRef/DataCite record -> the found-record shape, carrying
+    `first_author_unsplit` (the first author has no separate given name, so
+    first_author is the whole name, not "Family I") for _author_issue."""
+    rec = {k: r[k] for k in ("title", "year", "first_author", "journal")}
+    if r.get("first_author_unsplit"):
+        rec["first_author_unsplit"] = True
     return rec
 
 
@@ -544,6 +554,24 @@ def claims_agree(a, b):
     return any(_tok_agrees(ca[0], t) for t in cb) or any(_tok_agrees(cb[0], t) for t in ca)
 
 
+def _no_given_name(first_author, flagged=False):
+    """True for a record first author with no separate given name, which the
+    "Family INITIALS" contract cannot read: flagged by the registry
+    (`first_author_unsplit`), a bare name of two or more words that ends in no
+    initial ("Hae-Jeong Park", "Richard Ngo"), or one that ends in "JR"/"SR" after
+    two or more words ("John Smith JR"). A one-word name or a group
+    has no given name to mistake for the surname, so it is compared as usual."""
+    name = str(first_author or "").strip()
+    if common.is_group(name):
+        return False
+    toks = common.strip_suffixes(name.split())
+    if len([t for t in toks if re.search(r"[^\W\d_]", t) and t.lower() not in common.PARTICLES]) < 2:
+        return False
+    if toks[-1] in ("JR", "SR") and len([t for t in toks[:-1] if t.lower() not in common.PARTICLES]) >= 2:
+        return True   # "John Smith JR": a given-first name + suffix, or a compound family + initials?
+    return bool(flagged) or not _record_parts(name)[1]
+
+
 def _author_issue(c, rec, where=""):
     # Surname against surname (surname_agrees): "J. Smith" cannot match "Jones J"
     # on the J, "Min" cannot match "Seung-Min Park", "Lee" cannot match "Leeson".
@@ -573,6 +601,9 @@ def _author_issue(c, rec, where=""):
     if _parsed_record(got) is None:
         return [f"{where}first-author mismatch: could not read the record's first author "
                 f"'{got}' (expected '{claim}')"]
+    if _no_given_name(got, rec.get("first_author_unsplit")):
+        return [f"{where}first-author mismatch: the record's first author has no separate given name "
+                f"('{got}'); confirm by hand"]
     if not surname_agrees(claim, got, is_surname):
         return [f"{where}first-author mismatch: expected '{claim}', got '{got}'"]
     return []

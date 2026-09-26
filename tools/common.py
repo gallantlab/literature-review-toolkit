@@ -901,6 +901,9 @@ def crossref_record(msg, fallback_venue=""):
     return {"title": title, "year": year,
             "authors": authors, "people": [person(f, g) for f, g in authors],
             "first_author": f"{fam} {giv[:1]}".strip(), "journal": journal,
+            # a family-only first author: first_author is then the whole deposited
+            # name, not "Family I", and verify asks a human rather than parse it
+            "first_author_unsplit": bool(authors) and not giv.strip(),
             "volume": msg.get("volume"), "issue": msg.get("issue"), "pages": msg.get("page"),
             "book": book, "publisher": msg.get("publisher") or ""}
 
@@ -1066,12 +1069,16 @@ def datacite_record(attrs, fallback_venue=""):
     `publisher` may be a bare string or `{"name": ...}`; `journal` mirrors it,
     matching the field crossref_record() uses for the venue.
     """
-    authors, unsplit = [], []
+    authors, unsplit, first_unsplit = [], [], False
     for c in attrs.get("creators") or []:
         if not isinstance(c, dict):
             continue
         fam, given, whole = _datacite_creator(c)
         if fam:
+            if not authors:
+                # no separate given name (kept whole, or never given one), and not a
+                # declared organization: first_author is the whole name
+                first_unsplit = not given and (c.get("nameType") or "").strip() != "Organizational"
             authors.append((fam, given))
             if whole:
                 unsplit.append(fam)
@@ -1097,7 +1104,7 @@ def datacite_record(attrs, fallback_venue=""):
             "pages": attrs.get("page"), "book": "", "publisher": publisher,
             "version": attrs.get("version") or "",
             "resource_type": (attrs.get("types") or {}).get("resourceTypeGeneral", ""),
-            "unsplit": unsplit}
+            "unsplit": unsplit, "first_author_unsplit": first_unsplit}
 
 
 def _curl_status(url, headers, timeout):

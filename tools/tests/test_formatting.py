@@ -1656,8 +1656,10 @@ check_true("verify: the title mismatch is named", any("title" in i for i in _bad
 check("verify: case and punctuation differences still pass", _good["verdict"], "OK")
 
 # C3 — with both ids, the journal DOI canon will cite must be checked too.
+# (round 5: an arXiv found-record is in _found_record's "Family I" shape, as
+# lookup_arxiv_batch builds it, not the raw display name)
 _arx = {"2301.00009": {"title": "Emergent behavior in agents", "year": "2023",
-                       "first_author": "Ada Lovelace", "journal": "arXiv"}}
+                       "first_author": "Lovelace A", "journal": "arXiv"}}
 _both = {"label": "B", "doi": "10.1038/s1", "arxiv": "2301.00009", "expect_first_author": "Lovelace",
          "expect_year": "2023", "title": "Emergent behavior in agents"}
 with _patched(verify, lookup_crossref=lambda d: {"title": "Unrelated chemistry paper", "year": "2023",
@@ -4444,8 +4446,8 @@ for _ae, _aa, _ax in (("Van Essen DC", "Van Dijk K", False), ("Van Essen DC", "v
                       ("Van Essen DC", "Aaron van den Oord", True), ("Le Bihan D", "Quoc V. Le", True),
                       ("Le Bihan D", "Le Cun Y", False), ("den Ouden HE", "van den Heuvel M", False),
                       ("de Heer WA", "de Lange FP", False), ("Thomas Yeo BT", "Thomas Serre", True),
-                      ("Min", "Seung-Min Park", True), ("Jeong", "Hae-Jeong Park", True),
-                      ("Hyun", "Jae-Hyun Kim", True), ("Jing", "Xiao-Jing Wang", True),
+                      ("Min", "Seung-Min Park", True), ("Jeong", "Hae-Jeong Park", False),
+                      ("Hyun", "Jae-Hyun Kim", False), ("Jing", "Xiao-Jing Wang", False),
                       ("An", "An Nguyen", True), ("Ma", "Smith MA", False), ("An", "Smith AN", False),
                       ("Ho", "Chan HO", False), ("Smith J", "Jones J", False), ("O K", "Kim K", False),
                       ("The pandas development team", "The NumPy team", False)):
@@ -4784,6 +4786,55 @@ check_true("R4.F: an unknown-author deferral's message says its first_author cou
 check_true("R4.F: a deferral with neither field still says so",
            "no first_author or year" in merge_lanes.unconfirmed_message(
                {"title": "T", "from_lane": "A", "found_as": "A-01"}))
+
+# ---- author fix round 5, item 1: a record with no separate given name fails closed (2026-09-26) ----
+# DataCite (kept whole / no givenName) and CrossRef (family-only) records carry the
+# whole name as first_author; the "Family INITIALS" contract then accepted a claim
+# naming the given name ("Hao J" vs DataCite "Hao CHEN").
+_R51 = "first-author mismatch: the record's first author has no separate given name ('{}'); confirm by hand"
+
+
+def _r51_dc(claim, creators):
+    rec = common.datacite_record(_dc_attrs(creators=creators))
+    return verify._author_issue({"expect_first_author": claim}, verify._registry_found(rec))
+
+
+def _r51_cr(claim, authors):
+    rec = common.crossref_record({"author": authors, "title": ["T"]})
+    return verify._author_issue({"expect_first_author": claim}, verify._registry_found(rec))
+
+
+check("R5.1: datacite_record flags a first creator with no given name",
+      [common.datacite_record(_dc_attrs(creators=c)).get("first_author_unsplit") for c in (
+          [{"name": "Hao CHEN", "nameType": "Personal"}], [{"name": "Richard Ngo"}],
+          [{"familyName": "Smith", "givenName": "Jane"}], [{"name": "Allen Institute", "nameType": "Organizational"}])],
+      [True, True, False, False])
+check("R5.1: crossref_record flags a family-only first author",
+      [common.crossref_record({"author": a, "title": ["T"]}).get("first_author_unsplit")
+       for a in ([{"family": "Hao Chen"}], [{"family": "Chen", "given": "Hao"}])], [True, False])
+check("R5.1: DataCite 'Hao CHEN' vs 'Hao J' is an issue",
+      _r51_dc("Hao J", [{"name": "Hao CHEN", "nameType": "Personal"}]), [_R51.format("Hao CHEN")])
+check("R5.1: DataCite 'Richard Ngo' (no nameType) vs 'Richard B' is an issue",
+      _r51_dc("Richard B", [{"name": "Richard Ngo"}]), [_R51.format("Richard Ngo")])
+check("R5.1: CrossRef family-only 'Hao Chen' vs 'Hao J' is an issue",
+      _r51_cr("Hao J", [{"family": "Hao Chen"}]), [_R51.format("Hao Chen")])
+check("R5.1: DataCite 'Jagroop Singh Doad' vs 'Singh J' is an issue",
+      _r51_dc("Singh J", [{"name": "Jagroop Singh Doad"}]), [_R51.format("Jagroop Singh Doad")])
+for _r5c, _r5r in (("Jeong", "Hae-Jeong Park"), ("Hyun", "Jae-Hyun Kim"), ("Jing", "Xiao-Jing Wang"),
+                   ("Min", "Seung-Min Park")):
+    check(f"R5.1: {_r5c!r} vs a bare {_r5r!r} record is an issue", _mA(_r5c, _r5r), [_R51.format(_r5r)])
+    check(f"R5.1: ...and vs a DataCite no-nameType {_r5r!r}", _r51_dc(_r5c, [{"name": _r5r}]), [_R51.format(_r5r)])
+    check(f"R5.1: ...and vs a CrossRef family-only {_r5r!r}", _r51_cr(_r5c, [{"family": _r5r}]), [_R51.format(_r5r)])
+check("R5.1: a split DataCite record still compares", _r51_dc("Chen H", [{"familyName": "Chen", "givenName": "Hao"}]), [])
+check("R5.1: a one-word or group record with no given name still compares",
+      (_r51_cr("Smith", [{"family": "Smith"}]), _mA("ATLAS Collaboration", "ATLAS Collaboration")), ([], []))
+check("R5.1: verify's CrossRef/DataCite lookup carries the flag into the found record",
+      verify._registry_found({"title": "T", "year": "2020", "first_author": "Hao CHEN", "journal": "Z",
+                              "first_author_unsplit": True}).get("first_author_unsplit"), True)
+
+check("R5.1: a bare 'John Smith JR' (JR a suffix or initials?) is an issue, not 'John' matching",
+      _mA("John K", "John Smith JR"), [_R51.format("John Smith JR")])
+check("R5.1: ...while 'Smith JR' is 'Family INITIALS'", _mA("Smith J", "Smith JR"), [])
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
