@@ -320,12 +320,27 @@ record's first author is read by its source's contract: CrossRef, DataCite and
 PubMed give "Family INITIALS" (an arXiv author "Aaron van den Oord" is first turned
 into "van den Oord A"), so exactly one trailing token, the initials (in a
 mixed-case record any capitals of up to 4 letters), is dropped ("Collins AGE" is
-Collins, "Van DAM J" is Van DAM). The exception is a first author with no separate
-given name: a DataCite creator kept whole or deposited without one ("Hao CHEN",
-"Richard Ngo"), a CrossRef family-only author, or a bare name of two or more words
-with no initial ("Hae-Jeong Park"). Its first author is the whole name, which could
-put a given name where the surname belongs, so the check reports "the record's
-first author has no separate given name; confirm by hand" instead of guessing. A claim is read once, in whatever shape a search agent reported it
+Collins, "Van DAM J" is Van DAM). That reading is trusted only when the registry
+deposited the first author structured. Every other first author is flagged, and
+the check reports "the record's first author was not deposited as a family name
+and a given name; confirm by hand" instead of guessing:
+- a DataCite first creator without BOTH familyName and givenName, unless its name
+  is "Family, Given" or it is a declared Organizational group. This covers a split
+  the toolkit had to guess ("Richard NGO", "Wei LI", "CHEN Hao"), a name kept whole
+  ("Hao CHEN") and a first creator with no name at all;
+- a CrossRef first author with no given name, or a first entry with no family (an
+  organization or a given name only, which made the second author look like the
+  first);
+- an arXiv name with a capitalized word that is not initials ("CHEN Hao"), since
+  it may be written family-first;
+- a bare name the contract cannot read: two or more words with no initial
+  ("Hae-Jeong Park", "John VAN DAM"), "John Smith JR", or a mixed-case word before
+  a capitalized one ("Hao CHEN J").
+
+Two shapes are known and accepted as they are: a bare record with spaced initials
+or a comma or semicolon list ("Kim J H", "Chen, Hao H", "Smith J, Jones K"), and a
+CrossRef author whose whole name was deposited as the family ({"family": "Hao
+Chen", "given": "H"}). A claim is read once, in whatever shape a search agent reported it
 ("Smith J", "Smith JL", "J. Smith", "Smith, J.", "Lambon Ralph, Matthew A.", "LI
 J", "Van Essen DC", "Hagler DJ Jr", "Kowalski Ł", "CHEN Hao"; on a canonical row,
 also the apa's lead surname as it stands). A claim that cannot be read safely,
@@ -333,7 +348,9 @@ a mixed-case word before a 3-4 letter capitalized word ("Hao CHEN" is given name
 surname, "Collins AGE" is surname + initials), is reported as an ambiguous
 first-author form to confirm by hand. So initials never decide a match: "J. Smith"
 cannot match "Jones J", "Ma" cannot match "Smith MA", "Min" cannot match
-"Seung-Min Park", "Nowak Ł" cannot match "Kowalski Ł". A claim of given-first
+"Seung-Min Park", "Nowak Ł" cannot match "Kowalski Ł". A claim led by a
+capitalized particle ("DU Wei", "VAN Essen") matches only a record that carries
+the particle ("Du W", "Van Essen D"; not "Wei J"). A claim of given-first
 words ("John Smith") keys on its last word, and each other word must be a word of
 the record's surname or start with one of its initials. The
 claim's first surname word that is not a particle must be a whole word of the

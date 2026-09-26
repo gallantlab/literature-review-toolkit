@@ -367,9 +367,15 @@ search finds the claimed paper, and a DataCite 404 stays a 404 even when the
 fetch has to fall back to curl. The first-author check compares surnames. A
 record is read by its source's "Family INITIALS" contract ("Collins AGE" is Collins,
 "Van DAM J" is Van DAM; an arXiv "Aaron van den Oord" becomes "van den Oord A"),
-except a first author with no separate given name (a DataCite creator kept whole or
-without a given name, a CrossRef family-only author, a bare "Hae-Jeong Park"),
-which is flagged for a human rather than read; a claim is read once in
+but only when the registry deposited that first author structured. Any other first
+author is flagged for a human rather than read: a DataCite first creator without
+both familyName and givenName (unless "Family, Given" or a declared Organizational
+group), a CrossRef first author with no given name or a first entry with no
+family, an arXiv name with a capitalized word ("CHEN Hao"), or a bare name the
+contract cannot read ("Hae-Jeong Park", "Hao CHEN J"). A claim led by a capitalized
+particle ("DU Wei") matches only a record carrying the particle. Two shapes are
+accepted as they are: bare records with spaced initials or a comma list ("Kim J H",
+"Chen, Hao H"), and a CrossRef whole name deposited as the family; a claim is read once in
 whatever shape it was reported ("Smith J", "J. Smith" and "Smith, J." all give
 Smith; "Lambon Ralph, Matthew A." gives Lambon Ralph). Initials never decide a
 match, so "J. Smith" cannot match "Jones J", nor "Min" "Seung-Min Park". A claim
