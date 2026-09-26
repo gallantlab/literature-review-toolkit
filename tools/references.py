@@ -38,6 +38,7 @@ import re
 import sys
 import time
 
+import candidates
 import common
 from common import ARXIV_DOI, build_apa, clean_venue, doi_of, person, split_name
 
@@ -406,7 +407,12 @@ def load_acks(path):
     return acks
 
 
-def audit_rows(rows, keyf, acks=None):
+# Callers pass this when candidates.json does not exist. None (the default) means
+# "do not check the ledger", which keeps unit calls of audit_rows simple.
+LEDGER_MISSING = object()
+
+
+def audit_rows(rows, keyf, acks=None, ledger=None):
     """The whole audit, for references.py --audit and spreadsheet.py alike."""
     gated = common.is_gated(rows)
     acks = acks or {}
@@ -441,6 +447,11 @@ def audit_rows(rows, keyf, acks=None):
     for ka, kb, ratio, why in dups:
         warn(ka, f"possible-duplicate:{kb}", f"possible duplicate of {kb} ({ratio:.2f}, {why})")
     corpus = []
+    if gated and ledger is LEDGER_MISSING:
+        warn("*", "no-candidate-ledger", "no candidates.json: xref/forward candidates were never "
+             "recorded; run candidates.py, or acknowledge why this review has none")
+    elif gated and ledger is not None:
+        corpus += candidates.candidate_defects(ledger, candidates.corpus_dois(rows))
     unacked = {}
     for k, ws in warnings.items():
         for wid, text in ws:
@@ -552,6 +563,7 @@ def main():
     ap.add_argument("--acks", help="acknowledged warnings (default: audit_acks.json beside --rows)")
     ap.add_argument("--list-acks", action="store_true",
                     help="list every unacknowledged warning as REF<TAB>WARNING_ID<TAB>TEXT and exit")
+    ap.add_argument("--candidates", help="candidate ledger (default: candidates.json beside --rows)")
     args = ap.parse_args()
     if args.repair and args.audit:
         ap.error("--repair writes; --audit reports. Run --repair, then --audit to confirm.")
@@ -585,7 +597,10 @@ def main():
         common.dump_json(rows, args.out or args.rows)
 
     acks_path = args.acks or os.path.join(os.path.dirname(os.path.abspath(args.rows)), "audit_acks.json")
-    report = audit_rows(rows, keyf, load_acks(acks_path))
+    ledger_path = (args.candidates
+                   or os.path.join(os.path.dirname(os.path.abspath(args.rows)), "candidates.json"))
+    ledger = common.load_optional_json(ledger_path, LEDGER_MISSING)
+    report = audit_rows(rows, keyf, load_acks(acks_path), ledger=ledger)
     if args.list_acks:
         for k, ws in report["unacked"].items():
             for wid, text in ws:

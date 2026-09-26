@@ -201,7 +201,9 @@ def main():
     here = os.path.dirname(os.path.abspath(args.rows))
     keyf = common.key_field(rows, args.key)
     acks = references.load_acks(args.acks or os.path.join(here, "audit_acks.json"))
-    report = references.audit_rows(rows, keyf, acks)
+    ledger = common.load_optional_json(args.candidates or os.path.join(here, "candidates.json"),
+                                       references.LEDGER_MISSING)
+    report = references.audit_rows(rows, keyf, acks, ledger=ledger)
     out, banner = args.out, None
     if report["failed"]:
         references.print_report(report, len(rows))
@@ -215,8 +217,8 @@ def main():
             sys.exit(1)
         else:
             print("  (legacy corpus: written despite the audit findings above)", file=sys.stderr)
-    ledger = common.load_optional_json(args.candidates or os.path.join(here, "candidates.json"), {})
-    excluded = [dict(v, doi=d) for d, v in sorted(ledger.items()) if v.get("decision") == "exclude"]
+    ledger_dict = ledger if isinstance(ledger, dict) else {}
+    excluded = [dict(v, doi=d) for d, v in sorted(ledger_dict.items()) if v.get("decision") == "exclude"]
     for src in unknown_sources(rows):
         print(f"  ⚠ source={src!r} has no color rule (known: {', '.join(COLORS)}); "
               "rendered white", file=sys.stderr)

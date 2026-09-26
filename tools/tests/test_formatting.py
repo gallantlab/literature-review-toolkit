@@ -1923,6 +1923,7 @@ check_true("the legacy note explains why the gates are off and names the upgrade
 _d = _tmpf.mkdtemp()
 _rp, _ap = os.path.join(_d, "rows.json"), os.path.join(_d, "audit_acks.json")
 common.dump_json([_na], _rp)
+common.dump_json({}, os.path.join(_d, "candidates.json"))
 
 
 def _audit_exit():
@@ -1962,6 +1963,7 @@ import io  # noqa: E402
 _d2 = _tmpf.mkdtemp()
 _rp2, _ap2 = os.path.join(_d2, "rows.json"), os.path.join(_d2, "audit_acks.json")
 common.dump_json([_na], _rp2)
+common.dump_json({}, os.path.join(_d2, "candidates.json"))
 
 
 def _list_acks():
@@ -1991,7 +1993,7 @@ check("references --list-acks exits 0 and prints nothing once acknowledged", (_c
 import zipfile as _zip  # noqa: E402
 
 
-def _sheet_main(rows, *extra, candidates=None):
+def _sheet_main(rows, *extra, candidates={}):
     d = _tmpf.mkdtemp()
     rp, out = os.path.join(d, "rows.json"), os.path.join(d, "bib.xlsx")
     common.dump_json(rows, rp)
@@ -2377,6 +2379,34 @@ with _patched(common, http_json=lambda url, **k: {"results": [{"id": "https://op
                                                                "doi": "https://doi.org/10.1/A"}]}), _sleeps():
     check("openalex_ids maps DOIs to short work ids", forward.openalex_ids(["10.1/a"], "t@example.org"),
           {"10.1/a": "W1"})
+
+# ---- candidates.py and the audit's candidate check (2026-09-26) ------------
+import candidates  # noqa: E402
+
+_L = {}
+_a, _s = candidates.add(_L, [{"doi": "10.9/NEW", "n_citations": 5, "title": "New"},
+                             {"doi": "10.1/g1", "n_citations": 9}], "xref", {"10.1/g1"})
+check("add records new candidates as pending and skips corpus papers",
+      (_a, _s, _L["10.9/new"]["decision"]), (1, 1, "pending"))
+candidates.add(_L, [{"doi": "https://doi.org/10.9/new", "shared": 4}], "forward", set())
+check("add merges sources for the same DOI", _L["10.9/new"]["sources"], {"xref": 5, "forward": 4})
+check_true("decide needs a reason", _raises(lambda: candidates.decide(_L, "10.9/new", "exclude", "", "d")))
+check_true("decide needs include or exclude", _raises(lambda: candidates.decide(_L, "10.9/new", "maybe", "r", "d")))
+check("pending candidates are a corpus defect", len(candidates.candidate_defects(_L, set())), 1)
+candidates.decide(_L, "10.9/new", "include", "cited by 5 corpus papers; on topic", "2026-09-26")
+check_true("an included candidate missing from the table is a defect",
+           "not in the table" in " ".join(candidates.candidate_defects(_L, set())))
+_lane_x = candidates.export_included(_L, set(), "X")
+check("export_included writes a schema-2 lane of included papers",
+      (_lane_x["schema"], [p["doi"] for p in _lane_x["papers"]], _lane_x["papers"][0]["ref"]), (2, ["10.9/new"], "X-01"))
+check("no defects once the included paper is in the table", candidates.candidate_defects(_L, {"10.9/new"}), [])
+_rep = references.audit_rows([_grow()], "ref", ledger=references.LEDGER_MISSING)
+check("a gated table with no ledger must acknowledge that",
+      [w for w, _ in _rep["unacked"].get("*", [])], ["no-candidate-ledger"])
+_rep = references.audit_rows([_grow()], "ref", ledger={"10.9/p": {"decision": "pending"}})
+check_true("pending candidates fail the audit", _rep["failed"] and _rep["corpus"])
+_rep = references.audit_rows(_legacy, "ref", ledger=references.LEDGER_MISSING)
+check("a legacy table is not asked for a ledger", "*" in _rep["warnings"], False)
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
