@@ -656,6 +656,18 @@ def suspect_surnames(apa):
     return sorted(set(out))
 
 
+def single_letter_surnames(apa):
+    """Family names in `apa` that are one letter ("S, D. J."): usually a name
+    deposited family-first with trailing initials ("Doad J S") and split on its
+    last token. A WARNING, not a defect: real one-letter surnames ("O") exist."""
+    p = parse_apa(apa)
+    if not p:
+        return []
+    fams = (re.sub(r"^[&…]\s*", "", f).strip()
+            for f in re.findall(r"(?:^|,\s|…\s)([^,]+?),\s+(?:[A-ZÀ-Ý]\.)", p["authors"]))
+    return sorted({f for f in fams if len(f.strip(".")) == 1})
+
+
 def split_name(display):
     """Split a 'First M. Last' display name into (family, given), keeping
     nobiliary particles ('van', 'de', ...) with the surname."""
@@ -863,34 +875,59 @@ def crossref_work(doi, fallback_venue=""):
     return crossref_record(msg, fallback_venue)
 
 
+_INITIALS_TOKEN = re.compile(r"^(?:[A-ZÀ-Ý]\.?){1,2}$")
+
+
+def _spaced_initials(toks):
+    """Given-name tokens -> one string; initials-only tokens are spaced out
+    ("JS" -> "J. S.") so initials() keeps every letter."""
+    if toks and all(_INITIALS_TOKEN.match(t) for t in toks):
+        return " ".join(f"{ch}." for t in toks for ch in t if ch != ".")
+    return " ".join(toks)
+
+
 def _datacite_creator(c):
     """One DataCite creator -> (family, given, kept_whole).
 
     With a `givenName`, the deposit already split the name. Without one, the bare
     `name` is often a PERSON's display name ("Jagroop Singh Doad", nameType
     Personal); kept whole it shipped given-name-first as if it were a surname. So:
-    "Family, Given" splits on its first ", "; a Personal name of 2+ tokens that does
-    not open with an article ("The pandas development team") splits on its last
-    token (split_name, which keeps particles). Anything else stays whole:
-    `kept_whole` is True for it unless DataCite declares it Organizational -- the
-    one case where a whole name is known to be a group rather than a guess.
+    a `familyName` is the family and the given name is the rest of `name` (a known
+    surname is never discarded); "Family, Given" splits on its first ", "; a
+    Personal name deposited family-first with trailing initials ("Doad J S",
+    "Doad JS", "Doad J. S.") keeps its first token as the family; any other
+    Personal name of 2+ tokens that does not open with an article ("The pandas
+    development team") splits on its last token (split_name, which keeps
+    particles) -- unless that would leave a one-letter surname ("S, D. J."),
+    which is never guessed. Anything else stays whole: `kept_whole` is True for
+    it unless DataCite declares it Organizational -- the one case where a whole
+    name is known to be a group rather than a guess.
     """
     given = (c.get("givenName") or "").strip()
     name = (c.get("name") or "").strip()
     if given:
         return (c.get("familyName") or name).strip(), given, False
     kind = (c.get("nameType") or "").strip()
-    whole = (c.get("familyName") or name).strip()
+    family = (c.get("familyName") or "").strip()
+    whole = family or name
     if kind == "Organizational":
         return name or whole, "", False
+    if family and name and family.lower() != name.lower():
+        m = re.search(r"(?i)(?<!\w)" + re.escape(family) + r"(?!\w)", name)
+        rest = (name[:m.start()] + " " + name[m.end():]).strip(" ,").split() if m else []
+        return (family, _spaced_initials(rest), False) if rest else (family, "", True)
     name = name or whole
     if ", " in name:
         fam, given = name.split(", ", 1)
         return fam.strip(), given.strip(), False
     toks = name.split()
     if kind == "Personal" and len(toks) >= 2 and toks[0].lower() not in ("the", "a", "an"):
+        if (len(toks[0]) >= 2 and not _INITIALS_TOKEN.match(toks[0])
+                and all(_INITIALS_TOKEN.match(t) for t in toks[1:])):
+            return toks[0], _spaced_initials(toks[1:]), False
         fam, given = split_name(name)
-        return fam, given, False
+        if len(fam.strip(".")) > 1:
+            return fam, given, False
     return name, "", bool(name)
 
 

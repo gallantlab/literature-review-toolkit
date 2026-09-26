@@ -4337,6 +4337,41 @@ check_true("C1: a comma-split multi-word family name raises the audit's multi-wo
            any("multi-word surname 'Allen Institute for Brain Science'" in n
                for n in references.audit(_c1b_apa, True)[1]), _c1b_apa)
 
+# ---- author fix 3: DataCite never invents a one-letter surname (2026-09-26) ----
+# A Personal name deposited family-first with trailing initials ("Doad J S") was
+# split on its last token into "S, D. J." and shipped unflagged.
+for _a3name in ("Doad J S", "Doad JS", "Doad J. S."):
+    check(f"A3: a family-first name with trailing initials ({_a3name!r}) keeps its surname",
+          _c1_people([{"name": _a3name, "nameType": "Personal"}]), (["Doad, J. S."], []))
+check("A3: a familyName is used as the family, the given name taken from the rest of `name`",
+      _c1_people([{"name": "Jagroop Singh Doad", "familyName": "Doad"}]), (["Doad, J. S."], []))
+check("A3: ...also when `name` is family-first with a comma",
+      _c1_people([{"name": "Doad, Jagroop Singh", "familyName": "Doad", "nameType": "Personal"}]),
+      (["Doad, J. S."], []))
+check("A3: ...and initials run together in the rest are all kept ('Doad JS')",
+      _c1_people([{"name": "Doad JS", "familyName": "Doad"}]), (["Doad, J. S."], []))
+check("A3: a familyName not found in `name` is kept (never discarded) and recorded unsplit",
+      _c1_people([{"name": "Jane Roe", "familyName": "Doad"}]), (["Doad"], ["Doad"]))
+check("A3: a last-token split that would leave a one-letter surname keeps the name whole, unsplit",
+      _c1_people([{"name": "Jagroop Singh D", "nameType": "Personal"}]),
+      (["Jagroop Singh D"], ["Jagroop Singh D"]))
+_a3notes = references.audit("S, D. J. (2020). T. V.", True)[1]
+check("A3: the audit flags a one-letter surname from any source, ack-able by id",
+      [references.warning_id(n) for n in _a3notes if "single-letter" in n], ["single-letter-surname:S"])
+check("A3: ...for a later author too, and not for initials",
+      [references.warning_id(n) for n in references.audit(
+          "Smith, J. A., & O, K. (2020). T. V.", True)[1] if "single-letter" in n],
+      ["single-letter-surname:O"])
+_a3row = {"ref": "A3", "apa": "S, D. J. (2020). T. V.", "doi": "10.1/a3"}
+check("A3: audit_rows lists it as an unacknowledged warning...",
+      [w for w, _ in references.audit_rows([_a3row], "ref")["unacked"]["A3"]], ["single-letter-surname:S"])
+check("A3: ...which an acknowledgment clears",
+      references.audit_rows([_a3row], "ref", acks={"A3": {"single-letter-surname:S": "a real surname"}})
+      ["unacked"], {})
+check("A3: an ordinary author list raises no one-letter-surname note",
+      [n for n in references.audit("Doad, J. S., & Smith, J. (2020). T. V.", True)[1]
+       if "single-letter" in n], [])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

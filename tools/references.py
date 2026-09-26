@@ -317,6 +317,10 @@ def audit(apa, has_source):
         # 'Thomas Yeo' is CrossRef folding given names into the family field. Both
         # need a human verdict, and re-running the formatter reintroduces the error.
         notes.append(f"multi-word surname '{fam}' — confirm it is not a mis-split given name")
+    for fam in common.single_letter_surnames(apa):
+        # 'S, D. J.' is almost always a family-first name ('Doad J S') split on its
+        # last token; a real one-letter surname exists, so a human acknowledges it.
+        notes.append(f"single-letter surname '{fam}' — confirm it is not an initial split off as a surname")
     # a DOI-backed ref should name a venue: real text after the title sentence
     # (parse_apa already knows the title ends at ". ", "? " or "! "), and a
     # deposit's "(Version …) [Descriptor]" before the venue is not a venue.
@@ -404,6 +408,9 @@ def warning_id(note):
     m = re.match(r"multi-word surname '(.+?)'", note)
     if m:
         return f"multi-word-surname:{m.group(1)}"
+    m = re.match(r"single-letter surname '(.+?)'", note)
+    if m:
+        return f"single-letter-surname:{m.group(1)}"
     m = re.match(r"deposit-year: DOI encodes (\d+) but the reference says (\d+)", note)
     if m:
         return f"deposit-year:{m.group(1)}/{m.group(2)}"
