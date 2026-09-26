@@ -3548,6 +3548,47 @@ _rep = references.audit_rows([_grow()], "ref", ledger=_t4rledger,
                              acks={"*": {"incomplete-xref-run": "small corpus, ran once by hand"}})
 check("incomplete-xref-run is ack-able like the other ledger warnings", _rep["failed"], False)
 
+# ---- Task 4 item 3: re-verifying a canonical row keeps an independent OK stamp
+# (2026-09-26) -------------------------------------------------------------
+# A lab-style row's `apa` predates canon (e.g. built from an OpenAlex record by
+# hand, not by references.py from this same DOI); its first verify pass checks
+# that apa against the DOI's real record with no claim_basis -- an independent
+# check. If the row is later canonicalized (apa rebuilt from THIS SAME DOI) and
+# re-verified, rows_to_citations now reports claim_basis "canonical-apa" for it
+# (nothing left to check the DOI against but itself), which would otherwise
+# silently downgrade the earlier independent OK into a circular one and start
+# nagging "identity-not-reestablished" on lab corpora that were already confirmed.
+_i3row = {"ref": "U3", "doi": "10.1/u3",
+         "apa": "Amodei, D., & Olah, C. (2016). Concrete problems in AI safety. arXiv."}
+verify.stamp_rows([_i3row], [{"label": "U3", "verdict": "OK", "source": "doi", "issues": []}],
+                  "ref", "2026-08-01")
+check("first pass: independently verified, no claim_basis",
+      (_i3row["verified"]["verdict"], "claim_basis" in _i3row["verified"]), ("OK", False))
+
+_i3row["canonical_at"] = "2026-09-26"           # canonicalized afterward; apa unchanged
+_i3c = verify.rows_to_citations([_i3row])[0]
+check("re-verifying after canon now has claim_basis canonical-apa",
+      _i3c.get("claim_basis"), "canonical-apa")
+verify.stamp_rows([_i3row], [{"label": "U3", "verdict": "OK", "source": "doi", "issues": [],
+                              "claim_basis": "canonical-apa"}], "ref", "2026-09-26")
+check("re-verify keeps the earlier independent stamp (no claim_basis) and records reverified_at",
+      (_i3row["verified"].get("claim_basis"), _i3row["verified"].get("at"),
+       _i3row["verified"].get("reverified_at")),
+      (None, "2026-08-01", "2026-09-26"))
+check("the audit does not warn identity-not-reestablished for the kept stamp",
+      references.audit_rows([_i3row], "ref")["unacked"].get("U3", []), [])
+
+# ...but the kept-stamp rule lapses when the row's ids changed since the earlier stamp
+_i3row2 = {"ref": "U4", "doi": "10.1/u4",
+          "apa": "Smith, J. (2018). Some other paper. arXiv.", "canonical_at": "2026-08-01",
+          "verified": {"verdict": "OK", "doi": "10.1/u4-old", "arxiv": "", "source": "doi",
+                       "issues": [], "at": "2026-08-01"}}
+verify.stamp_rows([_i3row2], [{"label": "U4", "verdict": "OK", "source": "doi", "issues": [],
+                               "claim_basis": "canonical-apa"}], "ref", "2026-09-26")
+check("a changed DOI since the earlier stamp is not kept: it is overwritten with the new claim_basis",
+      (_i3row2["verified"]["doi"], _i3row2["verified"].get("claim_basis"), "reverified_at" in _i3row2["verified"]),
+      ("10.1/u4", "canonical-apa", False))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

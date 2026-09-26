@@ -259,7 +259,16 @@ def stamp_rows(rows, results, keyf, asof):
     """Write each result onto its row as `verified` (every verdict, not only OK,
     so the audit can name an unresolved MISMATCH). Returns the number stamped.
     Pass only results verified in THIS run: a verdict copied from an older
-    report may be for ids the row no longer has."""
+    report may be for ids the row no longer has.
+
+    Exception: when the row already carries an OK stamp for its CURRENT ids
+    that was NOT based on claim_basis "canonical-apa" (an independent check —
+    a search claim, or an apa that predates canon), and the new result is OK
+    but only re-establishes claim_basis "canonical-apa" (the row was
+    canonicalized since, so its apa is now built from this same DOI), the
+    earlier independent stamp is kept rather than overwritten -- re-verifying
+    a canonical row must not downgrade an independent verification into a
+    circular one. `reverified_at` records that the re-run happened."""
     by = {r.get("label"): r for r in results}
     n = 0
     for row in rows:
@@ -267,6 +276,14 @@ def stamp_rows(rows, results, keyf, asof):
         if res is None:
             continue
         doi, aid = common.ids_of(row)
+        existing = row.get("verified")
+        if (isinstance(existing, dict) and existing.get("verdict") == "OK"
+                and existing.get("claim_basis") != "canonical-apa"
+                and common.stamp_ids(existing) == (doi, aid)
+                and res.get("verdict") == "OK" and res.get("claim_basis") == "canonical-apa"):
+            existing["reverified_at"] = asof
+            n += 1
+            continue
         row["verified"] = {"verdict": res.get("verdict"), "doi": doi, "arxiv": aid,
                            "source": res.get("source"), "issues": list(res.get("issues") or []), "at": asof}
         if res.get("claim_basis"):
