@@ -19,6 +19,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -830,20 +831,33 @@ def s2_batch(path, ids, chunk):
     """POST `ids` to an S2 batch endpoint (`path`, e.g. "paper/batch?fields=...")
     in chunks -> (results {id: record or None}, failed set, rejected set).
 
-    S2 answers a whole batch with a 400 when ONE id is malformed, which used to
-    fail up to 500 good ids with it. So a non-transient 4xx on a chunk of more
-    than one id is bisected until the offending ids stand alone: an id that
-    still gets a 4xx on its own is `rejected` (callers treat it as "not in S2"
-    and name it). A chunk that fails transiently after s2_request's backoff
-    marks its ids `failed` (re-run), and the other chunks still go out.
-    A record of None means S2 has no such paper."""
+    S2 answers a whole batch with a 400 (or 404) when ONE id is malformed,
+    which used to fail up to 500 good ids with it. So a 400/404 on a chunk of
+    more than one id is bisected until the offending ids stand alone: an id
+    that still gets a 400/404 on its own is `rejected` (callers treat it as
+    "not in S2" and name it).
+
+    A 401/403 or any other non-transient 4xx is not "this id may be bad" --
+    it is the request itself (a missing/expired S2_API_KEY, a malformed
+    endpoint) -- so it marks the WHOLE chunk `failed` immediately, with no
+    bisection, and is reported once so a bad key does not silently read as
+    hundreds of "not in S2" misses. Likewise, if bisecting a 400/404 chunk
+    still ends with EVERY id of that chunk rejected, the request -- not any
+    one id -- was the problem, so those ids move from `rejected` to `failed`
+    too.
+
+    A chunk that fails transiently after s2_request's backoff marks its ids
+    `failed` (re-run), and the other chunks still go out. A record of None
+    means S2 has no such paper."""
     results, failed, rejected = {}, set(), set()
+    warned = False
 
     def post(part):
+        nonlocal warned
         try:
             res = s2_request(path, {"ids": part})
         except urllib.error.HTTPError as e:
-            if 400 <= e.code < 500 and not is_transient(e):
+            if e.code in (400, 404) and not is_transient(e):
                 if len(part) > 1:
                     mid = len(part) // 2
                     post(part[:mid])
@@ -851,6 +865,11 @@ def s2_batch(path, ids, chunk):
                 else:
                     rejected.update(part)
                 return
+            if 400 <= e.code < 500 and not is_transient(e):
+                if not warned:
+                    warned = True
+                    print(f"Semantic Scholar refused the request (HTTP {e.code}); "
+                          "check S2_API_KEY", file=sys.stderr)
             failed.update(part)
             return
         except Exception:
@@ -861,5 +880,9 @@ def s2_batch(path, ids, chunk):
 
     uniq = list(dict.fromkeys(ids))
     for i in range(0, len(uniq), chunk):
-        post(uniq[i:i + chunk])
+        top = uniq[i:i + chunk]
+        post(top)
+        if len(top) > 1 and rejected.issuperset(top):
+            rejected.difference_update(top)
+            failed.update(top)
     return results, failed, rejected

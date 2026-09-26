@@ -2987,6 +2987,68 @@ finally:
 check_true("xref names the papers that contributed zero references",
            "1 paper(s) contributed zero references: Z2" in _merr.getvalue(), _merr.getvalue()[-300:])
 
+# ---- post-review fix: s2_batch must not read an auth/request 4xx as "not in S2" (2026-09-25) ----
+def _i6_stub(code, bad=frozenset()):
+    """Every call raises HTTPError(code); if `bad` is given, only a batch that
+    contains one of those ids raises (the rest succeed) -- used for the
+    400-bisection cases. Calls are recorded so a test can assert no
+    bisection happened."""
+    calls = []
+
+    def f(path, body=None):
+        ids = body["ids"]
+        calls.append(list(ids))
+        if bad:
+            if any(i in bad for i in ids):
+                raise urllib.error.HTTPError("u", code, "err", {}, None)
+            return [{"n": i} for i in ids]
+        raise urllib.error.HTTPError("u", code, "err", {}, None)
+    return f, calls
+
+
+_i6f, _i6calls = _i6_stub(403)
+with _patched(common, s2_request=_i6f), _ctx.redirect_stderr(io.StringIO()) as _i6err:
+    _i6res, _i6failed, _i6rej = common.s2_batch("p", ["DOI:a", "DOI:b", "DOI:c", "DOI:d"], 4)
+check("s2_batch: an always-403 chunk fails whole, rejects none",
+      (_i6res, _i6failed, _i6rej), ({}, {"DOI:a", "DOI:b", "DOI:c", "DOI:d"}, set()))
+check("...and makes exactly one request (no bisection)", len(_i6calls), 1)
+check_true("...and names the HTTP code and S2_API_KEY on stderr",
+           "403" in _i6err.getvalue() and "S2_API_KEY" in _i6err.getvalue(), _i6err.getvalue())
+
+_i6f, _i6calls = _i6_stub(401)
+with _patched(common, s2_request=_i6f), _ctx.redirect_stderr(io.StringIO()):
+    _i6res, _i6failed, _i6rej = common.s2_batch("p", ["DOI:a", "DOI:b", "DOI:c", "DOI:d"], 4)
+check("s2_batch: an always-401 chunk fails whole, rejects none, no bisection",
+      (_i6res, _i6failed, _i6rej, len(_i6calls)), ({}, {"DOI:a", "DOI:b", "DOI:c", "DOI:d"}, set(), 1))
+
+_i6f, _i6calls = _i6_stub(400, bad={"DOI:10.1/bad"})
+with _patched(common, s2_request=_i6f), _ctx.redirect_stderr(io.StringIO()):
+    _i6res, _i6failed, _i6rej = common.s2_batch("p", ["DOI:a", "DOI:b", "DOI:10.1/bad", "DOI:c"], 4)
+check("s2_batch: a single bad id in a batch of 4 is bisected out and rejected alone",
+      (sorted(_i6res), _i6failed, _i6rej),
+      (["DOI:a", "DOI:b", "DOI:c"], set(), {"DOI:10.1/bad"}))
+
+_i6f, _i6calls = _i6_stub(400)
+with _patched(common, s2_request=_i6f), _ctx.redirect_stderr(io.StringIO()):
+    _i6res, _i6failed, _i6rej = common.s2_batch("p", ["DOI:a", "DOI:b", "DOI:c", "DOI:d"], 4)
+check("s2_batch: a chunk still 400-ing after full bisection is failed, not rejected",
+      (_i6res, _i6failed, _i6rej), ({}, {"DOI:a", "DOI:b", "DOI:c", "DOI:d"}, set()))
+
+_i6f, _ = _i6_stub(403)
+with _patched(common, s2_request=_i6f), _ctx.redirect_stderr(io.StringIO()):
+    _i6x = xref.s2_refs(["10.1/a", "10.1/b"])
+check("xref.s2_refs: an always-403 stub leaves every doi incomplete (None), not empty",
+      _i6x, {"10.1/a": None, "10.1/b": None})
+
+_i6f, _ = _i6_stub(403)
+_i6fetchers = {"arxiv": lambda ids: ({}, set()), "openalex": lambda ids: ({}, set()),
+              "s2": abstracts.fetch_s2, "pubmed": lambda ids: ({}, set())}
+with _patched(common, s2_request=_i6f), _ctx.redirect_stderr(io.StringIO()):
+    _i6ab, _i6missing, _i6failedrefs, _i6stale = abstracts.collect(
+        [{"ref": "P", "doi": "10.1/p", "summary": "s"}], "ref", {}, _i6fetchers)
+check("abstracts.collect: an always-403 S2 fetch leaves the ref failed, not missing",
+      (_i6missing, list(_i6failedrefs)), ([], ["P"]))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
