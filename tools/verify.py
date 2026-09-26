@@ -456,19 +456,20 @@ def _record_parts(first_author):
     """A RECORD's first_author -> (family, trailing initials tokens), by the source
     contract rather than the claim heuristics: every record is "Family INITIALS"
     (CrossRef and DataCite build f"{fam} {giv[:1]}", PubMed esummary gives
-    "Collins AGE", arXiv is normalized by _found_record). Trailing initials, and
-    in a mixed-case record any trailing all-caps token of <= 4 letters, are
-    stripped, as are suffixes; the rest is the family. A group is whole."""
+    "Collins AGE", arXiv is normalized by _found_record). After suffixes, exactly
+    one trailing token is stripped if it is initials or, in a mixed-case record,
+    any all-caps token of <= 4 letters ("Van DAM J" -> Van DAM); the rest is the
+    family. A group is whole."""
     name = str(first_author or "").strip()
     toks = name.split()
     if len(toks) > 1 and common.is_group(name):
         return name, []
     toks = common.strip_suffixes(toks)
     mixed = any(ch.islower() for t in toks for ch in t)
-    k = len(toks)
-    while k > 1 and (common.is_initials(toks[k - 1]) or (mixed and _caps_short(toks[k - 1]))):
-        k -= 1
-    return " ".join(toks[:k]), toks[k:]
+    # exactly ONE trailing token is the initials: "Van DAM J" is Van DAM, not Van
+    if len(toks) > 1 and (common.is_initials(toks[-1]) or (mixed and _caps_short(toks[-1]))):
+        return " ".join(toks[:-1]), toks[-1:]
+    return " ".join(toks), []
 
 
 def record_surname(first_author):

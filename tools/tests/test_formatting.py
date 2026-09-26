@@ -4714,7 +4714,7 @@ for _sin in ("Cavanaugh JR", "Smith J Jr", "Smith J III"):
 # PubMed esummary, arXiv after _found_record); the claim heuristics misread "Collins AGE".
 for _rin, _rout in (("Collins AGE", "Collins"), ("Park JAE", "Park"), ("Chen H", "Chen"),
                     ("Van Essen DC", "Van Essen"), ("VAN DER MEER J", "VAN DER MEER"), ("Hagler DJ Jr", "Hagler"),
-                    ("SCHADE OH Sr", "SCHADE"), ("DE LANGE DZN H", "DE LANGE"), ("ATLAS Collaboration", "ATLAS Collaboration"),
+                    ("SCHADE OH Sr", "SCHADE"), ("ATLAS Collaboration", "ATLAS Collaboration"),
                     ("Smith", "Smith"), ("O K", "O"), ("LI J", "LI")):
     check(f"R4.A: record_surname({_rin!r})", verify.record_surname(_rin), _rout)
 check("R4.A: the real PubMed record 'Collins AGE' matches the claim 'Collins A'", _mA("Collins A", "Collins AGE"), [])
@@ -4835,6 +4835,15 @@ check("R5.1: verify's CrossRef/DataCite lookup carries the flag into the found r
 check("R5.1: a bare 'John Smith JR' (JR a suffix or initials?) is an issue, not 'John' matching",
       _mA("John K", "John Smith JR"), [_R51.format("John Smith JR")])
 check("R5.1: ...while 'Smith JR' is 'Family INITIALS'", _mA("Smith J", "Smith JR"), [])
+
+# ---- author fix round 5, item 2: the record contract strips exactly one trailing token (2026-09-26) ----
+for _rin, _rout in (("Collins AGE", "Collins"), ("Van DAM J", "Van DAM"), ("Da LUZ J", "Da LUZ"),
+                    ("de la ROSA J", "de la ROSA"), ("DE LANGE DZN H", "DE LANGE DZN"), ("Hagler DJ Jr", "Hagler")):
+    check(f"R5.2: record_surname({_rin!r})", verify.record_surname(_rin), _rout)
+check("R5.2: 'Van Dam J' matches 'Van DAM J'", _mA("Van Dam J", "Van DAM J"), [])
+for _ce, _ra in (("Van J", "Van DAM J"), ("Da J", "Da LUZ J"), ("La J", "de la ROSA J"), ("Le J", "Le MAO J")):
+    check_true(f"R5.2: {_ce!r} mismatches {_ra!r}", _mA(_ce, _ra) != [])
+check("R5.2: 'de Lange Dzn' still matches 'DE LANGE DZN H'", _mA("de Lange Dzn", "DE LANGE DZN H"), [])
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
