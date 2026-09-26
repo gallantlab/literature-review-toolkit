@@ -4407,6 +4407,16 @@ check_true("A2: 'Han' still mismatches 'Andrews-Hanna J' (no partial-word match)
            _m8("Han", "Andrews-Hanna J") != [])
 check_true("A2: a one-letter hyphen part does not count ('A' vs 'B-A J')", _m8("A", "B-A J") != [])
 
+# ---- author fix 4b: a multi-word surname before trailing initials (2026-09-26) ----
+# "Van Essen D" returned "D"; once initials stopped matching (fix 4), a correct
+# claim then mismatched its record "Van Essen D".
+check("A4b: claim_surname('Van Essen D')", verify.claim_surname("Van Essen D"), "Van Essen")
+check("A4b: claim_surname('Thomas Yeo BT')", verify.claim_surname("Thomas Yeo BT"), "Thomas Yeo")
+check("A4b: claim_surname('Van Essen DC') matches the record 'Van Essen D'",
+      _m8(verify.claim_surname("Van Essen DC"), "Van Essen D"), [])
+check("A4b: 'Thomas Yeo B' matches the record 'Yeo B'", _m8(verify.claim_surname("Thomas Yeo B"), "Yeo B"), [])
+check("A4b: a given-first name is unchanged ('Jane Smith')", verify.claim_surname("Jane Smith"), "Smith")
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
