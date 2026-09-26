@@ -123,8 +123,7 @@ def main():
     cands, n_nodoi = score(by_landmark, set(wids.values()), set(dois), args.min_shared)
     out = args.out or os.path.join(here, "forward_candidates.json")
     common.dump_json(cands, out)
-    common.dump_json({"complete": not failed, "incomplete": list(failed),
-                      "at": datetime.date.today().isoformat()}, f"{out}.run.json")
+    common.write_run_sidecar(out, failed, datetime.date.today().isoformat())
     print(f"{len(cands)} candidate(s) from {len(by_landmark)} landmark(s) -> {out} "
           f"({n_nodoi} more had no DOI). Recent papers are under-represented (pulls are citation-ordered).")
     if failed:

@@ -339,8 +339,7 @@ def main():
         out.append({"doi": doi, "n_citations": len(slugs), "cited_by": slugs, **meta.get(doi, {})})
 
     common.dump_json(out, args.out, indent=1)
-    common.dump_json({"complete": not incomplete, "incomplete": list(incomplete),
-                      "at": datetime.date.today().isoformat()}, f"{args.out}.run.json", indent=1)
+    common.write_run_sidecar(args.out, incomplete, datetime.date.today().isoformat())
 
     # Summary to stderr
     print(f"\n{'cnt':>3}  {'doi':40s}  {'auth/year':25s}  title", file=sys.stderr)

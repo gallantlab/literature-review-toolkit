@@ -3596,6 +3596,18 @@ check_true("families.py refuses a rows.json that changed since load",
 check("...and leaves it as the other writer left it",
       common.load_json(_t4frp), [{"ref": "F1", "apa": "Doe, J. (2020). Title. J."}])
 
+# common.write_run_sidecar: the <out>.run.json snippet shared by xref.py and
+# forward.py (Task 5 addendum, Task 4 review), so the two copies cannot drift.
+_wrs_d = _tmpf.mkdtemp()
+_wrs_out = os.path.join(_wrs_d, "x.json")
+common.write_run_sidecar(_wrs_out, ["A", "B"], "2026-09-26")
+check("write_run_sidecar records the incomplete refs, complete=False, and the date",
+      common.load_json(f"{_wrs_out}.run.json"),
+      {"complete": False, "incomplete": ["A", "B"], "at": "2026-09-26"})
+common.write_run_sidecar(_wrs_out, [], "2026-09-26")
+check("write_run_sidecar records complete=True when nothing is incomplete",
+      common.load_json(f"{_wrs_out}.run.json")["complete"], True)
+
 # ---- Task 4 item 2: an incomplete xref/forward run is not recorded as complete
 # (2026-09-26) -------------------------------------------------------------
 # xref.py and forward.py write a <out>.run.json sidecar recording whether the

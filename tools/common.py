@@ -220,6 +220,16 @@ def dump_json(obj, path, indent=2):
         json.dump(obj, f, indent=indent, ensure_ascii=False)
 
 
+def write_run_sidecar(out, incomplete, asof):
+    """Write <out>.run.json = {"complete", "incomplete", "at"}, shared by
+    xref.py and forward.py so their two copies of this snippet cannot drift.
+    candidates.py --add reads it beside the file it is adding, to record
+    whether the run that produced `out` finished (`complete`); `incomplete`
+    is the refs/slugs still unresolved, and `asof` the date to stamp."""
+    dump_json({"complete": not incomplete, "incomplete": list(incomplete), "at": asof},
+              f"{out}.run.json")
+
+
 def fold(s):
     """Fold accents and curly apostrophes for matching/sorting: 'Millière' ->
     'milliere'. Used by cite_check (so a citation typed without the accent still
