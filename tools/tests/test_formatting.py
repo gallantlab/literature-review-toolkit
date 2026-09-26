@@ -3881,6 +3881,50 @@ with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict
 check_true("C1: a later rebuild with no warnings clears canon_warnings", "canon_warnings" not in _c1_row,
            str(_c1_row))
 
+# ---- final review I1: "(Version ...) [Descriptor]" is not part of the title (2026-09-26) ----
+_i1s_apa = "Smith, A. (2021). Spike sorter (Version v2.1) [Computer software]. Zenodo."
+_i1s_p = common.parse_apa(_i1s_apa)
+check("I1: parse_apa leaves '(Version ...) [Descriptor]' out of the title",
+      (_i1s_p["title"], _i1s_p["descriptor"], _i1s_p["rest"]),
+      ("Spike sorter", " (Version v2.1) [Computer software]",
+       " (Version v2.1) [Computer software]. Zenodo."))
+check("I1: parse_apa still reassembles the original",
+      _i1s_p["head"] + _i1s_p["title"] + _i1s_p["terminal"] + _i1s_p["rest"], _i1s_apa)
+check("I1: a bracket descriptor alone is split off too",
+      common.parse_apa("Smith, J. (2021). A dataset [Data set]. Dryad.")["title"], "A dataset")
+check("I1: a version alone is split off too",
+      common.parse_apa("Smith, J. (2021). A tool (Version 3). Zenodo.")["title"], "A tool")
+check("I1: an ordinary title has an empty descriptor",
+      common.parse_apa("Yang, W. (2025a). A Title. Venue, 1.")["descriptor"], "")
+check("I1: a descriptor with no publisher after it is still an empty venue",
+      "empty venue" in references.audit("Smith, J. (2021). A dataset [Data set].", True)[0], True)
+check("I1: sentence_case.split_apa returns the title without the descriptor",
+      sc.split_apa(_i1s_apa), ("Smith, A. (2021). ", "Spike sorter",
+                               " (Version v2.1) [Computer software]. Zenodo."))
+
+# Round trip: DataCite software row -> verify (claim) OK -> canon -> re-verify
+# (canonical-apa path) OK -> sentence_case leaves the descriptor untouched.
+_i1s_rec = dict(common.datacite_record(_dc_attrs(
+    creators=[{"familyName": "Smith", "givenName": "Alice", "nameType": "Personal"}],
+    titles=[{"title": "Spike sorter"}], version="v2.1", publicationYear=2021)))
+_i1s_row = {"ref": "I1S", "doi": "10.5281/zenodo.555", "search_author": "Smith",
+            "search_year": "2021", "search_title": "Spike sorter", "built_at": "2026-09-26"}
+with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_i1s_rec)), _sleeps():
+    _i1s_v1 = verify.verify_one(verify.rows_to_citations([_i1s_row], "ref")[0])
+    verify.stamp_rows([_i1s_row], [dict(_i1s_v1, label="I1S")], "ref", "2026-09-26")
+    references.canon_rows([_i1s_row], "ref", "2026-09-26", sleep=0, retry_wait=0)
+    _i1s_bare = {k: v for k, v in _i1s_row.items() if not k.startswith("search_")}
+    _i1s_c2 = verify.rows_to_citations([_i1s_bare], "ref")[0]
+    _i1s_v2 = verify.verify_one(dict(_i1s_c2))
+check("I1 round trip: the claim verifies OK", _i1s_v1["verdict"], "OK")
+check("I1 round trip: canon builds the software apa", _i1s_row["apa"], _i1s_apa)
+check("I1 round trip: re-verify on the canonical-apa path is OK",
+      (_i1s_c2.get("claim_basis"), _i1s_c2["title"], _i1s_v2["verdict"]),
+      ("canonical-apa", "Spike sorter", "OK"))
+_i1s_h, _i1s_t, _i1s_r = sc.split_apa(_i1s_row["apa"])
+check("I1 round trip: sentence_case leaves '(Version v2.1) [Computer software]' untouched",
+      _i1s_h + sc.sentence_case(_i1s_t, set(sc.PROPER), []) + _i1s_r, _i1s_apa)
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

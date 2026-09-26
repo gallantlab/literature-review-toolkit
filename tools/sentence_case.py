@@ -173,9 +173,11 @@ def sentence_case(title, words, phrases):
 def split_apa(apa):
     """-> (head_through_year, title_with_terminal_punct, rest) or None.
     Thin wrapper over the shared APA grammar; None when there is no year or the
-    title never terminates (nothing after it to protect the split)."""
+    title never terminates (nothing after it to protect the split). A deposit's
+    ` (Version …) [Descriptor]` is part of `rest`, so it is never cased, and the
+    title before it then carries no terminal mark."""
     p = common.parse_apa(apa)
-    if not p or not p["terminal"] or not p["rest"]:
+    if not p or not (p["terminal"] or p["descriptor"]) or not p["rest"]:
         return None
     return p["head"], p["title"] + p["terminal"], p["rest"]
 
@@ -214,10 +216,11 @@ def main():
             # lowercases every noun. Report them so the skip is visible.
             foreign.append(r.get(keyf, "?"))
             continue
-        new = sentence_case(title[:-1], words, phrases) + title[-1]
+        body, mark = (title[:-1], title[-1]) if title[-1:] in (".", "?", "!") else (title, "")
+        new = sentence_case(body, words, phrases) + mark
         if new != title:
             changes.append((r.get(keyf, "?"), title, new))
-            for a, b in zip(title[:-1].split(" "), new[:-1].split(" ")):
+            for a, b in zip(body.split(" "), new[:len(body)].split(" ")):
                 if a != b:
                     vocab[f"{a} -> {b}"] = vocab.get(f"{a} -> {b}", 0) + 1
             if args.apply:

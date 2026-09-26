@@ -310,8 +310,9 @@ def audit(apa, has_source):
         # need a human verdict, and re-running the formatter reintroduces the error.
         notes.append(f"multi-word surname '{fam}' — confirm it is not a mis-split given name")
     # a DOI-backed ref should name a venue: real text after the title sentence
-    # (parse_apa already knows the title ends at ". ", "? " or "! ").
-    venue_part = parts["rest"].strip(" .") if parts else ""
+    # (parse_apa already knows the title ends at ". ", "? " or "! "), and a
+    # deposit's "(Version …) [Descriptor]" before the venue is not a venue.
+    venue_part = parts["rest"][len(parts["descriptor"]):].strip(" .") if parts else ""
     if has_source and not venue_part:
         defects.append("empty venue")
     return defects, notes

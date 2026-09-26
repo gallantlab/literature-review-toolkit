@@ -542,6 +542,12 @@ _APA_HEAD = re.compile(r"^(?P<authors>.*?)\s?\((?P<year>\d{4})(?P<suffix>[a-z]?)
                        r"(?:, [A-Z][a-z]+(?: \d{1,2}(?:[-–]\d{1,2})?)?)?\)\.?\s*")
 
 
+# ` (Version v2.1)` and/or ` [Computer software]` ending the title sentence
+_DESCRIPTOR = r"(?: \(Version [^()]*\))?(?: \[[^\[\]]+\])?"
+_APA_DESCRIPTOR = re.compile(_DESCRIPTOR + "$")          # at the end of the title sentence
+_APA_DESCRIPTOR_LEAD = re.compile(_DESCRIPTOR + r"(?=\.)")   # at the start of the tail
+
+
 def parse_apa(apa):
     """Split a canonical reference into its parts, or None if it has no (YEAR).
 
@@ -551,6 +557,12 @@ def parse_apa(apa):
     '.', '?', '!' or ''), and `rest` is everything after — so that
     head + title + terminal + rest == apa. A title ending in ? or ! keeps that
     mark and takes no period (APA-7), which is why the terminal is not always '.'.
+
+    A deposit's ` (Version …)` and/or ` […]` descriptor (build_datacite_apa:
+    "Spike sorter (Version v2.1) [Computer software]. Zenodo.") belongs to the
+    tail, not the title: `title` is then "Spike sorter", `terminal` is '' and
+    `rest` starts with the descriptor, which is also returned alone as
+    `descriptor` ('' when there is none) so a caller can find the venue after it.
     """
     m = _APA_HEAD.match(apa or "")
     if not m:
@@ -561,9 +573,14 @@ def parse_apa(apa):
         title, terminal, rest = tail[:t.start()], t.group(1), tail[t.end():]
     else:
         title, terminal, rest = tail, "", ""
+    d = _APA_DESCRIPTOR.search(title) if terminal == "." else None
+    if d and d.group(0) and d.start() > 0:
+        title, terminal, rest = title[:d.start()], "", d.group(0) + terminal + rest
+    d = _APA_DESCRIPTOR_LEAD.match(rest)
+    descriptor = d.group(0) if d else ""
     return {"authors": m.group("authors"), "year": int(m.group("year")),
             "suffix": m.group("suffix"), "head": apa[:m.end()],
-            "title": title, "terminal": terminal, "rest": rest}
+            "title": title, "terminal": terminal, "rest": rest, "descriptor": descriptor}
 
 
 def year_of(apa):
