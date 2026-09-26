@@ -410,6 +410,47 @@ def _parsed(name, is_surname=False):
     return _core(name if is_surname else claim_surname(name)) or None
 
 
+def _caps_short(tok):
+    """1-4 capitals, dotted or hyphenated: in a mixed-case record ("Collins AGE")
+    such a trailing token can only be initials."""
+    letters = tok.replace(".", "").replace("-", "")
+    return 1 <= len(letters) <= 4 and all(ch.isalpha() and ch.isupper() for ch in letters)
+
+
+def _record_parts(first_author):
+    """A RECORD's first_author -> (family, trailing initials tokens), by the source
+    contract rather than the claim heuristics: every record is "Family INITIALS"
+    (CrossRef and DataCite build f"{fam} {giv[:1]}", PubMed esummary gives
+    "Collins AGE", arXiv is normalized by _found_record). Trailing initials, and
+    in a mixed-case record any trailing all-caps token of <= 4 letters, are
+    stripped, as are suffixes; the rest is the family. A group is whole."""
+    name = str(first_author or "").strip()
+    toks = name.split()
+    if len(toks) > 1 and common.is_group(name):
+        return name, []
+    toks = common.strip_suffixes(toks)
+    mixed = any(ch.islower() for t in toks for ch in t)
+    k = len(toks)
+    while k > 1 and (common.is_initials(toks[k - 1]) or (mixed and _caps_short(toks[k - 1]))):
+        k -= 1
+    return " ".join(toks[:k]), toks[k:]
+
+
+def record_surname(first_author):
+    """The family of a record's first_author ("Collins AGE" -> Collins, "VAN DER
+    MEER J" -> VAN DER MEER); see _record_parts."""
+    return _record_parts(first_author)[0]
+
+
+def _parsed_record(first_author):
+    """A record's family tokens (_core); [] for none; None when unknown."""
+    if not str(first_author or "").strip():
+        return []
+    if common.is_unknown_name(first_author):
+        return None
+    return _core(record_surname(first_author)) or None
+
+
 def is_unknown(name):
     """True for a given name that cannot be read as a surname (see _parsed)."""
     return _parsed(name) is None
@@ -425,14 +466,15 @@ def surname_agrees(claim, record, claim_is_surname=False):
     of the record's surname; any further claim surname word ("Lambon Ralph",
     "Thomas Yeo") must appear in the record's name. A group author
     (common.is_group) compares whole: all its words must match."""
-    c, r = _parsed(claim, claim_is_surname), _parsed(record)
+    c, r = _parsed(claim, claim_is_surname), _parsed_record(record)
     if c is None or r is None:
         return None
     if not c or not r:
         return True
     if common.is_group(claim) or common.is_group(record):
         return set(c) == set(r)   # a group compares whole: "CMS Collaboration" is not "ATLAS Collaboration"
-    full = _name_tokens(record)
+    fam, tail = _record_parts(record)
+    full = _name_tokens(fam) + _name_tokens(" ".join(tail))
     return (any(_tok_agrees(c[0], t) for t in r)
             and all(any(_tok_agrees(x, t) for t in full) for x in c[1:]))
 
@@ -465,7 +507,7 @@ def _author_issue(c, rec, where=""):
     if _parsed(claim, is_surname) is None:
         return [f"{where}first-author mismatch: could not read the claimed first author "
                 f"'{claim}' (got '{got}')"]
-    if _parsed(got) is None:
+    if _parsed_record(got) is None:
         return [f"{where}first-author mismatch: could not read the record's first author "
                 f"'{got}' (expected '{claim}')"]
     if not surname_agrees(claim, got, is_surname):

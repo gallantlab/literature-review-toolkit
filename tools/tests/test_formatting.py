@@ -4440,8 +4440,8 @@ for _ae, _aa, _ax in (("Van Essen DC", "Van Dijk K", False), ("Van Essen DC", "v
                       ("Van Essen DC", "Aaron van den Oord", True), ("Le Bihan D", "Quoc V. Le", True),
                       ("Le Bihan D", "Le Cun Y", False), ("den Ouden HE", "van den Heuvel M", False),
                       ("de Heer WA", "de Lange FP", False), ("Thomas Yeo BT", "Thomas Serre", True),
-                      ("Min", "Seung-Min Park", True), ("Jeong", "Hae-Jeong Park", False),
-                      ("Hyun", "Jae-Hyun Kim", False), ("Jing", "Xiao-Jing Wang", False),
+                      ("Min", "Seung-Min Park", True), ("Jeong", "Hae-Jeong Park", True),
+                      ("Hyun", "Jae-Hyun Kim", True), ("Jing", "Xiao-Jing Wang", True),
                       ("An", "An Nguyen", True), ("Ma", "Smith MA", False), ("An", "Smith AN", False),
                       ("Ho", "Chan HO", False), ("Smith J", "Jones J", False), ("O K", "Kim K", False),
                       ("The pandas development team", "The NumPy team", False)):
@@ -4699,6 +4699,17 @@ check("R3.5: ...and drops Jr/Jr./Sr/Sr./3rd, and II/III/IV after an initial or a
       [["Smith", "J"], ["Smith", "J"], ["Smith", "J"], ["Smith", "EL"], ["Smith", "J"], ["John", "Smith"]])
 for _sin in ("Cavanaugh JR", "Smith J Jr", "Smith J III"):
     check(f"R3.5: claim_surname({_sin!r})", verify.claim_surname(_sin), _sin.split()[0])
+
+# ---- author fix round 4, A: records parsed by their source contract (2026-09-26) ----
+# Every record first_author is "Family INITIALS" (CrossRef/DataCite f"{fam} {giv[:1]}",
+# PubMed esummary, arXiv after _found_record); the claim heuristics misread "Collins AGE".
+for _rin, _rout in (("Collins AGE", "Collins"), ("Park JAE", "Park"), ("Chen H", "Chen"),
+                    ("Van Essen DC", "Van Essen"), ("VAN DER MEER J", "VAN DER MEER"), ("Hagler DJ Jr", "Hagler"),
+                    ("SCHADE OH Sr", "SCHADE"), ("DE LANGE DZN H", "DE LANGE"), ("ATLAS Collaboration", "ATLAS Collaboration"),
+                    ("Smith", "Smith"), ("O K", "O"), ("LI J", "LI")):
+    check(f"R4.A: record_surname({_rin!r})", verify.record_surname(_rin), _rout)
+check("R4.A: the real PubMed record 'Collins AGE' matches the claim 'Collins A'", _mA("Collins A", "Collins AGE"), [])
+check_true("R4.A: ...and 'Smith' does not match it", _mA("Smith", "Collins AGE") != [])
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
