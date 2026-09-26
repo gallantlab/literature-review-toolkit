@@ -4662,6 +4662,20 @@ for _cin, _cout in (("Chou CYC", "Chou"), ("Ang GWY", "Ang"), ("Groen IIA", "Gro
     check(f"R3.2: claim_surname({_cin!r})", verify.claim_surname(_cin), _cout)
     check(f"R3.2: {_cout!r} matches {_cin!r}", _mA(_cout, _cin), [])
 
+# ---- author fix round 3, item 3: more group words (2026-09-26) ----
+for _ga, _gb in (("Hewlett-Packard Company", "Eastman Kodak Company"), ("PLOS ONE Staff", "PLOS Biology Staff"),
+                 ("Google Research", "Microsoft Research"), ("Stanford University", "Harvard University"),
+                 ("National Academy of Sciences", "Chinese Academy of Sciences"),
+                 ("European Commission", "Federal Trade Commission")):
+    check_true(f"R3.3: {_ga!r} mismatches {_gb!r}", _mA(_ga, _gb) != [] and _mA(_gb, _ga) != [])
+    check(f"R3.3: {_ga!r} and {_gb!r} each match themselves", (_mA(_ga, _ga), _mA(_gb, _gb)), ([], []))
+check_true("R3.3: every listed group word marks a group",
+           all(common.is_group(f"Acme {w}") for w in (
+               "Company", "Corporation", "Inc", "Ltd", "Staff", "Research", "University", "Academy", "Agency",
+               "Commission", "Lab", "Labs", "Department", "Ministry", "Office", "Board", "Service", "Services",
+               "Program", "Programme", "Alliance", "Federation", "Union", "Trust", "Partnership", "Panel",
+               "Editors")))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

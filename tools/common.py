@@ -685,7 +685,11 @@ def is_unknown_name(name):
 
 GROUP_WORDS = {"collaboration", "consortium", "team", "group", "project", "institute", "initiative",
                "network", "committee", "society", "association", "council", "organization",
-               "organisation", "laboratory", "center", "centre", "foundation"}
+               "organisation", "laboratory", "center", "centre", "foundation", "company", "corporation",
+               "inc", "ltd", "staff", "research", "university", "academy", "agency", "commission",
+               "lab", "labs", "department", "ministry", "office", "board", "service", "services",
+               "program", "programme", "alliance", "federation", "union", "trust", "partnership",
+               "panel", "editors"}
 
 
 def is_group(name):
