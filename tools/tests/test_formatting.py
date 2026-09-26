@@ -2725,12 +2725,13 @@ check("build_datacite_apa passes the audit (no empty venue, no defects)",
 
 
 def _dc_json_body(url, **k):
-    return {"data": {"attributes": _dc_attrs()}}
+    return json.dumps({"data": {"attributes": _dc_attrs()}}).encode()
 
 
-with _patched(common, http_json=_dc_json_body):
+# (M1 review: datacite_work fetches through its own _datacite_get, not http_json)
+with _patched(common, _datacite_get=_dc_json_body):
     _dw = common.datacite_work("10.5281/zenodo.3509134")
-check("datacite_work: fetched through http_json and normalized like crossref_work",
+check("datacite_work: fetched through _datacite_get and normalized like crossref_work",
       (_dw["title"], _dw["resource_type"]), ("pandas-dev/pandas: Pandas", "Software"))
 
 
@@ -2738,7 +2739,7 @@ def _dc_404(*a, **k):
     raise urllib.error.HTTPError("u", 404, "Not Found", {}, None)
 
 
-with _patched(common, http_json=_dc_404):
+with _patched(common, _datacite_get=_dc_404):
     check_true("datacite_work: a 404 propagates like crossref_work",
                _raises(lambda: common.datacite_work("10.5281/zenodo.nonexistent")))
 
@@ -4011,6 +4012,88 @@ check("I3: canon stores it and the gated audit fails on it unacknowledged",
       ([w for w, _ in _i3_aud["unacked"].get("I3R", [])], _i3_aud["failed"]), (["datacite-deposit"], True))
 _i3_ack = references.audit_rows([_i3_row], "ref", acks={"I3R": {"datacite-deposit": "no version of record"}})
 check("I3: acknowledging it passes the gate", (_i3_ack["unacked"], _i3_ack["failed"]), ({}, False))
+
+# ---- final review M1: datacite_work's own fetch keeps a curl 404 a 404 (2026-09-26) ----
+# The vendored curl_get uses --fail, so through http() a DataCite 404 fetched by
+# curl became "curl exit 22" -- an ERROR -- instead of "DOI does not exist".
+class _M1Resp:
+    def __init__(self, body):
+        self.body, self.headers = body, {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self.body
+
+
+_m1_body = json.dumps({"data": {"attributes": _dc_attrs()}}).encode()
+
+
+def _m1_urlopen_ok(req, timeout=None):
+    return _M1Resp(_m1_body)
+
+
+def _m1_urlopen_drop(req, timeout=None):
+    raise ConnectionResetError("connection reset by peer")
+
+
+def _m1_urlopen_404(req, timeout=None):
+    raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+
+
+_m1_cmds = []
+
+
+def _m1_curl(code, body=b"{}"):
+    def run(cmd, capture_output=True, timeout=None):
+        _m1_cmds.append(cmd)
+        return _sp.CompletedProcess(cmd, 0, stdout=body + b"\n" + code.encode(), stderr=b"")
+    return run
+
+
+def _m1_fetch(urlopen, run=None):
+    pats = {"urlopen": urlopen}
+    with _patched(common.urllib.request, **pats), \
+            _patched(common.subprocess, run=run or _m1_curl("500")), \
+            _patched(common.shutil, which=lambda n: "/usr/bin/curl"), _sleeps():
+        try:
+            return common.datacite_work("10.5281/zenodo.3509134")
+        except Exception as e:
+            return e
+
+
+check("M1: urllib success is parsed (no curl)",
+      (_m1_fetch(_m1_urlopen_ok)["title"], len(_m1_cmds)), ("pandas-dev/pandas: Pandas", 0))
+_m1_e = _m1_fetch(_m1_urlopen_404)
+check("M1: a urllib 404 propagates as HTTPError 404",
+      (type(_m1_e).__name__, getattr(_m1_e, "code", None)), ("HTTPError", 404))
+_m1_cmds.clear()
+_m1_e = _m1_fetch(_m1_urlopen_drop, _m1_curl("404", b'{"errors":[{"status":"404"}]}'))
+check("M1: a network failure then a curl 404 raises HTTPError 404 (a clean miss, not ERROR)",
+      (type(_m1_e).__name__, getattr(_m1_e, "code", None)), ("HTTPError", 404))
+check_true("M1: curl ran WITHOUT --fail and captured the status",
+           _m1_cmds and "--fail" not in _m1_cmds[0] and "\n%{http_code}" in _m1_cmds[0], str(_m1_cmds))
+check("M1: a network failure then a curl 200 is parsed",
+      _m1_fetch(_m1_urlopen_drop, _m1_curl("200", _m1_body))["title"], "pandas-dev/pandas: Pandas")
+check_true("M1: a network failure then a curl 503 is still an error, never a 404",
+           not (isinstance(_m1_fetch(_m1_urlopen_drop, _m1_curl("503")), urllib.error.HTTPError)
+                and _m1_fetch(_m1_urlopen_drop, _m1_curl("503")).code == 404))
+check_true("M1: ...and is transient (ERROR)",
+           common.is_transient(_m1_fetch(_m1_urlopen_drop, _m1_curl("503"))))
+_m1_c = {"label": "M1", "doi": "10.5281/zenodo.nonexistent", "title": "A title nobody has",
+         "expect_first_author": "Nobody", "expect_year": "2020"}
+with _patched(common, crossref_work=_cr_404), _patched(common.urllib.request, urlopen=_m1_urlopen_drop), \
+        _patched(common.subprocess, run=_m1_curl("404")), _patched(common.shutil, which=lambda n: "/x/curl"), \
+        _patched(verify, lookup_pubmed_title=lambda t: None), _sleeps():
+    _m1_v = verify.verify_one(dict(_m1_c))
+    _m1_cn = references.canonical(_dc_row("M1C", "10.5281/zenodo.nonexistent"))
+check_true("M1: verify of a DOI missing from both registries (DataCite via curl) is not ERROR",
+           _m1_v["verdict"] != "ERROR", str(_m1_v))
+check("M1: canonical says 'DOI does not exist'", _m1_cn, {"error": "DOI does not exist (404)", "source": "missing"})
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

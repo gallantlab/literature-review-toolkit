@@ -927,16 +927,75 @@ def datacite_record(attrs, fallback_venue=""):
             "unsplit": unsplit}
 
 
+def _curl_status(url, headers, timeout):
+    """GET via curl WITHOUT --fail -> (HTTP status int, body bytes); raises when
+    curl itself fails. Unlike curl_get (vendored, and --fail by design), a 404
+    comes back as a status, so a caller can tell "no such record" from a failure."""
+    exe = shutil.which("curl")
+    if not exe:
+        raise RuntimeError("curl not available for fallback")
+    cmd = [exe, "-sS", "--compressed", "-L", "--proto-redir", "=https",
+           "--max-time", str(int(timeout)), "-w", "\n%{http_code}"]
+    for k, v in (headers or {}).items():
+        if k.lower() != "accept-encoding":        # --compressed sets and decodes it
+            cmd += ["-H", f"{k}: {v}"]
+    cmd.append(url)
+    p = subprocess.run(cmd, capture_output=True, timeout=timeout + 10)
+    if p.returncode != 0:
+        raise OSError(f"curl exit {p.returncode}: {p.stderr.decode('utf-8', 'replace')[:120]}")
+    body, _, code = p.stdout.rpartition(b"\n")
+    code = code.strip().decode("ascii", "replace")
+    if not code.isdigit():
+        raise OSError(f"curl: no HTTP status for {url}")
+    return int(code), body
+
+
+def _datacite_get(url, retries=5, timeout=30):
+    """http() for DataCite: urllib first, curl on a network failure -- but a
+    curl 404 is raised as urllib.error.HTTPError(404), so a DOI missing from both
+    registries is still "does not exist", never ERROR. urllib's connection is
+    dropped deterministically on some networks for api.datacite.org while curl
+    fetches the same URL (the stack/proxy interaction http()'s fallback exists
+    for); through http(), curl's --fail turned every such 404 into an error."""
+    global _REQUESTS
+    tried_curl = False
+    for attempt in range(retries):
+        try:
+            _REQUESTS += 1
+            req = urllib.request.Request(url, headers=HDRS)
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return decompress(r.read(), r.headers.get("Content-Encoding", ""))
+        except urllib.error.HTTPError as e:
+            if e.code in TRANSIENT_HTTP and attempt < retries - 1:
+                wait = retry_after(e)
+                time.sleep(wait if wait is not None else 3 * 2 ** attempt)
+                continue
+            raise
+        except TRANSIENT_NETWORK:
+            if not tried_curl:
+                tried_curl = True
+                try:
+                    code, body = _curl_status(url, HDRS, timeout)
+                except Exception:
+                    code, body = None, b""
+                if code is not None and 200 <= code < 300:
+                    return body
+                if code is not None and code not in TRANSIENT_HTTP:
+                    # a definite answer (404: no such DOI) -- not a failure to retry
+                    raise urllib.error.HTTPError(url, code, f"HTTP {code} (via curl)", {}, None)
+            if attempt < retries - 1:
+                time.sleep(2 * 2 ** attempt)
+                continue
+            raise
+
+
 def datacite_work(doi, fallback_venue=""):
     """Fetch one DOI from DataCite -> datacite_record(). Raises on a transient
     failure (so callers can tell ERROR from NOT-FOUND, same contract as
-    crossref_work); a 404 propagates too. Goes through http_json (so its curl
-    fallback applies): urllib's connection is dropped deterministically on some
-    networks for api.datacite.org while curl fetches the same URL without
-    trouble — the same class of stack/proxy interaction http()'s curl fallback
-    exists for."""
+    crossref_work); a 404 propagates too, as urllib.error.HTTPError, whether
+    urllib or the curl fallback got it (_datacite_get)."""
     import urllib.parse
-    data = http_json(f"{DATACITE_API}{urllib.parse.quote(doi)}")["data"]
+    data = json.loads(_datacite_get(f"{DATACITE_API}{urllib.parse.quote(doi)}"))["data"]
     return datacite_record(data.get("attributes") or {}, fallback_venue)
 
 
