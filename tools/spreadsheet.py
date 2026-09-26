@@ -206,11 +206,12 @@ def main():
     acks = references.load_acks(args.acks or os.path.join(here, "audit_acks.json"))
     ledger = common.load_optional_json(args.candidates or os.path.join(here, "candidates.json"),
                                        references.LEDGER_MISSING)
-    if isinstance(ledger, dict):
+    if ledger is not references.LEDGER_MISSING:
         # references.audit_rows only validates the ledger's shape when the table
         # is gated, and --draft continues past a failed (gated) audit -- so a
         # corrupted ledger must be caught here too, on EVERY table (gated or
-        # legacy, --draft or not), before anything is written.
+        # legacy, --draft or not), before anything is written. Any file that
+        # exists is validated: a `[]` ledger is refused, not skipped.
         try:
             candidates.validate_ledger(ledger)
         except ValueError as e:

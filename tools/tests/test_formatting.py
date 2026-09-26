@@ -4148,6 +4148,28 @@ _m2L["_runs"]["forward"]["n_papers"] = 2
 check("M2: a run over every sourced row does not warn",
       references.audit_rows(_m2rows, "ref", ledger=_m2L)["unacked"].get("*", []), [])
 
+# ---- final review M3: a non-object candidates.json is refused by spreadsheet (2026-09-26) ----
+# Only a dict ledger was validated; a `[]` ledger skipped validation, reached the
+# audit as "not LEDGER_MISSING", and a legacy table (or --draft) was written.
+for _m3extra in ((), ("--draft",)):
+    _m3d = _tmpf.mkdtemp()
+    _m3rp = os.path.join(_m3d, "rows.json")
+    common.dump_json(_undated, _m3rp)
+    common.dump_json([], os.path.join(_m3d, "candidates.json"))
+    _argv = sys.argv
+    sys.argv = ["spreadsheet.py", "--rows", _m3rp, "--out", os.path.join(_m3d, "bib.xlsx"), *_m3extra]
+    _m3err, _m3code = io.StringIO(), 0
+    try:
+        with _ctx.redirect_stderr(_m3err), _ctx.redirect_stdout(io.StringIO()):
+            spreadsheet.main()
+    except SystemExit as e:
+        _m3code = e.code or 0
+    finally:
+        sys.argv = _argv
+    check(f"M3: spreadsheet {' '.join(_m3extra)} refuses a [] ledger: exit 1, nothing written",
+          (_m3code, sorted(f for f in os.listdir(_m3d) if f.endswith(".xlsx"))), (1, []))
+    check_true("M3: ...naming the ledger's shape", "not a JSON object" in _m3err.getvalue(), _m3err.getvalue())
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
