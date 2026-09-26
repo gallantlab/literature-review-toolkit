@@ -4553,6 +4553,21 @@ check("R2.3: a --citations input's expect_first_author is raw and parsed once",
 check_true("R2.3: ...so 'Lambon Ralph MA' does not match 'Ralph J'",
            verify._author_issue({"expect_first_author": "Lambon Ralph MA"}, {"first_author": "Ralph J"}) != [])
 
+# ---- author fix round 2, item 4: suffixes and long initials everywhere (2026-09-26) ----
+check("R2.4: DataCite 'Smith JLKM' -> family Smith",
+      _c1_people([{"name": "Smith JLKM", "nameType": "Personal"}]), (["Smith, J. L. K. M."], []))
+check("R2.4: DataCite 'Smith J Jr' -> family Smith",
+      _c1_people([{"name": "Smith J Jr", "nameType": "Personal"}]), (["Smith, J."], []))
+check("R2.4: DataCite display name 'John Smith Jr.' -> family Smith",
+      _c1_people([{"name": "John Smith Jr.", "nameType": "Personal"}]), (["Smith, J."], []))
+check("R2.4: arXiv 'John Smith Jr.' -> 'Smith J'",
+      verify._found_record({"title": "", "year": "", "first_author": "John Smith Jr."})["first_author"], "Smith J")
+check("R2.4: arXiv 'John Smith III' -> 'Smith J'",
+      verify._found_record({"title": "", "year": "", "first_author": "John Smith III"})["first_author"], "Smith J")
+check("R2.4: words_then_initials drops a suffix", common.words_then_initials(["Smith", "J", "Jr."]), ("Smith", "J"))
+for _s4in in ("Smith J Jr", "Smith J III", "Smith JLKM", "Smith J 2nd"):
+    check(f"R2.4: claim_surname({_s4in!r})", verify.claim_surname(_s4in), "Smith")
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

@@ -886,6 +886,20 @@ def is_initials(tok):
             and all(ch.isalpha() and ch.isupper() for ch in letters))
 
 
+_SUFFIX = re.compile(r"(?i)^(?:jr|sr|[2-9](?:nd|rd|th))\.?$")
+_ROMAN_SUFFIX = {"II", "III", "IV"}
+
+
+def strip_suffixes(toks):
+    """Name tokens without a trailing generational suffix ("Smith J Jr",
+    "John Smith Jr.", "Smith EL 3rd"). "II"/"III"/"IV" count only after two other
+    tokens, since alone after a surname they may be initials ("Smith IV")."""
+    toks = list(toks)
+    while len(toks) > 1 and (_SUFFIX.match(toks[-1]) or (len(toks) > 2 and toks[-1] in _ROMAN_SUFFIX)):
+        toks.pop()
+    return toks
+
+
 def _spaced_initials(toks):
     """Given-name tokens -> one string; initials-only tokens are spaced out
     ("JS" -> "J S", "J-H" -> "J-H") so initials() keeps every letter."""
@@ -897,7 +911,8 @@ def _spaced_initials(toks):
 def words_then_initials(toks):
     """'Van Essen DC' -> ('Van Essen', 'D C'): words (particles count as words,
     even in capitals) followed only by initials, the PubMed family-first shape.
-    None when the tokens are not that shape."""
+    None when the tokens are not that shape. A trailing Jr/Sr/III is dropped."""
+    toks = strip_suffixes(toks)
     k = len(toks)
     while k > 1 and is_initials(toks[k - 1]):
         k -= 1
@@ -943,12 +958,12 @@ def _datacite_creator(c):
     if ", " in name:
         fam, given = name.split(", ", 1)
         return fam.strip(), given.strip(), False
-    toks = name.split()
+    toks = strip_suffixes(name.split())
     if kind == "Personal" and len(toks) >= 2 and toks[0].lower() != "the":
         if is_initials(toks[-1]):
             split = words_then_initials(toks)
             return (split[0], split[1], False) if split else (name, "", True)
-        fam, given = split_name(name)
+        fam, given = split_name(" ".join(toks))
         if len(fam.strip(".")) > 1:
             return fam, given, False
     return name, "", bool(name)

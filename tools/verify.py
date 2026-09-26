@@ -172,7 +172,7 @@ def _found_record(entry):
     the surname) into the "Family G" shape every other source uses."""
     name = entry["first_author"] or ""
     if name.split()[:1] != ["The"]:
-        fam, giv = common.split_name(name)
+        fam, giv = common.split_name(" ".join(common.strip_suffixes(name.split())))
         name = f"{fam} {giv[:1]}".strip()
     return {"title": entry["title"], "year": entry["year"], "first_author": name, "journal": "arXiv"}
 
@@ -194,7 +194,6 @@ def lookup_arxiv_batch(aids, chunk=50, sleep=3.0):
 
 
 # A generational suffix PubMed puts after the initials ("Hagler DJ Jr", "Smith EL 3rd").
-_SUFFIX = re.compile(r"(?i)^(?:jr|sr|[2-9](?:nd|rd|th))\.?$")
 
 
 def claim_surname(name):
@@ -215,8 +214,7 @@ def claim_surname(name):
     toks = name.split()
     if len(toks) > 1 and toks[0].lower() == "the":
         return name   # a group ("The pandas development team"): its last word is no surname
-    while len(toks) > 1 and _SUFFIX.match(toks[-1]):
-        toks.pop()
+    toks = common.strip_suffixes(toks)
     split = common.words_then_initials(toks)   # particles are words even in capitals
     if split:
         return split[0]
