@@ -4293,6 +4293,25 @@ _n, _err = summary_audit.ingest(_m7ok, "ref", [{"ref": "M7", "verdict": "support
 check("M7: a result echoing the batch's summary_sha is stamped",
       (_n, _err, _m7ok[0].get("summary_check", {}).get("verdict")), (1, [], "supported"))
 
+# ---- final review M8: first-author check on whole tokens, ignoring an article (2026-09-26) ----
+# "the" is a substring of "Matthews", so a group creator "The pandas development
+# team" matched any first author containing "the".
+def _m8(expect, actual):
+    return verify._author_issue({"expect_first_author": expect}, {"first_author": actual})
+
+
+check_true("M8: a group 'The pandas development team' does not match 'Matthews'",
+           _m8("The pandas development team", "Matthews J") != [])
+check_true("M8: ...nor the other way round", _m8("Matthews", "The pandas development team") != [])
+check("M8: 'Tang' still matches 'Tang J'", _m8("Tang", "Tang J"), [])
+check("M8: the group matches itself", _m8("The pandas development team", "The pandas development team"), [])
+check("M8: a leading article is ignored on either side", _m8("pandas development team", "The pandas development team"),
+      [])
+check("M8: a surname token matches inside a particle surname", _m8("Heuvel", "van den Heuvel M"), [])
+check("M8: a >= 4-char prefix matches a hyphenated surname", _m8("Andrews", "Andrews-Hanna J"), [])
+check_true("M8: a short surname no longer matches a longer one containing it", _m8("Lee", "Leeson K") != [])
+check_true("M8: an unrelated surname still mismatches", _m8("Smith", "Jones A") != [])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

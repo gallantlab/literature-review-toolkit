@@ -328,14 +328,32 @@ title_agrees = common.title_agrees
 TITLE_MIN = 0.5
 
 
+_ARTICLES = ("the", "a", "an")
+
+
+def _name_tokens(name):
+    """Lowercased, accent-folded word tokens of a name, a leading article
+    dropped ("The pandas development team" -> pandas, development, team)."""
+    toks = re.findall(r"[\w'-]+", common.fold(str(name or "")))
+    return toks[1:] if len(toks) > 1 and toks[0] in _ARTICLES else toks
+
+
+def _surname_agrees(a, b):
+    """True when a's first (surname) token equals a token of b, or one is a
+    prefix of the other of >= 4 chars ("Andrews" / "Andrews-Hanna")."""
+    return bool(a) and any(t == a[0] or (min(len(t), len(a[0])) >= 4
+                                          and (t.startswith(a[0]) or a[0].startswith(t))) for t in b)
+
+
 def _author_issue(c, rec, where=""):
-    expect_au = str(c.get("expect_first_author") or "").lower().strip()
-    actual_au = (rec.get("first_author") or "").lower().strip()
-    # Fuzzy surname containment (handles "Tang" vs "Tang J"). It can over-accept
-    # a short surname that is a substring of another ("Lee" in "Leeson") — a
-    # deliberate trade to avoid false MISMATCH spam; verdicts are human-reviewed.
-    if (expect_au and actual_au and expect_au.split()[0] not in actual_au
-            and actual_au.split()[0] not in expect_au):
+    # Whole-token surname match ("Tang" vs "Tang J"), either way round, with a
+    # leading article ignored. Substring containment once let a group creator
+    # "The pandas development team" match "Matthews" (it contains "the"), and
+    # "Lee" match "Leeson".
+    expect_t = _name_tokens(c.get("expect_first_author"))
+    actual_t = _name_tokens(rec.get("first_author"))
+    if (expect_t and actual_t and not _surname_agrees(expect_t, actual_t)
+            and not _surname_agrees(actual_t, expect_t)):
         return [f"{where}first-author mismatch: expected '{c.get('expect_first_author')}', "
                 f"got '{rec['first_author']}'"]
     return []
