@@ -4912,6 +4912,17 @@ check("F.R3: merge applies the same rule",
       (verify.claims_agree("DU Wei", "Wei, J."), verify.claims_agree("DU Wei", "Du, W.")), (False, True))
 check("F.R3: a lowercase particle surname is unaffected", _mA("van der Tweel", "VAN DER TWEEL LH"), [])
 
+# ---- author fix final R4: an arXiv name with a capitalized word is not trusted (2026-09-26) ----
+_f4 = verify._found_record({"title": "", "year": "", "first_author": "CHEN Hao"})
+check_true("F.R4: arXiv 'CHEN Hao' is flagged and 'Hao J' fails closed",
+           _f4.get("first_author_unsplit") is True and "confirm by hand" in "".join(verify._author_issue(
+               {"expect_first_author": "Hao J"}, _f4)), str(_f4))
+for _f4n, _f4c, _f4a in (("Hao Chen", "Chen H", "Chen H"), ("J. R. Smith", "Smith J", "Smith J")):
+    _f4r = verify._found_record({"title": "", "year": "", "first_author": _f4n})
+    check(f"F.R4: arXiv {_f4n!r} is unchanged", (_f4r["first_author"], "first_author_unsplit" in _f4r,
+                                                 verify._author_issue({"expect_first_author": _f4c}, _f4r)),
+          (_f4a, False, []))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

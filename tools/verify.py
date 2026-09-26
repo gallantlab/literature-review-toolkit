@@ -180,12 +180,18 @@ def _registry_found(r):
 def _found_record(entry):
     """arXiv entry (from common.arxiv_entries) -> the found-record shape. arXiv
     gives a display name ("Aaron van den Oord"); it is split (particles kept with
-    the surname) into the "Family G" shape every other source uses."""
-    name = entry["first_author"] or ""
+    the surname) into the "Family G" shape every other source uses. A display name
+    with a capitalized word that is not initials ("CHEN Hao") may be family-first,
+    so its split is not trusted: the record is flagged first_author_unsplit."""
+    raw = name = entry["first_author"] or ""
     if not common.is_group(name):
         fam, giv = common.split_name(" ".join(common.strip_suffixes(name.split())))
         name = f"{fam} {giv[:1]}".strip()
-    return {"title": entry["title"], "year": entry["year"], "first_author": name, "journal": "arXiv"}
+    rec = {"title": entry["title"], "year": entry["year"], "first_author": name, "journal": "arXiv"}
+    if any(len(w) >= 2 and w.isalpha() and w.isupper() and not common.is_initials(w)
+           for w in (t.replace(".", "").replace("-", "") for t in raw.split())):
+        rec["first_author_unsplit"] = True
+    return rec
 
 
 def lookup_arxiv_batch(aids, chunk=50, sleep=3.0):
