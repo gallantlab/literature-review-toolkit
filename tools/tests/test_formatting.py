@@ -4768,6 +4768,14 @@ check("R4.D: ...while 'Van Essen DC' and 'Thomas Yeo BT' still split",
       _c1_people([{"name": "Van Essen DC", "nameType": "Personal"}, {"name": "Thomas Yeo BT", "nameType": "Personal"}]),
       (["Van Essen, D. C.", "Thomas Yeo, B. T."], []))
 
+# ---- author fix round 4, E: a placeholder is unknown after parsing too (2026-09-26) ----
+for _un in ("Anonymous et al.", "Anonymous, A.", "Unknown, U.", "[Anonymous]", "Unknown Author", "[No authors listed]"):
+    check(f"R4.E: claim {_un!r} is unknown (an issue)", _mA(_un, "Smith J"),
+          [f"first-author mismatch: could not read the claimed first author '{_un}' (got 'Smith J')"])
+    check_true(f"R4.E: record {_un!r} is unknown (an issue)", _mA("Smith", _un) != [])
+    check(f"R4.E: merge never agrees on {_un!r}", verify.claims_agree(_un, _un), None)
+check("R4.E: 'Smith J' is still readable", verify.is_unknown("Smith J"), False)
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

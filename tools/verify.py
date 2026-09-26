@@ -471,9 +471,10 @@ def _parsed_record(first_author):
     """A record's family tokens (_core); [] for none; None when unknown."""
     if not str(first_author or "").strip():
         return []
-    if common.is_unknown_name(first_author):
+    fam = record_surname(first_author)
+    if common.is_unknown_name(first_author) or common.is_unknown_name(fam):
         return None
-    return _core(record_surname(first_author)) or None
+    return _core(fam) or None
 
 
 def _claim_parts(name, is_surname=False):
@@ -487,6 +488,8 @@ def _claim_parts(name, is_surname=False):
     fam, given, ambiguous = (str(name).strip(), [], False) if is_surname else _claim_shape(name)
     if ambiguous:
         return "ambiguous"
+    if common.is_unknown_name(fam):
+        return None   # a placeholder once parsed: "Anonymous, A.", "Unknown, U."
     core = _core(fam)
     if not core:
         return None
