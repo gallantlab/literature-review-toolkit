@@ -38,6 +38,7 @@ which is what lets a generic word lowercase while a named entity containing it
 does not.
 """
 import argparse
+import os
 import re
 
 import common
@@ -199,6 +200,7 @@ def main():
         phrases += list(extra.get("phrases", []))
 
     rows = common.load_json(args.rows)
+    loaded = os.path.getmtime(args.rows)         # --apply refuses a file changed since
     keyf = common.key_field(rows)
     changes, vocab, unparsed, foreign = [], {}, [], []
     for r in rows:
@@ -227,8 +229,10 @@ def main():
               f"{' ...' if len(foreign) > 12 else ''}\n"
               f"  (pass --include-foreign to case them anyway)")
     if args.apply:
-        common.dump_json(rows, args.out or args.rows)
-        print(f"applied {len(changes)} title changes to {args.out or args.rows}")
+        out = args.out or args.rows
+        same = os.path.abspath(out) == os.path.abspath(args.rows)
+        common.save_rows(out, rows, loaded if same else None)
+        print(f"applied {len(changes)} title changes to {out}")
     elif args.vocab:
         for k, v in sorted(vocab.items(), key=lambda x: -x[1]):
             print(f"{v:4d}  {k}")

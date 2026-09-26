@@ -25,6 +25,7 @@ INPUT (--assign FILE): JSON the agent produced and the user approved:
 """
 import argparse
 import datetime
+import os
 import re
 import sys
 from collections import Counter, defaultdict
@@ -72,6 +73,7 @@ def main():
     args = ap.parse_args()
 
     rows = common.load_json(args.rows)
+    loaded = os.path.getmtime(args.rows)         # the stamp write refuses a file changed since
 
     # --- digest mode: help the agent propose families without re-reading rows.json
     if args.digest:
@@ -139,7 +141,7 @@ def main():
     # ---- stamp rows.json (display name) + persist canonical cache ------------
     for r in rows:
         r["family"] = name_of[assign[r["ref"]]]
-    common.dump_json(rows, args.rows)   # ensure_ascii=False: don't undo references.py's UTF-8
+    common.save_rows(args.rows, rows, loaded)   # ensure_ascii=False: don't undo references.py's UTF-8
     cache = {"principle": principle, "generated": args.asof,
              "families": families, "assignments": {r: assign[r] for r in refs}}
     common.dump_json(cache, args.out)

@@ -3381,6 +3381,53 @@ check_true("title_agrees: a hyphenated main title still counts each half as its 
            common.title_agrees("The free-energy principle",
                                 "The free-energy principle: A unified brain theory?") == 1.0)
 
+# ---- Task 4 item 1: sentence_case.py and families.py write through save_rows
+# (2026-09-26) -----------------------------------------------------------
+# Both tools load rows.json, do their work, then write it straight back with
+# common.dump_json -- bypassing the concurrent-write guard every other
+# load-then-write tool goes through (common.save_rows). A handcheck --ingest
+# or verify run landing in between would silently lose one of the two writes.
+_t4d = _tmpf.mkdtemp()
+_t4rp = os.path.join(_t4d, "rows.json")
+common.dump_json([{"ref": "A", "apa": "Doe, J. (2020). A TITLE HERE and more words. Journal."}], _t4rp)
+_e = _i10_run(sc, ["sentence_case.py", "--rows", _t4rp, "--apply"],
+              split_apa=lambda apa: (_i10_touch(_t4rp), None)[1])
+check_true("sentence_case --apply refuses a rows.json that changed since load",
+           isinstance(_e, RuntimeError) and "changed since it was loaded" in str(_e), repr(_e))
+
+_t4frp = os.path.join(_t4d, "families_rows.json")
+common.dump_json([{"ref": "F1", "apa": "Doe, J. (2020). Title. J."}], _t4frp)
+_t4assign = os.path.join(_t4d, "assign.json")
+common.dump_json({"principle": "p", "families": [{"key": "a", "name": "A"}, {"key": "b", "name": "B"}],
+                  "assignments": {"F1": "a"}}, _t4assign)
+_t4_orig_load_json = common.load_json
+
+
+def _t4_load_json(path):
+    if path == _t4assign:
+        _i10_touch(_t4frp)          # another writer lands while families.py runs
+    return _t4_orig_load_json(path)
+
+
+_argv = sys.argv
+sys.argv = ["families.py", "--rows", _t4frp, "--assign", _t4assign,
+            "--out", os.path.join(_t4d, "families.json"), "--md", os.path.join(_t4d, "families.md")]
+_t4err = None
+try:
+    with _patched(common, load_json=_t4_load_json), _ctx.redirect_stdout(io.StringIO()), \
+            _ctx.redirect_stderr(io.StringIO()):
+        families.main()
+except RuntimeError as e:
+    _t4err = e
+except SystemExit:
+    pass
+finally:
+    sys.argv = _argv
+check_true("families.py refuses a rows.json that changed since load",
+           isinstance(_t4err, RuntimeError) and "changed since it was loaded" in str(_t4err), repr(_t4err))
+check("...and leaves it as the other writer left it",
+      common.load_json(_t4frp), [{"ref": "F1", "apa": "Doe, J. (2020). Title. J."}])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
