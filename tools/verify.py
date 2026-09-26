@@ -403,6 +403,13 @@ def surname_agrees(claim, record, claim_is_surname=False):
             and all(any(_tok_agrees(x, t) for t in full) for x in c[1:]))
 
 
+def claims_agree(a, b):
+    """Two CLAIMED first authors (neither is a record) name the same surname:
+    surname_agrees either way round. merge_lanes uses it to tell a duplicate from
+    two papers sharing a title ("An, J." is not "Chan, H.")."""
+    return bool(surname_agrees(a, b)) or bool(surname_agrees(b, a))
+
+
 def _author_issue(c, rec, where=""):
     # Surname against surname (surname_agrees): "J. Smith" cannot match "Jones J"
     # on the J, "Min" cannot match "Seung-Min Park", "Lee" cannot match "Leeson".

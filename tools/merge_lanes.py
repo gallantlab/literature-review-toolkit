@@ -105,10 +105,10 @@ def index_rows(rows):
 
 
 def _conflict(a, b):
-    sa = verify.claim_surname(a.get("search_author")).lower()
-    sb = verify.claim_surname(b.get("search_author")).lower()
+    fa, fb = a.get("search_author"), b.get("search_author")
     ya, yb = str(a.get("search_year") or ""), str(b.get("search_year") or "")
-    if sa and sb and sa not in sb and sb not in sa:
+    # the author check's surname comparison, not substring containment ("an" is in "chan")
+    if verify.claim_surname(fa) and verify.claim_surname(fb) and not verify.claims_agree(fa, fb):
         return f"first author {a.get('search_author')!r} vs {b.get('search_author')!r}"
     if ya.isdigit() and yb.isdigit() and abs(int(ya) - int(yb)) > 1:
         return f"year {ya} vs {yb}"
@@ -141,14 +141,13 @@ def _defer_agrees(d, row):
     """True unless a deferred entry's first_author/year contradicts the claim on
     `row`, a candidate it might match by title alone. An absent field imposes
     no constraint (a deferral with neither is reported as unconfirmed by
-    merge()); a given field must agree (surname containment either way for the
-    author, within a year for the year) or the match is refused — a title-only
-    hit is too weak to accept over a claim mismatch."""
+    merge()); a given field must agree (the same surname, verify.claims_agree, for
+    the author; within a year for the year) or the match is refused — a
+    title-only hit is too weak to accept over a claim mismatch."""
     fa = d.get("first_author")
     if fa:
-        sa = verify.claim_surname(fa).lower()
-        sb = verify.claim_surname(row.get("search_author")).lower()
-        if not (sa and sb and (sa in sb or sb in sa)):
+        ra = row.get("search_author")
+        if not (verify.claim_surname(fa) and verify.claim_surname(ra) and verify.claims_agree(fa, ra)):
             return False
     dy = d.get("year")
     if dy not in (None, ""):

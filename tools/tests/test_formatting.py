@@ -4587,6 +4587,28 @@ check_true("R2.5: group words are recognized in any position, any case",
                                              "Human Brain Project Science", "Centre for X", "the pandas team")))
 check_true("R2.5: ...and a person is not a group", not any(common.is_group(n) for n in ("Smith J", "Van Essen DC")))
 
+# ---- author fix round 2, item 6: merge_lanes compares surnames, not substrings (2026-09-26) ----
+# _conflict and _defer_agrees used substring containment: "an" is in "chan".
+_m6rep = merge_lanes.merge([_lane("M6", [_p("M6-01", doi="10.1/chan", title="Shared exact title", au="Chan, H.")],
+                                  deferred=[{"title": "Shared exact title", "first_author": "An, J."}])])[1]
+check("R2.6: a deferral by 'An, J.' does not corroborate a row by 'Chan, H.' (lost, not matched)",
+      ([d["title"] for d in _m6rep["lost"]], _m6rep["deferrals_matched"]), (["Shared exact title"], []))
+_m6rows, _m6rep2 = merge_lanes.merge([
+    _lane("N6", [_p("N6-01", doi="10.1/an", title="Disputed short title", year=2023, au="An, J.")]),
+    _lane("O6", [_p("O6-01", doi="10.1/chan2", title="Disputed short title", year=2023, au="Chan, H.")])])
+check("R2.6: title+year dedup keeps 'An, J.' and 'Chan, H.' apart", [r["ref"] for r in _m6rows], ["N6-01", "O6-01"])
+check_true("R2.6: ...and reports them as a possible pair",
+           any(p.get("why", "").startswith("same title and year") for p in _m6rep2["possible_pairs"]))
+check("R2.6: the shared comparison still accepts the same surname in two shapes",
+      (verify.claims_agree("Van Essen DC", "D. C. Van Essen"), verify.claims_agree("Heuvel", "van den Heuvel, M.")),
+      (True, True))
+check("R2.6: ...and a same-paper deferral by 'Kim S' corroborates 'Kim, S.'",
+      [d["title"] for d in merge_lanes.merge([_lane("P6", [_p("P6-01", doi="10.1/k", title="Exact Title Match",
+                                                               au="Kim, S.")],
+                                                        deferred=[{"title": "Exact Title Match",
+                                                                   "first_author": "Kim S"}])])[1]
+       ["deferrals_matched"]], ["Exact Title Match"])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
