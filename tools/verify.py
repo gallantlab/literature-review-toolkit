@@ -168,8 +168,9 @@ def lookup_crossref(doi):
 
 def _registry_found(r):
     """A CrossRef/DataCite record -> the found-record shape, carrying
-    `first_author_unsplit` (the first author has no separate given name, so
-    first_author is the whole name, not "Family I") for _author_issue."""
+    `first_author_unsplit` (the registry did not deposit the first author as a
+    family name and a given name, so first_author is not a trusted "Family I":
+    a whole name, a guessed split, or not the first author) for _author_issue."""
     rec = {k: r[k] for k in ("title", "year", "first_author", "journal")}
     if r.get("first_author_unsplit"):
         rec["first_author_unsplit"] = True
@@ -559,9 +560,9 @@ def claims_agree(a, b):
 
 
 def _no_given_name(first_author, flagged=False):
-    """True for a record first author with no separate given name, which the
-    "Family INITIALS" contract cannot read: flagged by the registry
-    (`first_author_unsplit`), a bare name of two or more words that ends in no
+    """True for a record first author the "Family INITIALS" contract cannot be
+    trusted to read: flagged by the registry (`first_author_unsplit`: not
+    deposited as family + given name), a bare name of two or more words that ends in no
     initial ("Hae-Jeong Park", "Richard Ngo"), or one that ends in "JR"/"SR" after
     two or more words ("John Smith JR"). A one-word name or a group
     has no given name to mistake for the surname, so it is compared as usual."""
@@ -607,8 +608,8 @@ def _author_issue(c, rec, where=""):
         return [f"{where}first-author mismatch: could not read the record's first author "
                 f"'{got}' (expected '{claim}')"]
     if _no_given_name(got, rec.get("first_author_unsplit")):
-        return [f"{where}first-author mismatch: the record's first author has no separate given name "
-                f"('{got}'); confirm by hand"]
+        return [f"{where}first-author mismatch: the record's first author was not deposited as a family "
+                f"name and a given name ('{got}'); confirm by hand"]
     if not surname_agrees(claim, got, is_surname):
         return [f"{where}first-author mismatch: expected '{claim}', got '{got}'"]
     return []

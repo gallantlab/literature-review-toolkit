@@ -867,6 +867,7 @@ def crossref_record(msg, fallback_venue=""):
     """
     authors = [(a.get("family", ""), a.get("given", "") or "")
                for a in (msg.get("author") or []) if a.get("family")]
+    first_has_family = bool(((msg.get("author") or [{}])[0] or {}).get("family"))
     year = ""
     for k in ("published-print", "published-online", "issued"):
         dp = (msg.get(k) or {}).get("date-parts", [[None]])[0]
@@ -901,9 +902,11 @@ def crossref_record(msg, fallback_venue=""):
     return {"title": title, "year": year,
             "authors": authors, "people": [person(f, g) for f, g in authors],
             "first_author": f"{fam} {giv[:1]}".strip(), "journal": journal,
-            # a family-only first author: first_author is then the whole deposited
-            # name, not "Family I", and verify asks a human rather than parse it
-            "first_author_unsplit": bool(authors) and not giv.strip(),
+            # a family-only first author (first_author is then the whole deposited
+            # name, not "Family I"), or a first entry with no family at all (an
+            # organization, a given name only: first_author is then someone else's),
+            # is not trusted: verify asks a human rather than parse it
+            "first_author_unsplit": bool(authors) and (not giv.strip() or not first_has_family),
             "volume": msg.get("volume"), "issue": msg.get("issue"), "pages": msg.get("page"),
             "book": book, "publisher": msg.get("publisher") or ""}
 

@@ -4791,7 +4791,8 @@ check_true("R4.F: a deferral with neither field still says so",
 # DataCite (kept whole / no givenName) and CrossRef (family-only) records carry the
 # whole name as first_author; the "Family INITIALS" contract then accepted a claim
 # naming the given name ("Hao J" vs DataCite "Hao CHEN").
-_R51 = "first-author mismatch: the record's first author has no separate given name ('{}'); confirm by hand"
+_R51 = ("first-author mismatch: the record's first author was not deposited as a family name and a given name "
+        "('{}'); confirm by hand")
 
 
 def _r51_dc(claim, creators):
@@ -4886,6 +4887,18 @@ check("F.R1: a 'Family, Given' name is trusted",
 check("F.R1: a familyName with no givenName is a derived split, so flagged",
       common.datacite_record(_dc_attrs(creators=[{"name": "Jagroop Singh Doad", "familyName": "Doad"}]))
       .get("first_author_unsplit"), True)
+
+# ---- author fix final R2: a first author with no family is not trusted (2026-09-26) ----
+for _f2a in ([{"name": "ATLAS Collaboration"}, {"family": "Jones", "given": "K"}],
+             [{"given": "Hao"}, {"family": "Jones", "given": "K"}]):
+    _f2r = _r51_cr("Jones K", _f2a)
+    check_true(f"F.R2: CrossRef first entry {_f2a[0]} without a family fails closed", len(_f2r) == 1
+               and "confirm by hand" in _f2r[0], str(_f2r))
+    check("F.R2: ...its authors and APA are unchanged",
+          common.crossref_record({"author": _f2a, "title": ["T"]})["people"], ["Jones, K."])
+_f2r = _r51_dc("Jones K", [{"name": "", "nameType": "Personal"}, {"name": "Jones, K"}])
+check_true("F.R2: a DataCite first creator with no family fails closed", len(_f2r) == 1 and "confirm by hand" in _f2r[0],
+           str(_f2r))
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
