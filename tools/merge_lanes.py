@@ -107,8 +107,9 @@ def index_rows(rows):
 def _conflict(a, b):
     fa, fb = a.get("search_author"), b.get("search_author")
     ya, yb = str(a.get("search_year") or ""), str(b.get("search_year") or "")
-    # the author check's surname comparison, not substring containment ("an" is in "chan")
-    if verify.claim_surname(fa) and verify.claim_surname(fb) and not verify.claims_agree(fa, fb):
+    # the author check's surname comparison, not substring containment ("an" is in
+    # "chan"); an unknown author ("?") on either side agrees with nothing
+    if str(fa or "").strip() and str(fb or "").strip() and verify.claims_agree(fa, fb) is not True:
         return f"first author {a.get('search_author')!r} vs {b.get('search_author')!r}"
     if ya.isdigit() and yb.isdigit() and abs(int(ya) - int(yb)) > 1:
         return f"year {ya} vs {yb}"
@@ -145,9 +146,10 @@ def _defer_agrees(d, row):
     the author; within a year for the year) or the match is refused — a
     title-only hit is too weak to accept over a claim mismatch."""
     fa = d.get("first_author")
-    if fa:
+    # an unknown first author ("?") constrains nothing here: merge() marks the match unconfirmed
+    if fa and not verify.is_unknown(fa):
         ra = row.get("search_author")
-        if not (verify.claim_surname(fa) and verify.claim_surname(ra) and verify.claims_agree(fa, ra)):
+        if not str(ra or "").strip() or verify.claims_agree(fa, ra) is not True:
             return False
     dy = d.get("year")
     if dy not in (None, ""):
@@ -228,8 +230,10 @@ def merge(lanes):
             if match is None:
                 rep["lost"].append(entry)
                 continue
-            if by_title and not d.get("first_author") and d.get("year") in (None, ""):
-                # a title alone, with nothing to corroborate it, cannot confirm the paper was kept
+            if by_title and (verify.is_unknown(d.get("first_author"))
+                             or (not d.get("first_author") and d.get("year") in (None, ""))):
+                # a title alone, with nothing to corroborate it (or an unreadable
+                # first author, "?"), cannot confirm the paper was kept
                 rep["unconfirmed"].append(dict(entry, found_as=match["ref"]))
                 continue
             rep["deferrals_matched"].append(dict(entry, found_as=match["ref"]))

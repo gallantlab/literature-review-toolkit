@@ -381,21 +381,36 @@ def _tok_agrees(a, t):
     return a == t or a in _hyphen_parts(t)
 
 
+def _parsed(name, is_surname=False):
+    """A name's surname tokens (_core); [] for no name; None when the name is
+    unknown -- a placeholder ("?", "anon"), or no readable surname word."""
+    if not str(name or "").strip():
+        return []
+    if common.is_unknown_name(name):
+        return None
+    return _core(name if is_surname else claim_surname(name)) or None
+
+
+def is_unknown(name):
+    """True for a given name that cannot be read as a surname (see _parsed)."""
+    return _parsed(name) is None
+
+
 def surname_agrees(claim, record, claim_is_surname=False):
     """True when the surname of `claim` agrees with the surname of `record`
-    (a first_author such as "van den Heuvel M"); None when the record has no
-    readable surname. Both are parsed by claim_surname, once -- unless
-    `claim_is_surname` (an apa-derived lead surname, used as-is) -- so given
-    names and initials never take part. The claim's first non-particle surname
-    word must agree with a word of the record's surname; any further claim
-    surname word ("Lambon Ralph", "Thomas Yeo") must appear in the record's name.
-    A group author (common.is_group) compares whole: all its words must match."""
-    c = _core(claim if claim_is_surname else claim_surname(claim))
-    r = _core(claim_surname(record))
-    if not c:
-        return True
-    if not r:
+    (a first_author such as "van den Heuvel M"); None when either is unknown
+    (a placeholder such as "?" or no readable surname): an unknown never agrees.
+    Both are parsed by claim_surname, once -- unless `claim_is_surname` (an
+    apa-derived lead surname, used as-is) -- so given names and initials never
+    take part. The claim's first non-particle surname word must agree with a word
+    of the record's surname; any further claim surname word ("Lambon Ralph",
+    "Thomas Yeo") must appear in the record's name. A group author
+    (common.is_group) compares whole: all its words must match."""
+    c, r = _parsed(claim, claim_is_surname), _parsed(record)
+    if c is None or r is None:
         return None
+    if not c or not r:
+        return True
     if common.is_group(claim) or common.is_group(record):
         return set(c) == set(r)   # a group compares whole: "CMS Collaboration" is not "ATLAS Collaboration"
     full = _name_tokens(record)
@@ -405,9 +420,11 @@ def surname_agrees(claim, record, claim_is_surname=False):
 
 def claims_agree(a, b):
     """Two CLAIMED first authors (neither is a record) name the same surname:
-    surname_agrees either way round. merge_lanes uses it to tell a duplicate from
-    two papers sharing a title ("An, J." is not "Chan, H.")."""
-    return bool(surname_agrees(a, b)) or bool(surname_agrees(b, a))
+    surname_agrees either way round; None when either is unknown. merge_lanes
+    uses it to tell a duplicate from two papers sharing a title ("An, J." is not
+    "Chan, H.")."""
+    x, y = surname_agrees(a, b), surname_agrees(b, a)
+    return None if x is None or y is None else (x or y)
 
 
 def _author_issue(c, rec, where=""):
@@ -415,7 +432,8 @@ def _author_issue(c, rec, where=""):
     # on the J, "Min" cannot match "Seung-Min Park", "Lee" cannot match "Leeson".
     # A claim is either `expect_first_author` (what a search agent or a
     # --citations file reported, parsed here once) or `expect_surname` (the lead
-    # surname of the row's apa, used as-is).
+    # surname of the row's apa, used as-is). An unknown name on either side ("?",
+    # "anon", no readable word) is an issue: it can confirm nothing.
     # Calibrated on the same OK verdicts as the title check, with each claim
     # rebuilt as rows_to_citations now builds it: 4 of 2,471 are flagged, all a
     # compound surname the record shortened ("Quian Quiroga" / "Quiroga R"), which
@@ -425,12 +443,13 @@ def _author_issue(c, rec, where=""):
     got = str(rec.get("first_author") or "")
     if not str(claim or "").strip() or not got.strip():
         return []
-    ok = surname_agrees(claim, got, is_surname)
-    if ok is None:
-        # fail closed: a record author with no readable word cannot confirm the claim
+    if _parsed(claim, is_surname) is None:
+        return [f"{where}first-author mismatch: could not read the claimed first author "
+                f"'{claim}' (got '{got}')"]
+    if _parsed(got) is None:
         return [f"{where}first-author mismatch: could not read the record's first author "
                 f"'{got}' (expected '{claim}')"]
-    if not ok:
+    if not surname_agrees(claim, got, is_surname):
         return [f"{where}first-author mismatch: expected '{claim}', got '{got}'"]
     return []
 

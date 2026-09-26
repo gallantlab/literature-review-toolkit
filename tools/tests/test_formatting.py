@@ -4609,6 +4609,34 @@ check("R2.6: ...and a same-paper deferral by 'Kim S' corroborates 'Kim, S.'",
                                                                    "first_author": "Kim S"}])])[1]
        ["deferrals_matched"]], ["Exact Title Match"])
 
+# ---- author fix round 3, item 1: an unreadable name is unknown, never agreeing (2026-09-26) ----
+for _u in ("?", "—", "–", "...", "…", "anon", "Anonymous", "unknown", "n/a", "Anon.", "( )"):
+    check_true(f"R3.1: {_u!r} is an unknown name", common.is_unknown_name(_u))
+check_true("R3.1: a real name or an empty one is not unknown",
+           not any(common.is_unknown_name(n) for n in ("Smith J", "O", "An", "")))
+check("R3.1: claim '?' vs 'Smith J' is an author issue",
+      _mA("?", "Smith J"), ["first-author mismatch: could not read the claimed first author '?' (got 'Smith J')"])
+check_true("R3.1: ...and so is a recorded 'anonymous'", _mA("Smith", "Anonymous") != [])
+check("R3.1: surname_agrees and claims_agree say None for an unknown",
+      (verify.surname_agrees("?", "Smith J"), verify.claims_agree("Smith J", "unknown")), (None, None))
+_r31rows, _r31rep = merge_lanes.merge([
+    _lane("Q1", [_p("Q1-01", doi="10.1/q1", title="A shared exact title", year=2023, au="?")]),
+    _lane("Q2", [_p("Q2-01", doi="10.1/q2", title="A shared exact title", year=2023, au="Chan, H.")])])
+check("R3.1: title+year dedup keeps a '?' row and a 'Chan, H.' row apart", [r["ref"] for r in _r31rows],
+      ["Q1-01", "Q2-01"])
+check_true("R3.1: ...and records a possible pair",
+           any(p.get("why", "").startswith("same title and year") for p in _r31rep["possible_pairs"]))
+_r31d = _tmpf.mkdtemp()
+_r31raw = os.path.join(_r31d, "search_raw")
+os.makedirs(_r31raw)
+common.dump_json(_lane("Q3", [_p("Q3-01", doi="10.1/q3", title="Exact Deferral Title", year=2020, au="Kim, S.")],
+                       deferred=[{"title": "Exact Deferral Title", "first_author": "?", "year": 2020}]),
+                 os.path.join(_r31raw, "Q3.json"))
+_r31rep2 = merge_lanes.merge([merge_lanes.load_lane(os.path.join(_r31raw, "Q3.json"))])[1]
+check("R3.1: a deferral whose first_author is '?' is unconfirmed, not matched",
+      ([d["title"] for d in _r31rep2["unconfirmed"]], _r31rep2["deferrals_matched"]), (["Exact Deferral Title"], []))
+check("R3.1: ...and merge_lanes exits 1", _merge_exit(_r31raw, os.path.join(_r31d, "rows.json")), 1)
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

@@ -669,6 +669,20 @@ def single_letter_surnames(apa):
     return sorted({f for f in apa_families(apa) if len(f.strip(".")) == 1})
 
 
+_PLACEHOLDER_NAMES = {"?", "—", "–", "...", "…", "anon", "anonymous", "unknown", "n/a"}
+
+
+def is_unknown_name(name):
+    """True for a name that says nothing about who wrote the paper: a placeholder
+    ("?", "—", "...", "anon", "Anonymous", "unknown", "n/a") or text with no
+    letter at all ("( — )"). An empty name is not unknown; it is no claim."""
+    s = str(name or "").strip()
+    if not s:
+        return False
+    low = s.lower()
+    return low in _PLACEHOLDER_NAMES or low.rstrip(".") in _PLACEHOLDER_NAMES or not re.search(r"[^\W\d_]", s)
+
+
 GROUP_WORDS = {"collaboration", "consortium", "team", "group", "project", "institute", "initiative",
                "network", "committee", "society", "association", "council", "organization",
                "organisation", "laboratory", "center", "centre", "foundation"}
