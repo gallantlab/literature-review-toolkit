@@ -12,7 +12,8 @@ hand check, and the audit fails any DOI-less row without its record:
                       goes through verify.py instead
   --ingest FILE       record each result on its row as `hand_verified`, refusing one
                       whose row's current apa sha differs from --input's `apa_sha`
-                      (the reference changed while it was being checked)
+                      (the reference changed while it was being checked), or whose
+                      --input entry predates apa_sha altogether
   --input FILE        the hand-check input recorded at --prepare, used by --ingest to
                       detect that drift (default: handcheck_input.json beside --rows)
 
@@ -164,10 +165,17 @@ def ingest(rows, keyf, results, hc_input, asof):
         if common.doi_of(row) or row.get("arxiv"):
             errors.append(f"{k}: has a DOI/arXiv id; it is verified by verify.py, not by hand")
             continue
-        if k not in input_map:
+        entry = input_map.get(k)
+        if entry is None:
             errors.append(f"{k}: not in this hand check")
             continue
-        if common.apa_sha(row.get("apa")) != input_map[k].get("apa_sha"):
+        if "apa_sha" not in entry:
+            # an old-format hand-check-input entry (written before apa_sha existed)
+            # cannot prove what the hand-check agent saw -- refuse explicitly, rather
+            # than rely on None != a real sha to (accidentally) do the right thing
+            errors.append(f"{k}: hand-check input predates --prepare binding; re-run --prepare")
+            continue
+        if common.apa_sha(row.get("apa")) != entry["apa_sha"]:
             # checked against the PRE-correction apa: a "corrected" verdict has not
             # yet been applied to row["apa"] at this point in the function
             errors.append(f"{k}: the reference changed since --prepare; re-check it")

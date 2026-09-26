@@ -2163,7 +2163,9 @@ check_true("ingest refuses a summary edited since prepare, and names a missing r
            str(_err))
 _n, _err = summary_audit.ingest([{"ref": "A", "summary": "It found X."}], "ref",
                                 [{"ref": "A", "verdict": "unsupported"}], _AB,
-                                {"refs": ["A"], "sha": {"A": common.summary_sha("It found X.")}, "no_abstract": []},
+                                {"refs": ["A"], "sha": {"A": common.summary_sha("It found X.")}, "no_abstract": [],
+                                 "ids": {"A": list(common.ids_of({"ref": "A", "summary": "It found X."}))},
+                                 "abstract_sha": {"A": common.summary_sha("We found X.")}},
                                 "2026-09-26")
 check("an unsupported verdict must quote the clause", (_n, len(_err)), (0, 1))
 _tmpx = os.path.join(_tmpf.mkdtemp(), "s.xlsx")
@@ -3050,7 +3052,8 @@ _e = _i10_run(handcheck, ["handcheck.py", "--rows", _i10_rows([{"ref": "B1", "ap
                           "--ingest", _i10res],
               ingest=lambda rows, keyf, results, hc_input, asof: (_i10_touch(_i10rp), (0, []))[1])
 check_true("handcheck --ingest refuses a rows.json that changed", isinstance(_e, RuntimeError), repr(_e))
-common.dump_json({"refs": [], "sha": {}, "no_abstract": []}, os.path.join(_i10d, "manifest.json"))
+common.dump_json({"refs": [], "sha": {}, "no_abstract": [], "ids": {}, "abstract_sha": {}},
+                 os.path.join(_i10d, "manifest.json"))
 _e = _i10_run(summary_audit, ["summary_audit.py", "--rows", _i10_rows([{"ref": "S", "summary": "s"}]),
                               "--ingest", "--dir", _i10d],
               ingest=lambda *a: (_i10_touch(_i10rp), (0, []))[1])
@@ -3278,6 +3281,41 @@ finally:
     sys.argv = _argv
 check("handcheck --ingest reads handcheck_input.json beside --rows by default",
       common.load_json(_hcrp)[0]["hand_verified"]["verdict"], "confirmed")
+
+# ---- Task 2 fix round 1: an old-format manifest/input must fail closed, not
+# silently treat a genuinely drifted row as unchanged (2026-09-26) -----------
+# summary_audit: a manifest written before ids/abstract_sha existed cannot prove
+# what the checking agents saw. The reviewer's repro: a row that gained a DOI
+# and a different abstract after an old-format --prepare must not be stamped.
+_t2oldman = {"refs": ["T3"], "sha": {"T3": common.summary_sha("It found X.")}, "no_abstract": []}
+_t2S_old = [{"ref": "T3", "summary": "It found X.", "doi": "10.1/t3"}]   # gained a DOI since the old --prepare
+_n, _err = summary_audit.ingest(_t2S_old, "ref", [{"ref": "T3", "verdict": "supported"}],
+                                {"T3": {"text": "A completely different abstract.", "source": "openalex"}},
+                                _t2oldman, "2026-09-26")
+check("an old-format manifest (no ids/abstract_sha) refuses a genuinely drifted ref, stamps nothing",
+      (_n, _err, "summary_check" in _t2S_old[0]),
+      (0, ["T3: manifest predates --prepare binding; re-run --prepare"], False))
+
+# ...and refuses every OTHER ref in the same old-format manifest too, not just the drifted one
+_t2oldman2 = {"refs": ["T4"], "sha": {"T4": common.summary_sha("Unrelated summary.")}, "no_abstract": ["T5"]}
+_n, _err = summary_audit.ingest(
+    [{"ref": "T4", "summary": "Unrelated summary."}, {"ref": "T5", "summary": "Another one."}], "ref",
+    [{"ref": "T4", "verdict": "supported"}], {}, _t2oldman2, "2026-09-26")
+check("an old-format manifest refuses every ref it lists, unchanged or not",
+      (_n, sorted(_err)),
+      (0, ["T4: manifest predates --prepare binding; re-run --prepare",
+           "T5: manifest predates --prepare binding; re-run --prepare"]))
+
+# handcheck: a hand-check-input entry written before apa_sha existed cannot prove
+# what the hand-check agent saw; the apa was also genuinely edited since.
+_t2oldhc = [{"ref": "H3", "apa": "Old apa text."}]                # no apa_sha: pre-binding input
+_t2rows_h3 = [{"ref": "H3", "apa": "Old apa text. (edited since the old --prepare)"}]
+_n, _err = handcheck.ingest(_t2rows_h3, "ref",
+                            [{"ref": "H3", "verdict": "confirmed", "source_checked": "LoC record"}],
+                            _t2oldhc, "2026-09-26")
+check("an old-format hand-check-input entry (no apa_sha) is refused explicitly, stamps nothing",
+      (_n, _err, "hand_verified" in _t2rows_h3[0]),
+      (0, ["H3: hand-check input predates --prepare binding; re-run --prepare"], False))
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

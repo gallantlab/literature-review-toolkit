@@ -12,7 +12,9 @@ whose abstract entry was recorded for other ids is refused at --prepare, which
 then exits 1. A summary edited after --prepare is refused at --ingest, and so is
 a ref whose paper (its DOI/arXiv id) or whose abstract text changed since
 --prepare -- the manifest records both, so --ingest is checking against exactly
-what the checking agents saw.
+what the checking agents saw. A manifest written before that binding existed
+(no `ids`/`abstract_sha` maps at all) refuses every ref in it, rather than
+silently treating each one as unchanged.
 
     python3 tools/summary_audit.py --rows rows.json --prepare
     python3 tools/summary_audit.py --rows rows.json --ingest
@@ -96,40 +98,45 @@ def prepare(rows, keyf, abstracts, batch=40, recheck=False, failed=None):
     return batches, no_abs, manifest
 
 
+_MISSING = object()   # sentinel: a ref absent from a manifest's ids/abstract_sha map counts as drifted
+
+
 def ingest(rows, keyf, results, abstracts, manifest, asof):
+    # An old-format manifest (written by a --prepare that predates ids/abstract_sha)
+    # cannot prove what the checking agents saw for ANY ref in it -- refuse the whole
+    # batch rather than let per-ref lookups silently treat every one as unchanged.
+    if "ids" not in manifest or "abstract_sha" not in manifest:
+        refs = list(dict.fromkeys(list(manifest.get("refs", [])) + list(manifest.get("no_abstract", []))))
+        return 0, [f"{k}: manifest predates --prepare binding; re-run --prepare" for k in refs]
     by = {r.get(keyf): r for r in rows}
     n, errors, seen = 0, [], set()
-    m_ids, m_abs_sha = manifest.get("ids", {}), manifest.get("abstract_sha", {})
+    m_ids, m_abs_sha = manifest["ids"], manifest["abstract_sha"]
 
     def ids_drifted(k, row):
-        """True when the row's current ids differ from what --prepare recorded
-        (a manifest with no `ids` -- an old-style manifest -- skips this check)."""
-        stored = m_ids.get(k)
-        return stored is not None and list(common.ids_of(row)) != list(stored)
+        """True when the row's current ids differ from what --prepare recorded, or
+        when this ref has no recorded ids at all (fail closed, not "no drift")."""
+        stored = m_ids.get(k, _MISSING)
+        return stored is _MISSING or list(common.ids_of(row)) != list(stored)
 
     def abstract_drifted(k):
         """True when the abstract passed to --ingest differs from what --prepare
-        recorded (a manifest with no `abstract_sha` skips this check)."""
-        stored = m_abs_sha.get(k)
-        if stored is None:
-            return False
+        recorded, or when this ref has no recorded abstract_sha at all."""
+        if k not in m_abs_sha:
+            return True
         text = ((abstracts.get(k) or {}).get("text") or "").strip()
-        return (common.summary_sha(text) if text else "") != stored
+        return (common.summary_sha(text) if text else "") != m_abs_sha[k]
 
     def stamp(row, k, verdict, note):
-        # bound to the manifest's recorded ids and abstract hash -- what the checking
-        # agent actually saw at --prepare, not whatever the row/abstracts say now
-        stored_ids = m_ids.get(k)
-        doi, aid = tuple(stored_ids) if stored_ids is not None else common.ids_of(row)
-        stored_sha = m_abs_sha.get(k)
-        if stored_sha is None:
-            text = (abstracts.get(k) or {}).get("text") or ""
-            stored_sha = common.summary_sha(text) if text.strip() else ""
+        # always the manifest's recorded ids and abstract hash -- what the checking
+        # agent actually saw at --prepare, never whatever the row/abstracts say now.
+        # (ids_drifted/abstract_drifted already refused before stamp() is reached if
+        # either is missing or disagrees, so both are guaranteed present here.)
+        doi, aid = tuple(m_ids[k])
         row["summary_check"] = {"verdict": verdict, "note": note,
                                 "abstract_source": (abstracts.get(k) or {}).get("source"),
                                 "summary_sha": common.summary_sha(row.get("summary")),
                                 "doi": doi, "arxiv": aid,
-                                "abstract_sha": stored_sha, "at": asof}
+                                "abstract_sha": m_abs_sha[k], "at": asof}
 
     counts = {}
     for res in results:
