@@ -167,9 +167,14 @@ def lookup_crossref(doi):
 
 
 def _found_record(entry):
-    """arXiv entry (from common.arxiv_entries) -> the found-record shape."""
-    return {"title": entry["title"], "year": entry["year"],
-            "first_author": entry["first_author"], "journal": "arXiv"}
+    """arXiv entry (from common.arxiv_entries) -> the found-record shape. arXiv
+    gives a display name ("Aaron van den Oord"); it is split (particles kept with
+    the surname) into the "Family G" shape every other source uses."""
+    name = entry["first_author"] or ""
+    if name.split()[:1] != ["The"]:
+        fam, giv = common.split_name(name)
+        name = f"{fam} {giv[:1]}".strip()
+    return {"title": entry["title"], "year": entry["year"], "first_author": name, "journal": "arXiv"}
 
 
 def lookup_arxiv_batch(aids, chunk=50, sleep=3.0):
@@ -191,6 +196,8 @@ def lookup_arxiv_batch(aids, chunk=50, sleep=3.0):
 # An initials token: 1-3 capitals, dotted or not, hyphenated or not ("J", "JL",
 # "JLK", "J.L.", "J.-L.", "J-R"). Judged on the raw token, before any casing.
 _INITIALS = re.compile(r"^[A-ZÀ-Ý]\.?(?:-?[A-ZÀ-Ý]\.?){0,2}$")
+# A generational suffix PubMed puts after the initials ("Hagler DJ Jr", "Smith EL 3rd").
+_SUFFIX = re.compile(r"(?i)^(?:jr|sr|[2-9](?:nd|rd|th))\.?$")
 
 
 def claim_surname(name):
@@ -199,21 +206,32 @@ def claim_surname(name):
     A comma means family-first (APA); so do words followed only by initials
     ('Smith J', 'Smith JL', 'Smith J.-L.', 'Van Essen DC', PubMed style), which
     give all the words, and an all-caps PubMed form made only of initials-shaped
-    tokens ('LI J', 'AN J', 'O K'), which gives its first token; otherwise the
-    last token that is not an initial."""
+    tokens ('LI J', 'AN J', 'O K'), which gives its first token. A trailing
+    'Jr'/'Sr'/'3rd' is dropped; a name opening with a particle ('de Lange Dzn')
+    or a group name opening with "The" is returned whole; otherwise the last
+    token that is not an initial."""
     name = re.sub(r"\s*(?:,?\s*et al\.?|&.*)$", "", (name or "").strip())
     if not name:
         return ""
     if "," in name:
         return name.split(",")[0].strip()
     toks = name.split()
+    if len(toks) > 1 and toks[0].lower() == "the":
+        return name   # a group ("The pandas development team"): its last word is no surname
+    while len(toks) > 1 and _SUFFIX.match(toks[-1]):
+        toks.pop()
     k = len(toks)
     while k > 1 and _INITIALS.match(toks[k - 1]):
         k -= 1
-    if k < len(toks) and all(len(t) >= 2 and not _INITIALS.match(t) for t in toks[:k]):
+    # a particle is a word even in capitals ("VAN DER TWEEL LH", "DE LANGE DZN H")
+    if k < len(toks) and all(len(t) >= 2 and (not _INITIALS.match(t) or t.lower() in common.PARTICLES)
+                             for t in toks[:k]):
         return " ".join(toks[:k])
     if len(toks) > 1 and all(_INITIALS.match(t) for t in toks):
         return toks[0]
+    if len(toks) > 1 and toks[0].lower() in common.PARTICLES:
+        return " ".join(toks)   # opens with a particle: already a surname ("de Lange Dzn")
+    name = " ".join(toks)
     parts = [p for p in name.split() if not (len(p.rstrip(".")) == 1 and p.endswith("."))]
     return parts[-1] if parts else name
 
@@ -358,29 +376,25 @@ def _hyphen_parts(tok):
     return {p for p in tok.split("-") if len(p) >= 2} if "-" in tok else set()
 
 
-def _surname_agrees(a, b):
-    """True when a's first (surname) token equals a token of b, or equals one
-    part of a hyphenated token of b, or the other way round ("Hanna" /
-    "Andrews-Hanna"). Whole words only: "Han" does not match "Andrews-Hanna"."""
-    return bool(a) and any(t == a[0] or a[0] in _hyphen_parts(t) or t in _hyphen_parts(a[0]) for t in b)
-
-
-def _drop_initials(toks):
-    """Tokens without single letters (initials), unless nothing else is left: a
-    one-letter surname ("O") must still be compared."""
-    return [t for t in toks if len(t) > 1] or toks
+def _surname_tokens(name):
+    """The surname (claim_surname) of a claim or a record's first_author, as
+    tokens without nobiliary particles ("Van Essen DC" -> essen; "van den Heuvel
+    M" -> heuvel); a surname made only of particles ("Le") keeps them."""
+    toks = _name_tokens(claim_surname(name))
+    return [t for t in toks if t not in common.PARTICLES] or toks
 
 
 def _author_issue(c, rec, where=""):
-    # Whole-token surname match ("Tang" vs "Tang J"), either way round, with a
-    # leading "the" ignored and initials dropped from both sides (so "J. Smith"
-    # cannot match "Jones J" on the "j"). Substring containment once let a group
-    # creator "The pandas development team" match "Matthews" (it contains "the"),
-    # and "Lee" match "Leeson".
-    expect_t = _drop_initials(_name_tokens(c.get("expect_first_author")))
-    actual_t = _drop_initials(_name_tokens(rec.get("first_author")))
-    if (expect_t and actual_t and not _surname_agrees(expect_t, actual_t)
-            and not _surname_agrees(actual_t, expect_t)):
+    # Surname against surname. Both sides go through claim_surname, so given
+    # names and initials never take part ("J. Smith" cannot match "Jones J" on
+    # the J, "Min" cannot match "Seung-Min Park"). The claim's first surname
+    # token that is not a particle must equal a token of the record's surname, or
+    # a 2+ letter part of a hyphenated one ("Hanna" / "Andrews-Hanna"). Whole
+    # words only: "Lee" does not match "Leeson", nor "Han" "Andrews-Hanna".
+    expect_t = _surname_tokens(c.get("expect_first_author"))
+    actual_t = _surname_tokens(rec.get("first_author"))
+    if expect_t and actual_t and not any(expect_t[0] == t or expect_t[0] in _hyphen_parts(t)
+                                         for t in actual_t):
         return [f"{where}first-author mismatch: expected '{c.get('expect_first_author')}', "
                 f"got '{rec['first_author']}'"]
     return []

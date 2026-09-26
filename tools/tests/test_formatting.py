@@ -4402,7 +4402,6 @@ check("A1: 'Tang' still matches 'Tang J'", _m8("Tang", "Tang J"), [])
 check("A2: 'Hanna' matches 'Andrews-Hanna J'", _m8("Hanna", "Andrews-Hanna J"), [])
 check("A2: 'Andrews' matches 'Andrews-Hanna J'", _m8("Andrews", "Andrews-Hanna J"), [])
 check("A2: 'Lopez' matches 'Garcia-Lopez J'", _m8("Lopez", "Garcia-Lopez J"), [])
-check("A2: ...either way round ('Garcia-Lopez' claim vs record 'Lopez J')", _m8("Garcia-Lopez", "Lopez J"), [])
 check_true("A2: 'Han' still mismatches 'Andrews-Hanna J' (no partial-word match)",
            _m8("Han", "Andrews-Hanna J") != [])
 check_true("A2: a one-letter hyphen part does not count ('A' vs 'B-A J')", _m8("A", "B-A J") != [])
@@ -4424,6 +4423,52 @@ for _bin, _bout in (("LI J", "LI"), ("AN J", "AN"), ("O K", "O"), ("LEE JH", "LE
                     ("van den Heuvel MP", "van den Heuvel"), ("Thomas Yeo BT", "Thomas Yeo"),
                     ("Quoc V. Le", "Le"), ("Hae-Jeong Park", "Park")):
     check(f"B: claim_surname({_bin!r})", verify.claim_surname(_bin), _bout)
+
+# ---- author fix round 1, A: compare surname to surname (2026-09-26) ----
+# The token patchwork let given names and initials take part ("Van Essen DC"
+# matched "Van Dijk K" on "van"; "Min" matched "Seung-Min Park"). Now both sides
+# go through claim_surname, arXiv display names are split first, and only the
+# claim's first non-particle surname token is looked up in the record surname.
+def _mA(expect, actual, arxiv=False):
+    rec = (verify._found_record({"title": "", "year": "", "first_author": actual}) if arxiv
+           else {"first_author": actual})
+    return verify._author_issue({"expect_first_author": expect}, rec)
+
+
+for _ae, _aa, _ax in (("Van Essen DC", "Van Dijk K", False), ("Van Essen DC", "van den Heuvel M", False),
+                      ("Van Essen DC", "Aaron van den Oord", True), ("Le Bihan D", "Quoc V. Le", True),
+                      ("Le Bihan D", "Le Cun Y", False), ("den Ouden HE", "van den Heuvel M", False),
+                      ("de Heer WA", "de Lange FP", False), ("Thomas Yeo BT", "Thomas Serre", True),
+                      ("Min", "Seung-Min Park", True), ("Jeong", "Hae-Jeong Park", False),
+                      ("Hyun", "Jae-Hyun Kim", False), ("Jing", "Xiao-Jing Wang", False),
+                      ("An", "An Nguyen", True), ("Ma", "Smith MA", False), ("An", "Smith AN", False),
+                      ("Ho", "Chan HO", False), ("Smith J", "Jones J", False), ("O K", "Kim K", False),
+                      ("The pandas development team", "The NumPy team", False)):
+    check_true(f"A: {_ae!r} mismatches {'arXiv ' if _ax else ''}{_aa!r}", _mA(_ae, _aa, _ax) != [])
+for _ae, _aa, _ax in (("Heuvel", "van den Heuvel M", False), ("van den Heuvel MP", "van den Heuvel M", False),
+                      ("Dupré la Tour", "Dupré la Tour T", False), ("Hanna", "Andrews-Hanna JR", False),
+                      ("Lambon Ralph MA", "Lambon Ralph M", False), ("O'Reilly RC", "O'Reilly R", False),
+                      ("Li XJ", "Li X", False), ("An", "An J", False), ("Tang", "Tang J", False),
+                      ("Van Essen DC", "Van Essen D", False), ("Oord", "Aaron van den Oord", True),
+                      ("Park", "Seung-Min Park", True), ("Le", "Quoc V. Le", True),
+                      ("The pandas development team", "The pandas development team", False)):
+    check(f"A: {_ae!r} matches {'arXiv ' if _ax else ''}{_aa!r}", _mA(_ae, _aa, _ax), [])
+check("A: an arXiv found-record carries the 'Family G' shape",
+      verify._found_record({"title": "T", "year": "2016", "first_author": "Aaron van den Oord"})["first_author"],
+      "van den Oord A")
+check("A: claim_surname keeps a 'The ...' group name whole",
+      verify.claim_surname("The pandas development team"), "The pandas development team")
+
+# (A calibration: PubMed suffixes and all-caps particle surnames, 2026-09-26)
+for _bin, _bout in (("Hagler DJ Jr", "Hagler"), ("Smith EL 3rd", "Smith"), ("SCHADE OH Sr", "SCHADE"),
+                    ("Smith J II", "Smith"), ("VAN DER TWEEL LH", "VAN DER TWEEL"),
+                    ("DE LANGE DZN H", "DE LANGE"), ("de Lange Dzn", "de Lange Dzn"),
+                    ("van der Tweel", "van der Tweel")):
+    check(f"A: claim_surname({_bin!r})", verify.claim_surname(_bin), _bout)
+for _ae, _aa in (("Hagler", "Hagler DJ Jr"), ("Smith", "Smith EL 3rd"), ("Schade", "SCHADE OH Sr"),
+                 ("de Lange Dzn", "DE LANGE DZN H"), ("van der Tweel", "VAN DER TWEEL LH")):
+    check(f"A: {_ae!r} matches {_aa!r}", _mA(_ae, _aa), [])
+check_true("A: 'van der Tweel' still mismatches 'VAN DER BERG LH'", _mA("van der Tweel", "VAN DER BERG LH") != [])
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
