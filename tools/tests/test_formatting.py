@@ -2128,23 +2128,25 @@ _rows = [dict(_book), {"ref": "B2", "apa": "Doe, J. (1970). Memo. Lab."}, {"ref"
 _hc_in = [{"ref": "B1", "apa_sha": common.apa_sha(_book["apa"])},
           {"ref": "B2", "apa_sha": common.apa_sha("Doe, J. (1970). Memo. Lab.")}]
 _n, _err = handcheck.ingest(_rows, "ref", [
-    {"ref": "B1", "verdict": "confirmed", "source_checked": "LoC record 62019621"},
-    {"ref": "B2", "verdict": "corrected", "apa": "Doe, J. (1971). Memo. Lab.", "source_checked": "scan"},
+    {"ref": "B1", "verdict": "confirmed", "source_checked": "LoC record 62019621", "apa_sha": _hc_in[0]["apa_sha"]},
+    {"ref": "B2", "verdict": "corrected", "apa": "Doe, J. (1971). Memo. Lab.", "source_checked": "scan",
+     "apa_sha": _hc_in[1]["apa_sha"]},
     {"ref": "D1", "verdict": "confirmed", "source_checked": "x"},
     {"ref": "B9", "verdict": "confirmed", "source_checked": "x"}], _hc_in, "2026-09-26")
 check("ingest records valid results", (_n, _rows[0]["hand_verified"]["verdict"], _rows[1]["apa"]),
       (2, "confirmed", "Doe, J. (1971). Memo. Lab."))
 check("ingest refuses a DOI'd row and an unknown ref", len(_err), 2)
-_n, _err = handcheck.ingest([dict(_book)], "ref", [{"ref": "B1", "verdict": "confirmed", "source_checked": ""}],
+_n, _err = handcheck.ingest([dict(_book)], "ref", [{"ref": "B1", "verdict": "confirmed", "source_checked": "",
+                                              "apa_sha": common.apa_sha(_book["apa"])}],
                             [{"ref": "B1", "apa_sha": common.apa_sha(_book["apa"])}], "2026-09-26")
 check("ingest refuses a confirmation that names no source", (_n, len(_err)), (0, 1))
 _n, _err = handcheck.ingest([dict(_book)], "ref",
-                           [{"ref": "B1", "verdict": "maybe", "source_checked": "x"}],
+                           [{"ref": "B1", "verdict": "maybe", "source_checked": "x", "apa_sha": common.apa_sha(_book["apa"])}],
                            [{"ref": "B1", "apa_sha": common.apa_sha(_book["apa"])}], "2026-09-26")
 check("ingest refuses a verdict that is not confirmed/corrected/not-found", (_n, _err),
       (0, ["B1: verdict 'maybe' is not one of confirmed, corrected, not-found"]))
 _n, _err = handcheck.ingest([dict(_book)], "ref",
-                           [{"ref": "B1", "verdict": "corrected", "source_checked": "x"}],
+                           [{"ref": "B1", "verdict": "corrected", "source_checked": "x", "apa_sha": common.apa_sha(_book["apa"])}],
                            [{"ref": "B1", "apa_sha": common.apa_sha(_book["apa"])}], "2026-09-26")
 check("ingest refuses 'corrected' without the corrected apa", (_n, _err),
       (0, ["B1: corrected without the corrected apa"]))
@@ -3122,7 +3124,8 @@ check("apa_sha ignores case and whitespace", common.apa_sha(" Kuhn,  T. (1962). 
       common.apa_sha("kuhn, t. (1962). the structure."))
 _i9rows = [{"ref": "B1", "apa": "Kuhn, T. S. (1962). The structure of scientific revolutions. U Chicago Press.",
             "summary": "", "canonical_at": common.GATES_SINCE}]
-handcheck.ingest(_i9rows, "ref", [{"ref": "B1", "verdict": "confirmed", "source_checked": "LoC record"}],
+handcheck.ingest(_i9rows, "ref", [{"ref": "B1", "verdict": "confirmed", "source_checked": "LoC record",
+                                   "apa_sha": common.apa_sha(_i9rows[0]["apa"])}],
                  [{"ref": "B1", "apa_sha": common.apa_sha(_i9rows[0]["apa"])}], "2026-09-25")
 check("handcheck records the apa_sha it confirmed", _i9rows[0]["hand_verified"].get("apa_sha"),
       common.apa_sha(_i9rows[0]["apa"]))
@@ -3438,7 +3441,8 @@ check("a result for a ref absent from the hand-check input is refused",
 
 _t2rows_ok = [dict(_t2book)]                     # unchanged: the happy path
 _n, _err = handcheck.ingest(_t2rows_ok, "ref",
-                            [{"ref": "H1", "verdict": "confirmed", "source_checked": "LoC record"}],
+                            [{"ref": "H1", "verdict": "confirmed", "source_checked": "LoC record",
+                              "apa_sha": _t2todo[0]["apa_sha"]}],
                             _t2todo, "2026-09-26")
 check("ingest records the unchanged happy path", (_n, _err), (1, []))
 
@@ -3447,7 +3451,8 @@ _hcd = _tmpf.mkdtemp()
 _hcrp = os.path.join(_hcd, "rows.json")
 common.dump_json([dict(_t2book)], _hcrp)
 common.dump_json(_t2todo, os.path.join(_hcd, "handcheck_input.json"))
-common.dump_json([{"ref": "H1", "verdict": "confirmed", "source_checked": "LoC record"}],
+common.dump_json([{"ref": "H1", "verdict": "confirmed", "source_checked": "LoC record",
+                   "apa_sha": _t2todo[0]["apa_sha"]}],
                  os.path.join(_hcd, "handcheck_result.json"))
 _argv = sys.argv
 sys.argv = ["handcheck.py", "--rows", _hcrp, "--ingest", os.path.join(_hcd, "handcheck_result.json")]
@@ -3924,6 +3929,52 @@ check("I1 round trip: re-verify on the canonical-apa path is OK",
 _i1s_h, _i1s_t, _i1s_r = sc.split_apa(_i1s_row["apa"])
 check("I1 round trip: sentence_case leaves '(Version v2.1) [Computer software]' untouched",
       _i1s_h + sc.sentence_case(_i1s_t, set(sc.PROPER), []) + _i1s_r, _i1s_apa)
+
+# ---- final review I2: a stale hand-check result cannot be ingested after a re-prepare (2026-09-26) ----
+# The reviewer's repro: --prepare, edit the apa, --prepare again, then --ingest
+# the SAME old result. The row now matches the NEW input's apa_sha, so only the
+# result's own echo of the apa_sha it was checked against can catch it.
+_i2book = {"ref": "HS", "apa": "Kuhn, T. S. (1962). The structure of scientific revolutions. U Chicago Press.",
+           "summary": ""}
+_i2_old_in = handcheck.prepare([dict(_i2book)], "ref", (_far,))[1]
+_i2_old_res = [{"ref": "HS", "verdict": "confirmed", "source_checked": "LoC record",
+                "apa_sha": _i2_old_in[0]["apa_sha"]}]
+_i2_rows = [dict(_i2book, apa=_i2book["apa"].replace("1962", "1970"))]   # edited, then re-prepared
+_i2_new_in = handcheck.prepare(_i2_rows, "ref", (_far,))[1]
+_n, _err = handcheck.ingest(_i2_rows, "ref", _i2_old_res, _i2_new_in, "2026-09-26")
+check("I2: an old result ingested after a re-prepare is refused, stamps nothing",
+      (_n, _err, "hand_verified" in _i2_rows[0]),
+      (0, ["HS: result was for a different version of the reference; re-check it"], False))
+_n, _err = handcheck.ingest(_i2_rows, "ref", [{k: v for k, v in _i2_old_res[0].items() if k != "apa_sha"}],
+                            _i2_new_in, "2026-09-26")
+check("I2: a result that does not echo apa_sha is refused",
+      (_n, _err, "hand_verified" in _i2_rows[0]),
+      (0, ["HS: result does not echo the prepared apa_sha; re-check it"], False))
+_n, _err = handcheck.ingest(_i2_rows, "ref", [dict(_i2_old_res[0], apa_sha=_i2_new_in[0]["apa_sha"])],
+                            _i2_new_in, "2026-09-26")
+check("I2: a result echoing the current apa_sha is stamped",
+      (_n, _err, _i2_rows[0].get("hand_verified", {}).get("verdict")), (1, [], "confirmed"))
+check_true("I2: the brief tells the agent to copy apa_sha into its result", "apa_sha" in handcheck.BRIEF)
+
+# --prepare moves an existing handcheck_result.json aside (never deletes it)
+_i2d = _tmpf.mkdtemp()
+_i2rp = os.path.join(_i2d, "rows.json")
+common.dump_json([dict(_i2book)], _i2rp)
+common.dump_json(_i2_old_res, os.path.join(_i2d, "handcheck_result.json"))
+_argv = sys.argv
+sys.argv = ["handcheck.py", "--rows", _i2rp, "--prepare", "--email", "t@example.org"]
+_i2out = io.StringIO()
+try:
+    with _patched(handcheck, prepare=lambda rows, keyf: ({}, [])), _ctx.redirect_stdout(_i2out):
+        handcheck.main()
+finally:
+    sys.argv = _argv
+_i2stale = [f for f in os.listdir(_i2d) if f.startswith("handcheck_result.stale-") and f.endswith(".json")]
+check("I2: --prepare renames the old handcheck_result.json to a stale-<timestamp> copy",
+      (os.path.exists(os.path.join(_i2d, "handcheck_result.json")), len(_i2stale)), (False, 1))
+check("I2: ...keeping its content", common.load_json(os.path.join(_i2d, _i2stale[0])) if _i2stale else None,
+      _i2_old_res)
+check_true("I2: ...and says so", "stale" in _i2out.getvalue(), _i2out.getvalue())
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

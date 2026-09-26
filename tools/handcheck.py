@@ -7,13 +7,18 @@ hand check, and the audit fails any DOI-less row without its record:
   --prepare           search CrossRef and OpenAlex for a DOI the row is missing
                       (the same title, by common.title_match, and the same year), and write the
                       hand-check input and brief for the rest -- each hand-check-input
-                      entry carries `apa_sha`, the row's apa as it stood at --prepare
+                      entry carries `apa_sha`, the row's apa as it stood at --prepare;
+                      an existing handcheck_result.json is renamed (never deleted) to
+                      handcheck_result.stale-<timestamp>.json, since it answers the
+                      previous --prepare
   --adopt-dois FILE   give each row with exactly one found DOI that DOI, so it
                       goes through verify.py instead
   --ingest FILE       record each result on its row as `hand_verified`, refusing one
                       whose row's current apa sha differs from --input's `apa_sha`
-                      (the reference changed while it was being checked), or whose
-                      --input entry predates apa_sha altogether
+                      (the reference changed while it was being checked), whose
+                      --input entry predates apa_sha altogether, or whose own `apa_sha`
+                      echo is missing or differs from --input's (a result for an older
+                      --prepare, ingested after the apa was edited and re-prepared)
   --input FILE        the hand-check input recorded at --prepare, used by --ingest to
                       detect that drift (default: handcheck_input.json beside --rows)
 
@@ -21,8 +26,9 @@ hand check, and the audit fails any DOI-less row without its record:
     python3 tools/handcheck.py --rows rows.json --adopt-dois handcheck_doi_candidates.json
     python3 tools/handcheck.py --rows rows.json --ingest handcheck_result.json
 
-Result file: a JSON list of {"ref", "verdict": "confirmed"|"corrected"|"not-found",
-"apa" (corrected only), "source_checked", "changes"}.
+Result file: a JSON list of {"ref", "apa_sha" (copied from the input entry),
+"verdict": "confirmed"|"corrected"|"not-found", "apa" (corrected only),
+"source_checked", "changes"}.
 """
 import argparse
 import datetime
@@ -45,13 +51,16 @@ of the title page, the post itself for a web essay, or an institutional reposito
 Do NOT use another paper's citation of it: the most-repeated citation is often wrong.
 
 For every item record, in handcheck_result.json (a JSON list):
-  {"ref": "...", "verdict": "confirmed" | "corrected" | "not-found",
+  {"ref": "...", "apa_sha": "the item's apa_sha, copied exactly",
+   "verdict": "confirmed" | "corrected" | "not-found",
    "apa": "the corrected APA-7 reference (corrected only)",
    "source_checked": "exactly what you checked, specific enough to re-check",
    "changes": "what you changed and why (corrected only)"}
 
 Check authors (all of them, in order), year, title, edition, publisher, and pages or
 report number. "not-found" means you could not establish that the work exists as cited.
+Copy each item's apa_sha into its result unchanged: it proves which version of the
+reference you checked, and a result without it (or with another's) is refused.
 Write the result file incrementally, so no work is lost. Do not delegate to subagents.
 """
 
@@ -187,6 +196,14 @@ def ingest(rows, keyf, results, hc_input, asof):
             # yet been applied to row["apa"] at this point in the function
             errors.append(f"{k}: the reference changed since --prepare; re-check it")
             continue
+        if not res.get("apa_sha"):
+            errors.append(f"{k}: result does not echo the prepared apa_sha; re-check it")
+            continue
+        if res["apa_sha"] != entry["apa_sha"]:
+            # a result for an older --prepare: the apa was edited and re-prepared since,
+            # so the row matches the NEW input and only the echo can tell them apart
+            errors.append(f"{k}: result was for a different version of the reference; re-check it")
+            continue
         if v not in VERDICTS:
             errors.append(f"{k}: verdict {v!r} is not one of {', '.join(VERDICTS)}")
             continue
@@ -232,6 +249,13 @@ def main():
             ap.error("--email or LITREVIEW_EMAIL required (CrossRef/OpenAlex polite pool)")
         common.set_user_agent(args.email)
         cands, todo = prepare(rows, keyf)
+        old = os.path.join(here, "handcheck_result.json")
+        if os.path.exists(old):
+            stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+            stale = os.path.join(here, f"handcheck_result.stale-{stamp}.json")
+            os.replace(old, stale)
+            print(f"moved the previous handcheck_result.json to {os.path.basename(stale)}: it answers "
+                  "the previous --prepare, so its results are stale")
         common.dump_json(cands, os.path.join(here, "handcheck_doi_candidates.json"))
         common.dump_json(todo, os.path.join(here, "handcheck_input.json"))
         with open(os.path.join(here, "handcheck_brief.md"), "w", encoding="utf-8") as f:
