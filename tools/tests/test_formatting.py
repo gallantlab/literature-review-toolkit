@@ -4223,6 +4223,47 @@ check("M5: with every title typed, titles[0] is used",
       "Alt one")
 check("M5: no titles at all is an empty title", _m5_title([]), "")
 
+# ---- final review M6: DataCite is consulted on a CrossRef 404 only (2026-09-26) ----
+# verify fell back on ANY non-transient CrossRef error (a 400, a bad body) while
+# canon fell back on a 404 only; the two must agree, and anything but a 404
+# propagates (verify_all turns it into ERROR; canonical into source "error").
+_m6_calls = []
+
+
+def _m6_dc(d, fv=""):
+    _m6_calls.append(d)
+    return dict(_dc_rec)
+
+
+def _m6_cr400(doi, fallback_venue=""):
+    raise urllib.error.HTTPError("u", 400, "Bad Request", {}, None)
+
+
+def _m6_crbad(doi, fallback_venue=""):
+    raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+
+for _m6_fn, _m6_why in [(_m6_cr400, "HTTPError 400"), (_m6_crbad, "ValueError")]:
+    _m6_calls.clear()
+    with _patched(common, crossref_work=_m6_fn, datacite_work=_m6_dc):
+        _m6_lr = _raises(lambda: verify.lookup_crossref("10.5281/zenodo.3509134"))
+        _m6_cn = references.canonical(_dc_row("M6"))
+        _m6_v = verify._verify_pass([dict(_dc_c)], 0)[0]
+    check(f"M6: a CrossRef {_m6_why} propagates from verify.lookup_crossref without consulting DataCite",
+          (_m6_lr, _m6_calls), (True, []))
+    check(f"M6: ...verify reports the {_m6_why} as ERROR", _m6_v["verdict"], "ERROR")
+    check(f"M6: ...and canonical reports the {_m6_why} as source 'error' without consulting DataCite",
+          (_m6_cn["source"], _m6_calls), ("error", []))
+
+
+def _m6_dcbad(d, fv=""):
+    raise ValueError("bad DataCite body")
+
+
+with _patched(common, crossref_work=_cr_404, datacite_work=_m6_dcbad):
+    check_true("M6: a non-404 DataCite failure after a CrossRef 404 propagates (not a clean miss)",
+               _raises(lambda: verify.lookup_crossref("10.5281/zenodo.3509134")))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

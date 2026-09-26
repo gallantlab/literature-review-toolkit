@@ -67,6 +67,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 
 import common
@@ -138,19 +139,24 @@ def lookup_crossref(doi):
     itself resolved and matched, and DataCite resolving it counts the same as
     CrossRef resolving it. Swallowing everything to None — as this once did —
     hides rate-limiting as a false "not in CrossRef".
+
+    Only a CrossRef HTTPError 404 falls back to DataCite, and only a DataCite
+    404 is a clean miss — the same condition references._crossref_or_datacite
+    uses; any other error (a 400, an unreadable body) propagates, and
+    verify_all records it as ERROR rather than a verdict.
     """
     try:
         r = common.crossref_work(doi)
-    except Exception as e:
-        if _is_transient(e):
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
             raise
         r = None
     if r:
         return {k: r[k] for k in ("title", "year", "first_author", "journal")}
     try:
         r = common.datacite_work(doi)
-    except Exception as e:
-        if _is_transient(e):
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
             raise
         return None
     if not r:
