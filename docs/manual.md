@@ -364,9 +364,11 @@ to DataCite; any other CrossRef error is an `ERROR` to re-run. A DOI that does
 not resolve in EITHER registry is a `MISMATCH`, even when a PubMed or title
 search finds the claimed paper, and a DataCite 404 stays a 404 even when the
 fetch has to fall back to curl. The first-author check compares whole words,
-either way round ("Tang" matches "Tang J"; a surname of four or more letters
-matches a longer one it begins), ignoring a leading "The", "A" or "An", so a
-group such as "The pandas development team" no longer matches "Matthews".
+either way round ("Tang" matches "Tang J"; either part of a hyphenated surname
+matches it, "Hanna" / "Andrews-Hanna", but "Han" does not). It ignores initials,
+so "J. Smith" cannot match "Jones J" on the J, and reads a claim "Smith J" or
+"Van Essen DC" family-first. It ignores a leading "The", so a group such as "The
+pandas development team" does not match "Matthews", while "An" stays a surname.
 
 | Verdict | Meaning | Action |
 |---|---|---|
@@ -454,8 +456,10 @@ deposits register there — and rebuilt as `Authors (Year). Title (Version v)
 [Data set|Computer software|Preprint]. Publisher.`, with the bracket descriptor
 and `(Version …)` omitted when DataCite has none. The title is DataCite's main
 title plus its subtitle. A creator with no given name is split when that is safe
-("Doe, John"; a personal name such as "Jagroop Singh Doad" becomes "Doad, J. S.");
-one that is not ("The pandas development team") is kept whole and flagged
+("Doe, John"; a personal name such as "Jagroop Singh Doad" or "Doad J S" becomes
+"Doad, J. S."; a `familyName`, when given, is always the surname), never into a
+one-letter surname; one that is not ("The pandas development team") is kept whole
+and flagged
 `datacite-unsplit-author:<name>`, and a DataCite record that is not software or a
 data set is flagged `datacite-deposit` (a repository copy: cite the version of
 record's DOI if one exists). Canon stores both on the row as `canon_warnings`, and
@@ -481,7 +485,9 @@ for bringing a whole legacy table up to date at once.
 
 Some audit findings need a human verdict, not a fix: a possible duplicate that turns
 out to be two distinct papers, a summary with no abstract to check it against, a
-multi-word surname that is genuinely compound. On a gated table, an unacknowledged
+multi-word surname that is genuinely compound, a one-letter surname that is real
+(the audit warns `single-letter-surname:<name>` on any, since "S, D. J." is almost
+always an initial split off as the surname). On a gated table, an unacknowledged
 warning fails the audit just like a defect.
 
 Record the verdict in `audit_acks.json` beside `rows.json`, mapping each ref to

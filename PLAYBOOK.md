@@ -315,9 +315,11 @@ converter script: fourteen projects did, each with its own first-author regex, a
 five more wrote `make_verify_input.py` because the `apa`-only path verified nothing.
 
 What a verdict checks: the first-author surname (whole words, either way round:
-"Tang" matches "Tang J", and a surname of 4+ letters matches a longer one it
-begins, "Andrews" / "Andrews-Hanna"; a leading "The"/"A"/"An" is ignored, so the
-group "The pandas development team" no longer matches "Matthews"), the year
+"Tang" matches "Tang J", and either part of a hyphenated surname matches it,
+"Hanna" / "Andrews-Hanna", but "Han" does not; initials are ignored, so "J. Smith"
+cannot match "Jones J" on the J, and a claim "Smith J" or "Van Essen DC" is read
+family-first; a leading "The" is ignored, so the group "The pandas development
+team" does not match "Matthews", while "An" is a surname, not an article), the year
 (±1, since a preprint and its version of record differ), and the **title**
 (agreement ≥ 0.5). Title agreement requires the two titles to actually match, not
 merely one to be *contained in* the other — a short claim such as "Deep learning"
@@ -473,8 +475,11 @@ software/data-set/preprint deposits): `Authors (Year). Title (Version v)
 omitted when absent. The title is DataCite's main title (the one with no
 `titleType`) plus its `Subtitle` after ": ". A creator DataCite gives no given
 name is split when that is safe ("Doe, John" on its comma; a Personal name such as
-"Jagroop Singh Doad" on its last word, giving "Doad, J. S."); one that cannot be
-split safely ("The pandas development team") is kept whole and flagged
+"Jagroop Singh Doad" on its last word, giving "Doad, J. S."; one deposited
+family-first with trailing initials, "Doad J S", on its first word; a `familyName`,
+when DataCite gives one, is always the surname). A split never produces a
+one-letter surname; a name that cannot be split safely ("The pandas development
+team", "Jagroop Singh D") is kept whole and flagged
 `datacite-unsplit-author:<name>`, and a DataCite record that is not software or a
 data set (or whose publisher is "Unpublished") is flagged `datacite-deposit`: a
 repository copy of a paper, which should cite the version of record's DOI if one
@@ -538,9 +543,11 @@ the feed) keeps its existing `apa` and is named as a warning — confirm it by h
 **Targeted re-canon is a flag:** `--only A-01,B-02` rebuilds those rows and leaves
 every other row byte-for-byte as it was, so a splice script is never needed.
 
-Four things the gate reports as **warnings**, because none can be decided
+Five things the gate reports as **warnings**, because none can be decided
 automatically: a near-duplicate row pair; a **multi-word surname** that may be
-a mis-split given name; a **deposit-year conflict** (the DOI encodes a different
+a mis-split given name; a **one-letter surname** (`S, D. J.`, almost always an
+initial split off as the surname, from any source; a real one such as `O` is
+acknowledged as `single-letter-surname:<name>`); a **deposit-year conflict** (the DOI encodes a different
 year than the reference — publisher back-file digitization re-dates old papers);
 and a **cached `year` field that diverged from the apa** (fix whichever is wrong,
 or delete the stale cache). `Lambon Ralph` is a real compound surname and `Thomas Yeo`

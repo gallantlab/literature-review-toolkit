@@ -4308,7 +4308,7 @@ check("M8: the group matches itself", _m8("The pandas development team", "The pa
 check("M8: a leading article is ignored on either side", _m8("pandas development team", "The pandas development team"),
       [])
 check("M8: a surname token matches inside a particle surname", _m8("Heuvel", "van den Heuvel M"), [])
-check("M8: a >= 4-char prefix matches a hyphenated surname", _m8("Andrews", "Andrews-Hanna J"), [])
+check("M8: the first part matches a hyphenated surname", _m8("Andrews", "Andrews-Hanna J"), [])
 check_true("M8: a short surname no longer matches a longer one containing it", _m8("Lee", "Leeson K") != [])
 check_true("M8: an unrelated surname still mismatches", _m8("Smith", "Jones A") != [])
 

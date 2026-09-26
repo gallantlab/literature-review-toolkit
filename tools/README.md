@@ -65,8 +65,10 @@ DOI CrossRef does not hold (Zenodo, figshare, OSF, Dryad software/data-set
 deposits) is checked against DataCite next, on a CrossRef 404 only; resolving
 there counts the same as resolving in CrossRef, and a 404 from both registries is
 "does not resolve" even when the DataCite fetch fell back to curl. The
-first-author check compares whole words ("Tang" matches "Tang J"), ignoring a
-leading "The"/"A"/"An".
+first-author check compares whole words ("Tang" matches "Tang J"), either way
+round, ignoring initials and a leading "The"; one part of a hyphenated surname is
+enough ("Hanna" matches "Andrews-Hanna J"). A claim written "Smith J" is read as
+the surname Smith.
 
 **Verdicts.**
 
@@ -109,7 +111,8 @@ published paper is cited by its version of record.
   (Zenodo, figshare, OSF, Dryad): `Authors (Year). Title (Version v)
   [Data set|Computer software|Preprint]. Publisher.`, with the bracket and
   version omitted when DataCite has none. A creator with no given name is split
-  when safe ("Jagroop Singh Doad" → "Doad, J. S."); one kept whole is flagged
+  when safe ("Jagroop Singh Doad" or "Doad J S" → "Doad, J. S."; a `familyName`
+  is always kept as the surname), never into a one-letter surname; one kept whole is flagged
   `datacite-unsplit-author:<name>`, and a record that is not software or a data
   set is flagged `datacite-deposit`. Both are stored as the row's
   `canon_warnings` and must be acknowledged in the audit.
@@ -128,6 +131,8 @@ hand.
 - **multi-word surnames**, which may be real (`Lambon Ralph`) or given names
   CrossRef folded into the surname (`Thomas Yeo`). A leading initial in the
   surname (`A. Moffat`) is unambiguous and repaired automatically;
+- **one-letter surnames** (`S, D. J.`), almost always an initial split off as the
+  surname; acknowledge a real one (`O`) as `single-letter-surname:<name>`;
 - **a footnote digit glued to the title**;
 - **a deposit-year conflict**, where the DOI encodes a different year (back-file
   digitization re-dates old papers);
