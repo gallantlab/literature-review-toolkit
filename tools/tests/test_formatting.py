@@ -4350,11 +4350,11 @@ check("A3: ...also when `name` is family-first with a comma",
       (["Doad, J. S."], []))
 check("A3: ...and initials run together in the rest are all kept ('Doad JS')",
       _c1_people([{"name": "Doad JS", "familyName": "Doad"}]), (["Doad, J. S."], []))
-check("A3: a familyName not found in `name` is kept (never discarded) and recorded unsplit",
-      _c1_people([{"name": "Jane Roe", "familyName": "Doad"}]), (["Doad"], ["Doad"]))
 check("A3: a last-token split that would leave a one-letter surname keeps the name whole, unsplit",
-      _c1_people([{"name": "Jagroop Singh D", "nameType": "Personal"}]),
-      (["Jagroop Singh D"], ["Jagroop Singh D"]))
+      _c1_people([{"name": "Jagroop Singh d", "nameType": "Personal"}]),
+      (["Jagroop Singh d"], ["Jagroop Singh d"]))
+check("A3 (round 1, C): a capital last initial splits words-then-initials, for suspect_surnames to warn",
+      _c1_people([{"name": "Jagroop Singh D", "nameType": "Personal"}]), (["Jagroop Singh, D."], []))
 _a3notes = references.audit("S, D. J. (2020). T. V.", True)[1]
 check("A3: the audit flags a one-letter surname from any source, ack-able by id",
       [references.warning_id(n) for n in _a3notes if "single-letter" in n], ["single-letter-surname:S"])
@@ -4469,6 +4469,25 @@ for _ae, _aa in (("Hagler", "Hagler DJ Jr"), ("Smith", "Smith EL 3rd"), ("Schade
                  ("de Lange Dzn", "DE LANGE DZN H"), ("van der Tweel", "VAN DER TWEEL LH")):
     check(f"A: {_ae!r} matches {_aa!r}", _mA(_ae, _aa), [])
 check_true("A: 'van der Tweel' still mismatches 'VAN DER BERG LH'", _mA("van der Tweel", "VAN DER BERG LH") != [])
+
+# ---- author fix round 1, C: DataCite never takes trailing initials as the family (2026-09-26) ----
+for _cn, _cp in (("Van Essen DC", "Van Essen, D. C."), ("Thomas Yeo BT", "Thomas Yeo, B. T."),
+                 ("Kim J-H", "Kim, J.-H."), ("Doad JLK", "Doad, J. L. K."), ("VAN DER TWEEL LH", None)):
+    if _cp:
+        check(f"C: Personal {_cn!r} splits words-then-initials", _c1_people([{"name": _cn, "nameType": "Personal"}]),
+              ([_cp], []))
+check("C: an all-caps particle surname splits words-then-initials too",
+      _c1_people([{"name": "VAN DER TWEEL LH", "nameType": "Personal"}])[1], [])
+check_true("C: 'Thomas Yeo, B. T.' is left for suspect_surnames to warn about",
+           "Thomas Yeo" in common.suspect_surnames("Thomas Yeo, B. T. (2020). T. V."))
+check("C: initials with no words before them are kept whole, unsplit",
+      _c1_people([{"name": "J S", "nameType": "Personal"}]), (["J S"], ["J S"]))
+check("C: a familyName that is only part of a hyphenated word is not found: kept whole, unsplit",
+      _c1_people([{"name": "Anna Doad-Smith", "familyName": "Doad"}]), (["Anna Doad-Smith"], ["Anna Doad-Smith"]))
+check("C: a familyName absent from `name` keeps the name whole, unsplit",
+      _c1_people([{"name": "Jane Roe", "familyName": "Doad"}]), (["Jane Roe"], ["Jane Roe"]))
+check("C: a hyphenated familyName is still found whole",
+      _c1_people([{"name": "Anna Doad-Smith", "familyName": "Doad-Smith"}]), (["Doad-Smith, A."], []))
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

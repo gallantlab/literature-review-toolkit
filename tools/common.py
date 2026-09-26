@@ -875,15 +875,30 @@ def crossref_work(doi, fallback_venue=""):
     return crossref_record(msg, fallback_venue)
 
 
-_INITIALS_TOKEN = re.compile(r"^(?:[A-ZÀ-Ý]\.?){1,2}$")
+# An initials token: 1-3 capitals, dotted or not, hyphenated or not ("J", "JL",
+# "JLK", "J.L.", "J.-L.", "J-H"). Judged on the raw token, before any casing.
+INITIALS = re.compile(r"^[A-ZÀ-Ý]\.?(?:-?[A-ZÀ-Ý]\.?){0,2}$")
 
 
 def _spaced_initials(toks):
     """Given-name tokens -> one string; initials-only tokens are spaced out
-    ("JS" -> "J. S.") so initials() keeps every letter."""
-    if toks and all(_INITIALS_TOKEN.match(t) for t in toks):
-        return " ".join(f"{ch}." for t in toks for ch in t if ch != ".")
+    ("JS" -> "J S", "J-H" -> "J-H") so initials() keeps every letter."""
+    if toks and all(INITIALS.match(t) for t in toks):
+        return " ".join("-".join(" ".join(g) for g in t.replace(".", "").split("-")) for t in toks)
     return " ".join(toks)
+
+
+def _words_then_initials(toks):
+    """'Van Essen DC' -> ('Van Essen', 'D C'): words (particles count as words,
+    even in capitals) followed only by initials, the PubMed family-first shape.
+    None when the tokens are not that shape."""
+    k = len(toks)
+    while k > 1 and INITIALS.match(toks[k - 1]):
+        k -= 1
+    if k < len(toks) and all(len(t) >= 2 and (not INITIALS.match(t) or t.lower() in PARTICLES)
+                             for t in toks[:k]):
+        return " ".join(toks[:k]), _spaced_initials(toks[k:])
+    return None
 
 
 def _datacite_creator(c):
@@ -892,16 +907,18 @@ def _datacite_creator(c):
     With a `givenName`, the deposit already split the name. Without one, the bare
     `name` is often a PERSON's display name ("Jagroop Singh Doad", nameType
     Personal); kept whole it shipped given-name-first as if it were a surname. So:
-    a `familyName` is the family and the given name is the rest of `name` (a known
-    surname is never discarded); "Family, Given" splits on its first ", "; a
-    Personal name deposited family-first with trailing initials ("Doad J S",
-    "Doad JS", "Doad J. S.") keeps its first token as the family; any other
-    Personal name of 2+ tokens that does not open with an article ("The pandas
+    a `familyName` found in `name` as a whole word (a hyphen is part of a word:
+    "Doad" is not found in "Anna Doad-Smith") is the family and the given name is
+    the rest of `name`; one not found keeps the name whole. "Family, Given"
+    splits on its first ", ". A Personal name whose last token is initials is
+    never split there: words followed only by initials ("Doad J S", "Van Essen
+    DC", "Kim J-H") are family + initials, and any other shape stays whole. Any
+    other Personal name of 2+ tokens that does not open with "The" ("The pandas
     development team") splits on its last token (split_name, which keeps
-    particles) -- unless that would leave a one-letter surname ("S, D. J."),
-    which is never guessed. Anything else stays whole: `kept_whole` is True for
-    it unless DataCite declares it Organizational -- the one case where a whole
-    name is known to be a group rather than a guess.
+    particles) -- unless that would leave a one-letter surname, which is never
+    guessed. Anything else stays whole: `kept_whole` is True for it unless
+    DataCite declares it Organizational -- the one case where a whole name is
+    known to be a group rather than a guess.
     """
     given = (c.get("givenName") or "").strip()
     name = (c.get("name") or "").strip()
@@ -913,18 +930,18 @@ def _datacite_creator(c):
     if kind == "Organizational":
         return name or whole, "", False
     if family and name and family.lower() != name.lower():
-        m = re.search(r"(?i)(?<!\w)" + re.escape(family) + r"(?!\w)", name)
+        m = re.search(r"(?i)(?<![\w-])" + re.escape(family) + r"(?![\w-])", name)
         rest = (name[:m.start()] + " " + name[m.end():]).strip(" ,").split() if m else []
-        return (family, _spaced_initials(rest), False) if rest else (family, "", True)
+        return (family, _spaced_initials(rest), False) if rest else (name, "", True)
     name = name or whole
     if ", " in name:
         fam, given = name.split(", ", 1)
         return fam.strip(), given.strip(), False
     toks = name.split()
-    if kind == "Personal" and len(toks) >= 2 and toks[0].lower() not in ("the", "a", "an"):
-        if (len(toks[0]) >= 2 and not _INITIALS_TOKEN.match(toks[0])
-                and all(_INITIALS_TOKEN.match(t) for t in toks[1:])):
-            return toks[0], _spaced_initials(toks[1:]), False
+    if kind == "Personal" and len(toks) >= 2 and toks[0].lower() != "the":
+        if INITIALS.match(toks[-1]):
+            split = _words_then_initials(toks)
+            return (split[0], split[1], False) if split else (name, "", True)
         fam, given = split_name(name)
         if len(fam.strip(".")) > 1:
             return fam, given, False
