@@ -516,20 +516,25 @@ def is_unknown(name):
     return bool(str(name or "").strip()) and _claim_parts(name) in (None, "ambiguous")
 
 
-def surname_agrees(claim, record, claim_is_surname=False):
-    """True when the claimed first author agrees with the record's (a first_author
-    in the source contract's "Family INITIALS" shape, see _record_parts); None when
-    either is unknown or the claim is ambiguous: those never agree. The claim is
-    parsed once by _claim_shape -- unless `claim_is_surname` (an apa-derived lead
-    surname, used as-is) -- so initials never take part. The claim's first
-    non-particle family word must agree with a word of the record's family; any
-    further claim family word ("Lambon Ralph", "de Lange Dzn") must appear in the
-    record's name; and a claim's given names ("John Smith") must each be a word
-    of the record's family or start with one of its initials. A group author
-    (common.is_group) compares whole: all its words must match."""
-    pc, r = _claim_parts(claim, claim_is_surname), _parsed_record(record)
-    if pc is None or pc == "ambiguous" or r is None:
+def _caps_particle(claim):
+    """For a claim led by a particle in capitals ("DU Wei", "LE Minh", "VAN Essen",
+    "VAN DAM"), (the particle, the family-first reading: family = the particle,
+    given names = the rest); else None. Read family-first the surname is the
+    particle itself ("Du", given Wei), otherwise a particle surname ("Du Wei");
+    either way the record must carry the particle."""
+    name = re.sub(r"\s*(?:,?\s*et al\.?|&.*)$", "", str(claim or "").split(";")[0].strip())
+    toks = name.split()
+    if "," in name or len(toks) < 2:
         return None
+    first = toks[0].replace(".", "")
+    if not (len(first) >= 2 and first.isalpha() and first.isupper() and first.lower() in common.PARTICLES):
+        return None
+    given = [t for w in toks[1:] for t in _name_tokens(w) if t not in common.PARTICLES]
+    return first.lower(), ([first.lower()], given)
+
+
+def _agrees(claim, pc, record, r):
+    """surname_agrees on a parsed claim `pc` and parsed record family `r`."""
     c, given = pc
     if not c or not r:
         return True
@@ -543,20 +548,59 @@ def surname_agrees(claim, record, claim_is_surname=False):
             and all(any(_tok_agrees(w, t) for t in r) or w[:1] in letters for w in given))
 
 
-def claims_agree(a, b):
-    """Two CLAIMED first authors (neither is a record) name the same surname: the
-    first family word of either agrees with a family word of the other (a group
-    compares whole); None when either is unknown or ambiguous. merge_lanes uses it
-    to tell a duplicate from two papers sharing a title ("An, J." is not "Chan, H.")."""
-    pa, pb = _claim_parts(a), _claim_parts(b)
-    if pa in (None, "ambiguous") or pb in (None, "ambiguous"):
+def surname_agrees(claim, record, claim_is_surname=False):
+    """True when the claimed first author agrees with the record's (a first_author
+    in the source contract's "Family INITIALS" shape, see _record_parts); None when
+    either is unknown or the claim is ambiguous: those never agree. The claim is
+    parsed once by _claim_shape -- unless `claim_is_surname` (an apa-derived lead
+    surname, used as-is) -- so initials never take part. The claim's first
+    non-particle family word must agree with a word of the record's family; any
+    further claim family word ("Lambon Ralph", "de Lange Dzn") must appear in the
+    record's name; and a claim's given names ("John Smith") must each be a word
+    of the record's family or start with one of its initials. A group author
+    (common.is_group) compares whole: all its words must match. A claim led by a
+    capitalized particle ("DU Wei") matches only a record carrying that particle,
+    read either as the particle surname or family-first ("DU, Wei")."""
+    pc, r = _claim_parts(claim, claim_is_surname), _parsed_record(record)
+    if pc is None or pc == "ambiguous" or r is None:
         return None
+    cp = None if claim_is_surname else _caps_particle(claim)
+    if cp:
+        if cp[0] not in _name_tokens(record):
+            return False
+        # the family-first reading keeps its given names, so they must agree with the
+        # record's initials ("DU Wei" / "Du W" yes; "VAN Essen" / "Van J" no)
+        return _agrees(claim, pc, record, r) or _agrees(claim, cp[1], record, r)
+    return _agrees(claim, pc, record, r)
+
+
+def _claims_key_agree(a, pa, b, pb):
     ca, cb = pa[0], pb[0]
     if not ca or not cb:
         return True
     if common.is_group(a) or common.is_group(b):
         return set(ca) == set(cb)
     return any(_tok_agrees(ca[0], t) for t in cb) or any(_tok_agrees(cb[0], t) for t in ca)
+
+
+def claims_agree(a, b):
+    """Two CLAIMED first authors (neither is a record) name the same surname: the
+    first family word of either agrees with a family word of the other (a group
+    compares whole); None when either is unknown or ambiguous. A claim led by a
+    capitalized particle ("DU Wei") agrees only with one carrying that particle.
+    merge_lanes uses it to tell a duplicate from two papers sharing a title ("An,
+    J." is not "Chan, H.")."""
+    pa, pb = _claim_parts(a), _claim_parts(b)
+    if pa in (None, "ambiguous") or pb in (None, "ambiguous"):
+        return None
+    readings_a, readings_b = [(a, pa)], [(b, pb)]
+    for x, y, readings in ((a, b, readings_a), (b, a, readings_b)):
+        cp = _caps_particle(x)
+        if cp:
+            if cp[0] not in _name_tokens(y):
+                return False
+            readings.append((x, cp[1]))
+    return any(_claims_key_agree(xa, qa, xb, qb) for xa, qa in readings_a for xb, qb in readings_b)
 
 
 def _no_given_name(first_author, flagged=False):

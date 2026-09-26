@@ -4900,6 +4900,18 @@ _f2r = _r51_dc("Jones K", [{"name": "", "nameType": "Personal"}, {"name": "Jones
 check_true("F.R2: a DataCite first creator with no family fails closed", len(_f2r) == 1 and "confirm by hand" in _f2r[0],
            str(_f2r))
 
+# ---- author fix final R3: a capitalized particle must appear in the record (2026-09-26) ----
+# "DU Wei" read family-first is the surname Du (given Wei), or the particle
+# surname "Du Wei"; either way the record must carry the particle word.
+for _f3c, _f3r in (("DU Wei", "Wei J"), ("LE Minh", "Minh T"), ("DI Wu", "Wu J"), ("AL Hassan", "Hassan M"),
+                   ("VAN Essen", "Essen D"), ("VAN DAM", "Dam J")):
+    check_true(f"F.R3: {_f3c!r} mismatches {_f3r!r}", _mA(_f3c, _f3r) != [])
+for _f3c, _f3r in (("DU Wei", "Du W"), ("VAN Essen", "Van Essen D"), ("LE Minh", "Le M"), ("VAN DAM", "Van Dam J")):
+    check(f"F.R3: {_f3c!r} matches {_f3r!r}", _mA(_f3c, _f3r), [])
+check("F.R3: merge applies the same rule",
+      (verify.claims_agree("DU Wei", "Wei, J."), verify.claims_agree("DU Wei", "Du, W.")), (False, True))
+check("F.R3: a lowercase particle surname is unaffected", _mA("van der Tweel", "VAN DER TWEEL LH"), [])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
