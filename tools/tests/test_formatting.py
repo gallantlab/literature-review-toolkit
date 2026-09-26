@@ -2721,6 +2721,35 @@ check("xref.s2_refs: a rejected id is complete and empty; the rest keep their li
       ([r["doi"] for r in _i5x["10.1/a"]], _i5x["10.1/bad"]), (["10.1/r"], []))
 check_true("...and the rejected id is reported by name", "10.1/bad" in _i5err.getvalue(), _i5err.getvalue())
 
+# ---- final fixes I6: arXiv over https; curl follows redirects (2026-09-25) ------
+check_true("the arXiv API is called over https", common.ARXIV_API.startswith("https://export.arxiv.org/"))
+_i6cmds = []
+
+
+def _i6run(out):
+    def run(cmd, capture_output=True, timeout=None):
+        _i6cmds.append(cmd)
+        return _sp.CompletedProcess(cmd, 0, stdout=out, stderr=b"")
+    return run
+
+
+with _patched(common.shutil, which=lambda n: "/usr/bin/curl"), \
+        _patched(common.subprocess, run=_i6run(b'{"ok": 1}\n200')):
+    check("curl_get strips the status line from a 2xx body",
+          common.curl_get("https://example.org/x", {}, 10), b'{"ok": 1}')
+check_true("curl_get follows redirects, https only, and captures the status",
+           {"-L", "--proto-redir", "=https", "-w"} <= set(_i6cmds[-1]), str(_i6cmds[-1]))
+with _patched(common.shutil, which=lambda n: "/usr/bin/curl"), \
+        _patched(common.subprocess, run=_i6run(b"<html>Moved Permanently</html>\n301")):
+    check_true("curl_get raises OSError on a non-2xx final status",
+               _raises(lambda: common.curl_get("https://example.org/x", {}, 10)))
+_i6html = b"<html><body>Moved Permanently</body></html>"
+check_true("arxiv_entries refuses a body that is not an Atom feed", _raises(lambda: common.arxiv_entries(_i6html)))
+with _patched(common, http=lambda url, **k: _i6html), _sleeps():
+    _i6e, _i6err = common.arxiv_batch(["2301.00001", "2301.00002"])
+check("arxiv_batch marks a non-feed chunk errored, not missing", (_i6e, sorted(_i6err)),
+      ({}, ["2301.00001", "2301.00002"]))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

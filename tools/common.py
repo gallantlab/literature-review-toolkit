@@ -95,11 +95,16 @@ def curl_get(url, headers, timeout):
     rate limiting (random) and from truncation (same byte count each time). On
     one xref pass 71 of 536 reference-list fetches failed this way and every one
     of them succeeded through curl. `--compressed` matters here for the same
-    reason the Accept-Encoding header does above."""
+    reason the Accept-Encoding header does above.
+
+    Redirects are followed (`-L`, to https only), and the final HTTP status is
+    captured (`-w`): without them a 301 page came back as a "successful" body,
+    and a whole arXiv batch read as garbage. A non-2xx final status raises."""
     exe = shutil.which("curl")
     if not exe:
         raise RuntimeError("curl not available for fallback")
-    cmd = [exe, "-sS", "--compressed", "--fail", "--max-time", str(int(timeout))]
+    cmd = [exe, "-sS", "--compressed", "--fail", "-L", "--proto-redir", "=https",
+           "--max-time", str(int(timeout)), "-w", "\n%{http_code}"]
     for k, v in (headers or {}).items():
         if k.lower() == "accept-encoding":
             continue                      # --compressed sets and decodes it
@@ -108,7 +113,12 @@ def curl_get(url, headers, timeout):
     p = subprocess.run(cmd, capture_output=True, timeout=timeout + 10)
     if p.returncode != 0:
         raise OSError(f"curl exit {p.returncode}: {p.stderr.decode('utf-8', 'replace')[:120]}")
-    return p.stdout
+    body, _, code = p.stdout.rpartition(b"\n")
+    code = code.strip().decode("ascii", "replace")
+    # file:// (used offline) has no HTTP status and reports 000; http(s) must be 2xx
+    if url.lower().startswith(("http://", "https://")) and not code.startswith("2"):
+        raise OSError(f"curl: final HTTP status {code or '?'} for {url}")
+    return body
 
 
 def retry_after(err, cap=120.0):
@@ -632,7 +642,7 @@ def build_chapter_apa(people, year, title, book, pages=None, publisher=None):
 # DOI) each read the same CrossRef message / arXiv Atom entry. One reading here,
 # so the date-field preference and the author handling cannot drift again.
 CROSSREF_API = "https://api.crossref.org/works/"
-ARXIV_API = "http://export.arxiv.org/api/query"
+ARXIV_API = "https://export.arxiv.org/api/query"   # http:// now answers with a 301
 
 
 def crossref_record(msg, fallback_venue=""):
@@ -703,10 +713,14 @@ def norm_arxiv(aid):
 def arxiv_entries(xml_bytes):
     """Parse an arXiv API Atom feed -> [{id, title, year, authors, first_author,
     journal_ref, summary}], skipping the API's synthetic 'Error' entry (an
-    unknown id)."""
+    unknown id). Raises ValueError on a body that is not an Atom feed (a
+    redirect or error page), so a batch reads as errored, never as all-missing."""
     import xml.etree.ElementTree as ET
     out = []
-    for e in ET.fromstring(xml_bytes).findall(f"{ATOM}entry"):
+    root = ET.fromstring(xml_bytes)
+    if root.tag != f"{ATOM}feed":
+        raise ValueError(f"arXiv API returned <{root.tag}>, not an Atom feed")
+    for e in root.findall(f"{ATOM}entry"):
         title = (e.findtext(f"{ATOM}title") or "").strip()
         if not title or title == "Error":
             continue
