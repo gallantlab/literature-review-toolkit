@@ -4202,6 +4202,27 @@ check("M4: candidates --add refuses a non-dict sidecar (no ledger written)",
 check_true("M4: ...with a clear message naming the sidecar",
            "run.json" in _m4err.getvalue() and "not a JSON object" in _m4err.getvalue(), _m4err.getvalue())
 
+# ---- final review M5: DataCite main title + Subtitle (2026-09-26) ----------
+# titles[0] may be a TranslatedTitle or AlternativeTitle; the main title is the
+# one with no titleType, and a Subtitle entry joins it after ": " (as CrossRef's does).
+def _m5_title(titles):
+    return common.datacite_record(_dc_attrs(titles=titles))["title"]
+
+
+check("M5: the first title with no titleType is the main title",
+      _m5_title([{"title": "Ein Titel", "titleType": "TranslatedTitle"}, {"title": "Spike sorter"}]),
+      "Spike sorter")
+check("M5: a Subtitle entry is appended after ': '",
+      _m5_title([{"title": "Spike sorter"}, {"title": "fast and exact", "titleType": "Subtitle"}]),
+      "Spike sorter: Fast and exact")
+check("M5: a subtitle already inside the title is not repeated",
+      _m5_title([{"title": "Spike sorter: fast and exact"}, {"title": "fast and exact", "titleType": "Subtitle"}]),
+      "Spike sorter: fast and exact")
+check("M5: with every title typed, titles[0] is used",
+      _m5_title([{"title": "Alt one", "titleType": "AlternativeTitle"}, {"title": "Alt two", "titleType": "Other"}]),
+      "Alt one")
+check("M5: no titles at all is an empty title", _m5_title([]), "")
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

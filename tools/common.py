@@ -921,8 +921,15 @@ def datacite_record(attrs, fallback_venue=""):
     if isinstance(publisher, dict):
         publisher = publisher.get("name", "")
     publisher = (publisher or "").strip() or clean_venue(fallback_venue)
-    titles = attrs.get("titles") or [{}]
-    title = norm_title((titles[0] or {}).get("title", ""))
+    # The main title is the first with no titleType (titles[0] may be a
+    # TranslatedTitle or AlternativeTitle); a Subtitle entry joins it after ": ",
+    # as crossref_record() joins CrossRef's subtitle.
+    titles = [t for t in (attrs.get("titles") or []) if isinstance(t, dict)]
+    main = next((t for t in titles if not t.get("titleType")), titles[0] if titles else {})
+    title = norm_title(main.get("title", ""))
+    sub = norm_title(next((t.get("title", "") for t in titles if t.get("titleType") == "Subtitle"), ""))
+    if title and sub and sub.lower() not in title.lower():
+        title = f"{title.rstrip(':')}: {sub[:1].upper() + sub[1:]}"
     year = attrs.get("publicationYear")
     return {"title": title, "year": str(year) if year else "",
             "authors": authors, "people": [person(f, g) for f, g in authors],
