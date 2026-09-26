@@ -113,6 +113,22 @@ def _is_journal_doi(doi):
     return bool(doi) and not common.ARXIV_DOI.match(doi)
 
 
+def _title_only_gate(hit, row):
+    """A title+year key hit alone is only a strong hint — a conflicting claimed
+    author/year, or two different journal DOIs (an arXiv preprint's DOI + its
+    own journal DOI is not a conflict), means `hit` and `row` are two distinct
+    papers that happen to share a title+year, not a duplicate. Returns a reason
+    string in that case (the gate FAILS: don't treat them as the same paper),
+    or "" when the gate passes (treat `hit` as the same paper as `row`).
+    Shared by merge()'s dedup pass and append()'s existing-table check."""
+    why = _conflict(hit, row)
+    diff_dois = _is_journal_doi(hit.get("doi")) and _is_journal_doi(row.get("doi")) \
+        and hit["doi"].lower() != row["doi"].lower()
+    if why or diff_dois:
+        return f"same title and year, {why or 'different DOIs'}"
+    return ""
+
+
 def _defer_agrees(d, row):
     """True unless a deferred entry's OPTIONAL first_author/year contradicts the
     claim on `row`, a candidate it might match by title alone. Absent fields
@@ -159,15 +175,10 @@ def merge(lanes):
                 why = _conflict(hit, row)
                 if hit_kind == "title":
                     # A DOI or arXiv key hit IS the same paper; a title+year key
-                    # hit alone is only a strong hint — a conflicting claimed
-                    # author, or two different journal DOIs (an arXiv preprint's
-                    # DOI + its own journal DOI is not a conflict), means these
-                    # are two distinct papers that happen to share a title+year,
-                    # not a duplicate. Keep both and flag the pair instead.
-                    diff_dois = _is_journal_doi(hit.get("doi")) and _is_journal_doi(row.get("doi")) \
-                        and hit["doi"].lower() != row["doi"].lower()
-                    if why or diff_dois:
-                        reason = f"same title and year, {why or 'different DOIs'}"
+                    # hit alone goes through the shared gate — if it fails, keep
+                    # both and flag the pair instead.
+                    reason = _title_only_gate(hit, row)
+                    if reason:
                         rep["possible_pairs"].append({"a": hit["ref"], "b": row["ref"], "why": reason})
                         hit = None
             if hit is not None:
@@ -256,8 +267,58 @@ def main():
     sys.exit(1 if rep["lost"] or rep["rejected"] else 0)
 
 
+def append(rows, keyf, lane):
+    """Add a lane's papers to an existing (possibly canonical) table; never
+    touch an existing row. A hit against only the title+year key goes through
+    the same gate merge() uses (`_title_only_gate`): if it fails — a
+    conflicting claim, or two different non-arXiv DOIs — the papers are two
+    distinct works that happen to share a title+year, so the new one is
+    appended (not skipped) and the pair is recorded for a human verdict.
+    Returns (added [ref], skipped [{ref, reason}], pairs [{a, b, why}])."""
+    idx = index_rows(rows)
+    refs = {r.get(keyf) for r in rows}
+    added, skipped, pairs = [], [], []
+    for p in lane["papers"]:
+        row = to_row(p, lane["lane"])
+        if not (row["doi"] or row["arxiv"] or row["apa"]):
+            skipped.append({"ref": row["ref"], "reason": "no DOI, arXiv id or APA string"})
+            continue
+        hit, hit_kind = None, None
+        for k in _keys(row):
+            if k in idx:
+                hit, hit_kind = idx[k], k[0]
+                break
+        if hit is not None and hit_kind == "title":
+            reason = _title_only_gate(hit, row)
+            if reason:
+                pairs.append({"a": hit.get(keyf), "b": row["ref"], "why": reason})
+                hit = None
+        if hit is not None:
+            skipped.append({"ref": row["ref"], "reason": f"already in the table as {hit.get(keyf)}"})
+            continue
+        if row["ref"] in refs:
+            raise ValueError(f"ref {row['ref']!r} is already used in the table; renumber the lane")
+        row[keyf] = row.pop("ref") if keyf != "ref" else row["ref"]
+        rows.append(row)
+        refs.add(row[keyf])
+        for k in _keys(row):
+            idx.setdefault(k, row)
+        added.append(row[keyf])
+    return added, skipped, pairs
+
+
 def main_append(ap, args):
-    ap.error("--append is added in Task 13")
+    if not args.into:
+        ap.error("--append needs --into rows.json")
+    rows = common.load_json(args.into)
+    keyf = common.key_field(rows)
+    added, skipped, pairs = append(rows, keyf, load_lane(args.append, args.allow_v1))
+    common.dump_json(rows, args.into)
+    print(f"appended {len(added)} row(s) to {args.into}; run verify.py --rows --only {','.join(added)}")
+    for s in skipped:
+        print(f"  · {s['ref']}: {s['reason']}")
+    for pr in pairs:
+        print(f"  ⚠ {pr['b']}: possible duplicate of {pr['a']} kept for a human verdict: {pr['why']}")
 
 
 if __name__ == "__main__":

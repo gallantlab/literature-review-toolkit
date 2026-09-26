@@ -2269,6 +2269,28 @@ check("an exact title match with an agreeing claimed author is matched",
 check("...and is recorded in matched_by_title",
       [(m["found_as"], m["from_lane"]) for m in _rep9["matched_by_title"]], [("M-01", "M")])
 
+# ---- merge_lanes --append (2026-09-26) -------------------------------------
+_canon = [_grow("G1", "10.1/g1"), _grow("G2", "10.1/g2")]
+_before = json.dumps(_canon, sort_keys=True)
+_added, _skipped, _pairs = merge_lanes.append(
+    _canon, "ref", _lane("X", [_p("X-01", doi="10.1/G1"), _p("X-02", doi="10.1/n")]))
+check("append adds only papers not already in the table", (_added, [s["ref"] for s in _skipped]), (["X-02"], ["X-01"]))
+check("append never changes an existing row", json.dumps(_canon[:2], sort_keys=True), _before)
+check_true("append refuses a ref already in the table",
+           _raises(lambda: merge_lanes.append(_canon, "ref", _lane("X", [_p("G1", doi="10.1/q")]))))
+
+# R7: a title-only hit that fails the same gate merge() uses (here, two
+# different non-arXiv DOIs) is a distinct paper sharing a title+year, not a
+# duplicate — append it and report the pair for a human verdict, don't skip it.
+_canon2 = [_grow("N1", "10.1/n1")]
+_added2, _skipped2, _pairs2 = merge_lanes.append(
+    _canon2, "ref",
+    _lane("Y", [_p("Y-01", doi="10.1/other-journal", title="A real paper", year=2020, au="Jones, K.")]))
+check("a title-only hit with a conflicting/differing DOI is appended, not skipped", _added2, ["Y-01"])
+check("...and skipped stays empty", _skipped2, [])
+check("...and reported as a possible pair for a human verdict",
+      [(p["a"], p["b"]) for p in _pairs2], [("N1", "Y-01")])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
