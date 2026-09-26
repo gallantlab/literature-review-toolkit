@@ -506,6 +506,10 @@ def audit_rows(rows, keyf, acks=None, ledger=None):
             if src not in runs:
                 warn("*", f"no-{src}-run", f"the candidate ledger records no {what} run: run it and "
                      f"candidates.py --add ... --source {src}, or acknowledge why this review has none")
+            elif not (runs[src] or {}).get("complete"):
+                warn("*", f"incomplete-{src}-run", f"the last {what} run did not complete (some "
+                     "fetches failed): re-run it, or acknowledge why this review proceeds without "
+                     "full coverage")
     unacked = {}
     for k, ws in warnings.items():
         for wid, text in ws:

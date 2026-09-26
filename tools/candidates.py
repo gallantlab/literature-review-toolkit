@@ -2,9 +2,11 @@
 """The candidate ledger: every paper xref or forward citations suggest gets a recorded decision.
 
 candidates.json maps DOI -> {title, year, first_author, sources, decision, reason, at},
-plus `_runs`: {source: {at, n}}, recorded by each --add, so the audit can tell
-that xref and forward citations were actually run. Keys starting with "_" are
-records, not candidates.
+plus `_runs`: {source: {at, n, complete}}, recorded by each --add, so the audit
+can tell that xref and forward citations were actually run, and whether that run
+finished (`complete` comes from the FILE.run.json sidecar xref.py/forward.py
+write beside their --out; a missing or incomplete sidecar records complete=False).
+Keys starting with "_" are records, not candidates.
 The audit fails while any candidate is pending, and the spreadsheet lists every
 excluded one with its reason, so a paper that is not in the review was visibly
 considered and set aside.
@@ -46,11 +48,14 @@ def corpus_dois(rows):
     return out
 
 
-def add(ledger, found, source, corpus, asof=None):
+def add(ledger, found, source, corpus, asof=None, complete=True):
     """Record `found` (xref / forward output) as candidates, and the run itself
-    under ledger["_runs"][source]."""
+    under ledger["_runs"][source]. `complete` records whether the run that
+    produced `found` finished (from its <out>.run.json sidecar); main() passes
+    False when the sidecar says so or is missing."""
     runs = ledger.setdefault("_runs", {})
-    runs[source] = {"at": asof or datetime.date.today().isoformat(), "n": len(found)}
+    runs[source] = {"at": asof or datetime.date.today().isoformat(), "n": len(found),
+                    "complete": bool(complete)}
     added = skipped = 0
     for e in found:
         d = _doi(e.get("doi"))
@@ -132,7 +137,9 @@ def main():
     if args.add:
         if not args.source:
             ap.error("--add needs --source")
-        a, s = add(ledger, common.load_json(args.add), args.source, corpus, args.asof)
+        sidecar = common.load_optional_json(f"{args.add}.run.json", None)
+        complete = bool(sidecar and sidecar.get("complete"))
+        a, s = add(ledger, common.load_json(args.add), args.source, corpus, args.asof, complete=complete)
         common.dump_json(ledger, path)
         print(f"added {a} candidate(s), skipped {s} already in the corpus -> {path}")
     elif args.decide:

@@ -23,8 +23,12 @@ arXiv papers' reference lists come from Semantic Scholar (CrossRef has none); so
 do those of papers whose CrossRef record has no list. Set S2_API_KEY. A CrossRef
 fetch that fails transiently gets a second try at the end of the run, after
 --retry-wait.
+
+Also writes `<out>.run.json` = {"complete", "incomplete": [slugs still unfetched],
+"at"} beside --out, so candidates.py --add can tell a partial run from a full one.
 """
 import argparse
+import datetime
 import os
 import re
 import subprocess
@@ -335,6 +339,8 @@ def main():
         out.append({"doi": doi, "n_citations": len(slugs), "cited_by": slugs, **meta.get(doi, {})})
 
     common.dump_json(out, args.out, indent=1)
+    common.dump_json({"complete": not incomplete, "incomplete": list(incomplete),
+                      "at": datetime.date.today().isoformat()}, f"{args.out}.run.json", indent=1)
 
     # Summary to stderr
     print(f"\n{'cnt':>3}  {'doi':40s}  {'auth/year':25s}  title", file=sys.stderr)

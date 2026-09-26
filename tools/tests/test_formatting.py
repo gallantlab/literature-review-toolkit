@@ -1931,7 +1931,8 @@ _d = _tmpf.mkdtemp()
 _rp, _ap = os.path.join(_d, "rows.json"), os.path.join(_d, "audit_acks.json")
 common.dump_json([_na], _rp)
 # a gated table's ledger records that xref and forward ran (final fixes I8)
-_RUNS_LEDGER = {"_runs": {"xref": {"at": "2026-09-25", "n": 0}, "forward": {"at": "2026-09-25", "n": 0}}}
+_RUNS_LEDGER = {"_runs": {"xref": {"at": "2026-09-25", "n": 0, "complete": True},
+                          "forward": {"at": "2026-09-25", "n": 0, "complete": True}}}
 common.dump_json(_RUNS_LEDGER, os.path.join(_d, "candidates.json"))
 
 
@@ -2909,7 +2910,8 @@ check("a clean merge writes rows.json", (_merge_exit(os.path.join(_i7d, "raw"), 
 _i8L = {}
 candidates.add(_i8L, [{"doi": "10.9/a", "n_citations": 4}, {"doi": "10.1/in", "n_citations": 3}], "xref",
                {"10.1/in"}, asof="2026-09-25")
-check("candidates.add records the run", _i8L.get("_runs"), {"xref": {"at": "2026-09-25", "n": 2}})
+check("candidates.add records the run", _i8L.get("_runs"),
+      {"xref": {"at": "2026-09-25", "n": 2, "complete": True}})
 check("candidate_defects ignores the _runs record", candidates.candidate_defects({"_runs": _i8L["_runs"]}, set()),
       [])
 candidates.decide(_i8L, "10.9/a", "include", "on topic", "2026-09-25")
@@ -2919,7 +2921,7 @@ _rep = references.audit_rows([_grow()], "ref", ledger={})
 check("a gated ledger with no xref/forward run warns under *",
       sorted(w for w, _ in _rep["unacked"].get("*", [])), ["no-forward-run", "no-xref-run"])
 check("...and fails the audit until acknowledged", _rep["failed"], True)
-_rep = references.audit_rows([_grow()], "ref", ledger={"_runs": {"xref": {"at": "d", "n": 1}}})
+_rep = references.audit_rows([_grow()], "ref", ledger={"_runs": {"xref": {"at": "d", "n": 1, "complete": True}}})
 check("a ledger with an xref run still warns about forward",
       [w for w, _ in _rep["unacked"].get("*", [])], ["no-forward-run"])
 _rep = references.audit_rows([_grow()], "ref", ledger=dict(_RUNS_LEDGER))
@@ -3427,6 +3429,124 @@ check_true("families.py refuses a rows.json that changed since load",
            isinstance(_t4err, RuntimeError) and "changed since it was loaded" in str(_t4err), repr(_t4err))
 check("...and leaves it as the other writer left it",
       common.load_json(_t4frp), [{"ref": "F1", "apa": "Doe, J. (2020). Title. J."}])
+
+# ---- Task 4 item 2: an incomplete xref/forward run is not recorded as complete
+# (2026-09-26) -------------------------------------------------------------
+# xref.py and forward.py write a <out>.run.json sidecar recording whether the
+# run finished; candidates.py --add reads it and stamps _runs[source].complete
+# so the ledger, and the audit, can tell a partial run from a full one.
+_t4xd = _tmpf.mkdtemp()
+_t4xrp = os.path.join(_t4xd, "rows.json")
+common.dump_json([{"ref": "Z1", "doi": "10.1/z1"}, {"ref": "Z2", "doi": "10.1/z2"}], _t4xrp)
+_t4xout = os.path.join(_t4xd, "x.json")
+
+
+def _t4x_run(incomplete, *extra):
+    argv = sys.argv
+    sys.argv = ["xref.py", "--rows", _t4xrp, "--out", _t4xout, "--email", "t@example.org", *extra]
+    try:
+        with _patched(xref, fetch_all=lambda papers, sleep=0.4, retry_wait=60.0:
+                       ({"Z1": [], "Z2": []}, incomplete)), \
+                _ctx.redirect_stdout(io.StringIO()), _ctx.redirect_stderr(io.StringIO()):
+            xref.main()
+    except SystemExit:
+        pass
+    finally:
+        sys.argv = argv
+
+
+_t4x_run(["Z2"], "--allow-incomplete")
+_t4xrun = common.load_json(f"{_t4xout}.run.json")
+check("xref.py records an incomplete run in <out>.run.json",
+      (_t4xrun["complete"], _t4xrun["incomplete"]), (False, ["Z2"]))
+check_true("...and stamps a date", bool(_t4xrun.get("at")), _t4xrun)
+
+_t4x_run([])
+_t4xrun = common.load_json(f"{_t4xout}.run.json")
+check("xref.py records a complete run", (_t4xrun["complete"], _t4xrun["incomplete"]), (True, []))
+
+_t4fd = _tmpf.mkdtemp()
+_t4frp3 = os.path.join(_t4fd, "rows.json")
+common.dump_json([{"ref": "A", "doi": "10.1/a", "cite_openalex": 5}], _t4frp3)
+
+
+def _t4f_run(citing_fn, *extra):
+    argv = sys.argv
+    sys.argv = ["forward.py", "--rows", _t4frp3, "--email", "t@example.org", *extra]
+    try:
+        with _patched(forward, openalex_ids=lambda dois, email: {"10.1/a": "W1"}, citing=citing_fn), \
+                _sleeps(), _ctx.redirect_stdout(io.StringIO()), _ctx.redirect_stderr(io.StringIO()):
+            forward.main()
+    except SystemExit:
+        pass
+    finally:
+        sys.argv = argv
+
+
+def _t4f_boom(wid, per, email):
+    raise urllib.error.URLError("down")
+
+
+_t4f_run(_t4f_boom, "--allow-incomplete")
+_t4frun = common.load_json(os.path.join(_t4fd, "forward_candidates.json.run.json"))
+check("forward.py records an incomplete run in <out>.run.json",
+      (_t4frun["complete"], _t4frun["incomplete"]), (False, ["A"]))
+
+_t4f_run(lambda wid, per, email: [])
+_t4frun = common.load_json(os.path.join(_t4fd, "forward_candidates.json.run.json"))
+check("forward.py records a complete run", (_t4frun["complete"], _t4frun["incomplete"]), (True, []))
+
+# candidates.py --add reads FILE.run.json beside the file it's adding
+_t4ed = _tmpf.mkdtemp()
+_t4erp = os.path.join(_t4ed, "rows.json")
+common.dump_json([{"ref": "R1", "doi": "10.1/r1"}], _t4erp)
+_t4eadd = os.path.join(_t4ed, "xref.json")
+common.dump_json([{"doi": "10.9/e", "n_citations": 4}], _t4eadd)
+common.dump_json({"complete": False, "incomplete": ["R2"], "at": "2026-09-26"}, f"{_t4eadd}.run.json")
+
+
+def _t4e_add(rp, add_path, source):
+    argv = sys.argv
+    sys.argv = ["candidates.py", "--rows", rp, "--add", add_path, "--source", source]
+    try:
+        with _ctx.redirect_stdout(io.StringIO()), _ctx.redirect_stderr(io.StringIO()):
+            candidates.main()
+    except SystemExit:
+        pass
+    finally:
+        sys.argv = argv
+
+
+_t4e_add(_t4erp, _t4eadd, "xref")
+check("candidates --add reads the FILE.run.json sidecar and records complete=False",
+      common.load_json(os.path.join(_t4ed, "candidates.json"))["_runs"]["xref"]["complete"], False)
+
+# no sidecar at all -> also complete False (a missing sidecar is not proof the run finished)
+_t4gd = _tmpf.mkdtemp()
+_t4grp = os.path.join(_t4gd, "rows.json")
+common.dump_json([{"ref": "R1", "doi": "10.1/r1"}], _t4grp)
+_t4gadd = os.path.join(_t4gd, "forward_candidates.json")
+common.dump_json([], _t4gadd)
+_t4e_add(_t4grp, _t4gadd, "forward")
+check("candidates --add with no sidecar records complete=False",
+      common.load_json(os.path.join(_t4gd, "candidates.json"))["_runs"]["forward"]["complete"], False)
+
+common.dump_json({"complete": True, "incomplete": [], "at": "2026-09-26"}, f"{_t4gadd}.run.json")
+_t4e_add(_t4grp, _t4gadd, "forward")
+check("candidates --add with a complete sidecar records complete=True",
+      common.load_json(os.path.join(_t4gd, "candidates.json"))["_runs"]["forward"]["complete"], True)
+
+# the audit distinguishes an incomplete run from no run at all, and it's ack-able
+# like the rest of the ledger warnings
+_t4rledger = {"_runs": {"xref": {"at": "d", "n": 1, "complete": False},
+                        "forward": {"at": "d", "n": 1, "complete": True}}}
+_rep = references.audit_rows([_grow()], "ref", ledger=_t4rledger)
+check("an incomplete xref run warns incomplete-xref-run, not no-xref-run",
+      [w for w, _ in _rep["unacked"].get("*", [])], ["incomplete-xref-run"])
+check("...and fails the audit until acknowledged", _rep["failed"], True)
+_rep = references.audit_rows([_grow()], "ref", ledger=_t4rledger,
+                             acks={"*": {"incomplete-xref-run": "small corpus, ran once by hand"}})
+check("incomplete-xref-run is ack-able like the other ledger warnings", _rep["failed"], False)
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
