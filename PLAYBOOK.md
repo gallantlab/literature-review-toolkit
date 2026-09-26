@@ -152,21 +152,21 @@ template in `tools/search_prompt_template.md` and fill in:
 - `{TODAY}` — current date (gives the agent a recency anchor)
 - `{TIER_BOUNDARY_YEAR}`
 - `{TARGET_COUNT}` — usually 25-40 papers
+- `{OUTPATH}` — the lane file path the agent writes its JSON object to
+- `{LANE_KEY}` — this lane's short key, used in `"lane"` and each `ref` prefix
 
-The agent should return a numbered list with: APA citation, **DOI link in
-`https://doi.org/<doi>` form** (not PubMed/PMC URLs), PMCID if available,
-3-5 sentence summary, tag (`classic`/`recent-review`/`recent-empirical`/
-`recent-method`/`recent-LLM`/`recent-theory`/`recent-clinical`), and year. Keep its
-first author, year and title on each row as `search_author` / `search_year` /
+The agent writes one JSON object (schema 2: `status`, `papers`, `deferred`,
+`could_not_confirm`) to `{OUTPATH}`, per `search_prompt_template.md`. Keep each
+paper's claimed first author, year and title as `search_author` / `search_year` /
 `search_title`: they are what Phase 3 verifies against.
 
-**With several lanes, no paper may fall between them.** Tell every agent: never drop
-an on-topic paper because another lane might own it — include it and name the lane
-it fits better (`lane_fit`), since the merge dedups on DOI and arXiv id. Anything it
-leaves out on purpose goes in a separate **Deferred** list, which the merge checks
-against the merged table. Do not cap DOI-less items per lane. Three recent builds
-lost 14, 6 and 4 papers at their seams, and each loss cost a recovery lane after the
-fact.
+**With several lanes, no paper may fall between them.** The template already tells
+each agent never to drop an on-topic paper because another lane might own it —
+include it and name the lane it fits better (`lane_fit`), since the merge dedups on
+DOI and arXiv id. Anything left out on purpose goes in `deferred`, which the merge
+checks against the merged table. Do not cap DOI-less items per lane. Three recent
+builds lost 14, 6 and 4 papers at their seams, and each loss cost a recovery lane
+after the fact.
 
 **Do not act on the agent's output yet.** It will contain errors. Proceed
 to Phase 2b, then Phase 3.

@@ -61,31 +61,41 @@ Search both Google Scholar (via `scholar.google.com` URLs) and PubMed
 (`pubmed.ncbi.nlm.nih.gov`). Verify each paper actually exists by fetching
 its abstract page before including it.
 
-## What to return for EACH paper
+## What to return
 
-1. **APA citation** (full, with all authors if ≤6, else et al.)
-2. **DOI link** in the form `https://doi.org/<doi>` — verify it resolves.
-   Every paper MUST have a DOI link. Do NOT return PubMed or PMC URLs as the
-   primary link; if you only have a PMID/PMCID, look up the DOI via PubMed
-   or EuropePMC and return that. If a paper has truly no DOI (rare for
-   published work), exclude it.
-3. **PMCID if available** (for cross-checking only; not the primary link)
-4. **3–5 sentence summary**: what the study did and why it's relevant to
-   {TOPIC_NAME}. Read the actual abstract — do NOT make up findings.
-5. **Tag**: one of: `classic` | `recent-review` | `recent-empirical` |
-   `recent-method` | `recent-LLM` | `recent-theory` | `recent-clinical`
-6. **Year**
+Write ONE JSON object to `{OUTPATH}` with the Write tool, then parse it back with
+`python3 -c "import json;json.load(open('{OUTPATH}'))"` and fix it if that fails.
+Write it incrementally if you are worried about time, so no work is lost.
 
-Format as a numbered list grouped by tag. No process notes — just the
-curated list.
+```json
+{"schema": 2,
+ "lane": "{LANE_KEY}",
+ "status": {"target": {TARGET_COUNT}, "returned": 0, "websearch_exhausted": false, "notes": ""},
+ "papers": [
+   {"ref": "{LANE_KEY}-01", "doi": "10.xxxx/yyyy", "arxiv": "", "link": "https://doi.org/10.xxxx/yyyy",
+    "first_author": "Family, I. I.", "year": 2022, "title": "Title as on the landing page",
+    "apa": "", "summary": "3-5 sentences from the actual abstract; do not invert findings.",
+    "tag": "classic", "topic": "{TOPIC_NAME}", "source": "search", "note": "", "lane_fit": ""}],
+ "deferred": [{"title": "...", "doi": "", "reason": "fits lane X better", "to_lane": "X"}],
+ "could_not_confirm": [{"title": "...", "reason": "no such paper under any similar title"}]}
+```
 
-**Never drop an on-topic paper because another search might own it.** Include it
-and add `lane_fit: <the better-fitting area>`; duplicates are removed later by DOI.
-After the list, add a short **Deferred** section naming every paper you found but
-left out on purpose, with one line on why. An empty Deferred section is fine.
+- Every paper needs a DOI or an arXiv id. arXiv-only: set `arxiv` to the bare id and
+  `doi` to `10.48550/arXiv.<id>`. A book, chapter, report or essay with neither: leave
+  `doi` empty, give its URL in `link` if any, and write the full APA-7 reference in
+  `apa` from the title page or publisher record, with every author.
+- `first_author`, `year` and `title` are read off the landing page. They are what
+  the next phase verifies the DOI against.
+- **Never drop an on-topic paper because another search might own it.** Include it
+  and set `lane_fit` to the better-fitting area; duplicates are removed later.
+- List in `deferred` every paper you found and left out on purpose, with the reason.
+- Set `status.returned` to the number of papers, and `websearch_exhausted` to true if
+  your web search stopped working; say in `notes` how you continued.
 
-Cap output at ~{TARGET_COUNT} papers. Quality over quantity for
-pre-{TIER_BOUNDARY_YEAR}, err toward inclusion for recent work.
+Balance `tag` across: `classic` | `recent-review` | `recent-empirical` |
+`recent-method` | `recent-LLM` | `recent-theory` | `recent-clinical`.
+
+Quality over quantity for pre-{TIER_BOUNDARY_YEAR}, err toward inclusion for recent work.
 
 **Important:** Many published papers have similar titles. Always confirm
 the first author and year by visiting the actual landing page (PubMed,

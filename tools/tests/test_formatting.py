@@ -2132,6 +2132,14 @@ check("a duplicate result for the same ref stamps neither and is reported once",
       (_n4, "summary_check" in _S4[0], _err4), (0, False, ["A: more than one result; keep one"]))
 
 
+# ---- lane schema 2 in the search template (2026-09-26) ---------------------
+with open(os.path.join(os.path.dirname(common.__file__), "search_prompt_template.md"), encoding="utf-8") as _fh:
+    _TPL = _fh.read()
+for _needle in ('"schema": 2', '"deferred"', '"could_not_confirm"', '"lane_fit"', '"websearch_exhausted"'):
+    check_true(f"search template defines {_needle}", _needle in _TPL)
+check_true("search template no longer abbreviates author lists", "et al." not in _TPL)
+check_true("search template no longer caps DOI-less items", "at most 4" not in _TPL)
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
