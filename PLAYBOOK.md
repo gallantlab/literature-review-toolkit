@@ -259,6 +259,8 @@ its file to `search_raw/`, and re-merge. It also fails on a **rejected**
 paper — one with no DOI, no arXiv id and no APA string, which can be neither
 verified nor hand-checked — reported the same way: give it a DOI or arXiv id,
 or have the lane write its full APA string as a DOI-less item, then re-merge.
+A failed merge (lost, unconfirmed or rejected) writes `merge_report.json` but
+**not** `rows.json`, so nothing downstream runs on a table with a hole in it.
 A lane that returned under 60% of its target, or ran out of search budget, is
 printed as thin — resume it through SendMessage rather than re-spawning it.
 

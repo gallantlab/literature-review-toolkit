@@ -53,7 +53,8 @@ in `tools/README.md` and `PLAYBOOK.md`.
   exits 1, and so does an unconfirmed one (a title-only match whose deferral
   gives neither field). So does a **rejected** paper — no DOI, arXiv id or APA string, so it
   can be neither verified nor hand-checked — give it a DOI/arXiv id or have the
-  lane write its full APA string, then re-merge. A lane under 60% of its
+  lane write its full APA string, then re-merge. A failed merge writes
+  `merge_report.json` but not `rows.json`. A lane under 60% of its
   target, or out of search budget, is flagged thin. `--append FILE --into
   ROWS` adds a lane's papers to a table that may already be canonical, never
   touching an existing row.

@@ -296,8 +296,8 @@ lost papers to one recovery lane, add its file to `search_raw/`, and re-merge.
 It also fails on a **rejected** paper — no DOI, no arXiv id and no APA string,
 so it can be neither verified nor hand-checked — the same way: give it a DOI
 or arXiv id, or have the lane write its full APA string as a DOI-less item,
-then re-merge. A lane that returned under 60% of its target, or exhausted its
-search budget, is printed as thin — resume it, don't re-spawn it. Later
+then re-merge. A failed merge writes `merge_report.json` but not `rows.json`.
+A lane that returned under 60% of its target, or exhausted its search budget, is printed as thin — resume it, don't re-spawn it. Later
 additions (a recovery lane, or the cross-citation pass in
 [§5.6](#56-phase-6-cross-citation-pass)) use `--append FILE --into rows.json`
 instead, which never touches an existing row.

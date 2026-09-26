@@ -2258,8 +2258,10 @@ os.makedirs(_raw)
 common.dump_json(_lane("A", [_p("A-01", doi="10.1/a")], deferred=[{"title": "Lost classic"}]),
                  os.path.join(_raw, "A.json"))
 check("merge_lanes exits 1 on a lost deferral", _merge_exit(_raw, os.path.join(_d, "rows.json")), 1)
-check_true("and still writes the rows and the report",
-           os.path.exists(os.path.join(_d, "rows.json")) and os.path.exists(os.path.join(_d, "merge_report.json")))
+# final fixes I7: a failed merge writes the report but NOT rows.json
+check("and writes the report but not the rows",
+      (os.path.exists(os.path.join(_d, "rows.json")), os.path.exists(os.path.join(_d, "merge_report.json"))),
+      (False, True))
 
 # ---- merge_lanes.py fix round 1: title-only dedup guard (2026-09-26) -------
 # Same title+year but two different journal DOIs: NOT the same paper.
@@ -2749,6 +2751,24 @@ with _patched(common, http=lambda url, **k: _i6html), _sleeps():
     _i6e, _i6err = common.arxiv_batch(["2301.00001", "2301.00002"])
 check("arxiv_batch marks a non-feed chunk errored, not missing", (_i6e, sorted(_i6err)),
       ({}, ["2301.00001", "2301.00002"]))
+
+# ---- final fixes I7: a failed merge does not write rows.json (2026-09-25) -----
+_i7d = _tmpf.mkdtemp()
+os.makedirs(os.path.join(_i7d, "raw"))
+common.dump_json(_lane("A", [_p("A-01", doi="10.1/a"), _p("A-02")]), os.path.join(_i7d, "raw", "A.json"))
+check("merge_lanes exits 1 on a rejected paper", _merge_exit(os.path.join(_i7d, "raw"),
+                                                             os.path.join(_i7d, "rows.json")), 1)
+check("...writing the report but not rows.json",
+      (os.path.exists(os.path.join(_i7d, "rows.json")), os.path.exists(os.path.join(_i7d, "merge_report.json"))),
+      (False, True))
+common.dump_json([{"ref": "OLD", "doi": "10.1/old"}], os.path.join(_i7d, "rows.json"))
+_merge_exit(os.path.join(_i7d, "raw"), os.path.join(_i7d, "rows.json"))
+check("...and leaves an existing rows.json untouched",
+      [r["ref"] for r in common.load_json(os.path.join(_i7d, "rows.json"))], ["OLD"])
+common.dump_json(_lane("A", [_p("A-01", doi="10.1/a")]), os.path.join(_i7d, "raw", "A.json"))
+os.remove(os.path.join(_i7d, "rows.json"))
+check("a clean merge writes rows.json", (_merge_exit(os.path.join(_i7d, "raw"), os.path.join(_i7d, "rows.json")),
+                                         os.path.exists(os.path.join(_i7d, "rows.json"))), (0, True))
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

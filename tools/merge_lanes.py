@@ -12,6 +12,8 @@ Reads every schema-2 lane file (tools/search_prompt_template.md) in --raw and:
     that no lane kept, or that matched by title alone with neither first_author
     nor year to confirm it — send those to a recovery lane and re-merge;
   - flags thin lanes (under 60% of target, or out of search budget) to resume.
+A failed merge (lost, unconfirmed or rejected papers) writes merge_report.json
+but not rows.json, and exits 1.
 
     python3 tools/merge_lanes.py --raw search_raw --out rows.json
     python3 tools/merge_lanes.py --append recovery.json --into rows.json   # late rows
@@ -254,10 +256,14 @@ def main():
     if not lanes:
         ap.error(f"no lane files in {args.raw}")
     rows, rep = merge(lanes)
-    common.write_rows(args.out, rows, force=args.force)
+    failed = bool(rep["lost"] or rep["rejected"] or rep["unconfirmed"])
+    if not failed:
+        # a merge that lost, rejected or could not confirm a paper is not a table to build on
+        common.write_rows(args.out, rows, force=args.force)
     rp = args.report or os.path.join(os.path.dirname(os.path.abspath(args.out)), "merge_report.json")
     common.dump_json(rep, rp)
-    print(f"{len(rows)} rows from {len(lanes)} lanes -> {args.out} | {len(rep['duplicates'])} duplicates | "
+    dest = f"NOT written to {args.out} (fix the failures below and re-merge)" if failed else f"-> {args.out}"
+    print(f"{len(rows)} rows from {len(lanes)} lanes {dest} | {len(rep['duplicates'])} duplicates | "
           f"{len(rep['possible_pairs'])} possible preprint/published pairs | report {rp}")
     for c in rep["conflicts"]:
         print(f"  ⚠ {c['ref']} = {c['same_as']} but the claims differ: {c['why']}")
@@ -279,7 +285,7 @@ def main():
     for d in rep["lost"]:
         print(f"  ✗ LOST: {d.get('title')!r} (deferred by {d['from_lane']}: {d.get('reason', '')}); "
               "no lane kept it — send it to a recovery lane")
-    sys.exit(1 if rep["lost"] or rep["rejected"] or rep["unconfirmed"] else 0)
+    sys.exit(1 if failed else 0)
 
 
 def append(rows, keyf, lane):
