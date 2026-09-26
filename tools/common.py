@@ -669,6 +669,20 @@ def single_letter_surnames(apa):
     return sorted({f for f in apa_families(apa) if len(f.strip(".")) == 1})
 
 
+GROUP_WORDS = {"collaboration", "consortium", "team", "group", "project", "institute", "initiative",
+               "network", "committee", "society", "association", "council", "organization",
+               "organisation", "laboratory", "center", "centre", "foundation"}
+
+
+def is_group(name):
+    """True for a group author: a name with a group word in it ("ATLAS
+    Collaboration", "Allen Institute for Brain Science", "MICrONS Consortium") or
+    opening with "The". A group has no surname to split off; it compares whole."""
+    words = re.findall(r"[^\W\d_]+", name or "")
+    return bool(words) and (words[0].lower() == "the" and len(words) > 1
+                            or any(w.lower() in GROUP_WORDS for w in words))
+
+
 def split_name(display):
     """Split a 'First M. Last' display name into (family, given), keeping
     nobiliary particles ('van', 'de', ...) with the surname."""

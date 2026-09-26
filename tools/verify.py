@@ -171,7 +171,7 @@ def _found_record(entry):
     gives a display name ("Aaron van den Oord"); it is split (particles kept with
     the surname) into the "Family G" shape every other source uses."""
     name = entry["first_author"] or ""
-    if name.split()[:1] != ["The"]:
+    if not common.is_group(name):
         fam, giv = common.split_name(" ".join(common.strip_suffixes(name.split())))
         name = f"{fam} {giv[:1]}".strip()
     return {"title": entry["title"], "year": entry["year"], "first_author": name, "journal": "arXiv"}
@@ -204,7 +204,7 @@ def claim_surname(name):
     give all the words, and an all-caps PubMed form made only of initials-shaped
     tokens ('LI J', 'AN J', 'O K'), which gives its first token. A trailing
     'Jr'/'Sr'/'3rd' is dropped; a name opening with a particle ('de Lange Dzn')
-    or a group name opening with "The" is returned whole; otherwise the last
+    or a group name (common.is_group) is returned whole; otherwise the last
     token that is not an initial."""
     name = re.sub(r"\s*(?:,?\s*et al\.?|&.*)$", "", (name or "").strip())
     if not name:
@@ -212,8 +212,8 @@ def claim_surname(name):
     if "," in name:
         return name.split(",")[0].strip()
     toks = name.split()
-    if len(toks) > 1 and toks[0].lower() == "the":
-        return name   # a group ("The pandas development team"): its last word is no surname
+    if len(toks) > 1 and common.is_group(name):
+        return name   # a group ("ATLAS Collaboration"): its last word is no surname
     toks = common.strip_suffixes(toks)
     split = common.words_then_initials(toks)   # particles are words even in capitals
     if split:
@@ -388,13 +388,16 @@ def surname_agrees(claim, record, claim_is_surname=False):
     `claim_is_surname` (an apa-derived lead surname, used as-is) -- so given
     names and initials never take part. The claim's first non-particle surname
     word must agree with a word of the record's surname; any further claim
-    surname word ("Lambon Ralph", "Thomas Yeo") must appear in the record's name."""
+    surname word ("Lambon Ralph", "Thomas Yeo") must appear in the record's name.
+    A group author (common.is_group) compares whole: all its words must match."""
     c = _core(claim if claim_is_surname else claim_surname(claim))
     r = _core(claim_surname(record))
     if not c:
         return True
     if not r:
         return None
+    if common.is_group(claim) or common.is_group(record):
+        return set(c) == set(r)   # a group compares whole: "CMS Collaboration" is not "ATLAS Collaboration"
     full = _name_tokens(record)
     return (any(_tok_agrees(c[0], t) for t in r)
             and all(any(_tok_agrees(x, t) for t in full) for x in c[1:]))

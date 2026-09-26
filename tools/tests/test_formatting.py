@@ -4568,6 +4568,25 @@ check("R2.4: words_then_initials drops a suffix", common.words_then_initials(["S
 for _s4in in ("Smith J Jr", "Smith J III", "Smith JLKM", "Smith J 2nd"):
     check(f"R2.4: claim_surname({_s4in!r})", verify.claim_surname(_s4in), "Smith")
 
+# ---- author fix round 2, item 5: group names compare whole (2026-09-26) ----
+# claim_surname reduced a group to its last word, so any two collaborations or
+# institutes matched on "Collaboration" / "Science".
+check_true("R2.5: 'CMS Collaboration' mismatches 'ATLAS Collaboration'", _mA("CMS Collaboration", "ATLAS Collaboration") != [])
+check_true("R2.5: 'Allen Institute for Brain Science' mismatches 'Human Brain Project Science'",
+           _mA("Allen Institute for Brain Science", "Human Brain Project Science") != [])
+check("R2.5: 'ATLAS Collaboration' matches arXiv 'ATLAS Collaboration'",
+      _mA("ATLAS Collaboration", "ATLAS Collaboration", True), [])
+check("R2.5: 'The ATLAS Collaboration' matches 'ATLAS Collaboration'", _mA("The ATLAS Collaboration", "ATLAS Collaboration"), [])
+check("R2.5: claim_surname keeps a group whole", verify.claim_surname("International Brain Laboratory"),
+      "International Brain Laboratory")
+check("R2.5: _found_record does not split an arXiv group",
+      verify._found_record({"title": "", "year": "", "first_author": "ATLAS Collaboration"})["first_author"],
+      "ATLAS Collaboration")
+check_true("R2.5: group words are recognized in any position, any case",
+           all(common.is_group(n) for n in ("MICrONS Consortium", "Allen Institute for Brain Science",
+                                             "Human Brain Project Science", "Centre for X", "the pandas team")))
+check_true("R2.5: ...and a person is not a group", not any(common.is_group(n) for n in ("Smith J", "Van Essen DC")))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
