@@ -2770,6 +2770,45 @@ _dc_audit = references.audit_rows([_dc_row2], "ref")
 check("canon_rows: the rebuilt apa passes references.audit_rows (no defects, gate passes)",
       (_dc_audit["defects"], _dc_audit["failed"]), ({}, False))
 
+# ---- Task 5 addendum (Task 1 review): DataCite regression tests (2026-09-26) ----
+# A DataCite record that RESOLVES but disagrees with the claim must MISMATCH, not
+# be waved through just because the DOI exists somewhere.
+_dc_mismatch_c = {"label": "DCM", "doi": "10.5281/zenodo.3509134",
+                  "expect_first_author": "Someone Else", "expect_year": "1999",
+                  "title": "A completely different paper"}
+with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_dc_rec)):
+    _dcmis = verify.verify_one(dict(_dc_mismatch_c))
+check("verify_one: a DataCite record that resolves but disagrees with the claim is MISMATCH",
+      _dcmis["verdict"], "MISMATCH")
+
+
+def _dc_502(*a, **k):
+    raise urllib.error.HTTPError("u", 502, "bad gateway", {}, None)
+
+
+def _dc_reset(*a, **k):
+    raise ConnectionResetError("connection reset by peer")
+
+
+for _dc_fail, _dc_why in [(_dc_502, "HTTPError 502"), (_dc_reset, "ConnectionResetError")]:
+    with _patched(common, crossref_work=_cr_404, datacite_work=_dc_fail):
+        check_true(f"verify.lookup_crossref: a transient DataCite failure ({_dc_why}) after a "
+                   "clean CrossRef 404 propagates (ERROR, not a miss)",
+                   _raises(lambda: verify.lookup_crossref("10.5281/zenodo.3509134")))
+        _dcv_err = verify.verify_one(dict(_dc_c))
+    check(f"verify_one: a transient DataCite failure ({_dc_why}) after a clean CrossRef 404 is ERROR",
+          _dcv_err["verdict"], "ERROR")
+    with _patched(common, crossref_work=_cr_404, datacite_work=_dc_fail):
+        _dc_canon_err = references.canonical(_dc_row("DCE"))
+    check(f"canonical: a transient DataCite failure ({_dc_why}) after a clean CrossRef 404 is "
+          f"source 'error', never 'missing'", _dc_canon_err["source"], "error")
+
+# references.audit passes on a personal-creator apa and on a Dataset descriptor apa
+# (not just the group-creator/Software case already covered above).
+_dc_personal_apa = common.build_datacite_apa(["Smith, J."], "2021", "A dataset", None, "Dataset", "Dryad")
+check("build_datacite_apa (personal creator, Dataset) passes the audit (no defects)",
+      references.audit(_dc_personal_apa, True)[0], [])
+
 # ---- final fixes I2: upgrade verify re-establishes identity (2026-09-25) ------
 _i2rec = {"title": "Concrete problems in AI safety", "year": "2016", "first_author": "Amodei D", "journal": "arXiv"}
 _i2row = {"ref": "U1", "doi": "10.1/u1", "search_author": "Amodei, D.", "search_year": 2016,
