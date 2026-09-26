@@ -352,7 +352,7 @@ python3 ../tools/verify.py --rows rows.json --out verify_report.json
 Checks every citation against PubMed, PMC, CrossRef and arXiv, and exits 0 only
 when every verdict is `OK`. Before canon, the claim it checks is what the search
 agent reported, kept on each row as `search_author`, `search_year` and
-`search_title`; after canon it is the canonical `apa`. A row with both an arXiv id
+`search_title`; after canon the canonical `apa` must agree as well. A row with both an arXiv id
 and a journal DOI has both checked. A journal DOI is verified only by its own
 CrossRef record: a DOI that does not resolve is a `MISMATCH`, even when a PubMed
 or title search finds the claimed paper.
@@ -875,12 +875,18 @@ file holds edits or is an older draft, and re-rendering would overwrite them.
 
 Rerunning a search on an existing bibliography brings the WHOLE project up to the
 current standard, or redoes it if that is easier — it is never a lighter pass over
-just the new rows. The first verified row switches the reference gates on for the
-whole table; once that happens, the audit and the spreadsheet gate fail every OLD
+just the new rows. The first verified row (or any row a current emitter built,
+which carries a `built_at` date) switches the reference gates on for the whole table; once that happens, the audit and the spreadsheet gate fail every OLD
 row that lacks the new records, not just the new batch.
 
-1. `verify.py --rows rows.json` over the WHOLE table, not just the new rows —
-   canonical rows are checked against their own `apa`.
+1. `verify.py --rows rows.json` over the WHOLE table, not just the new rows.
+   A canonical row that kept its search claim (`search_*`) is checked against
+   BOTH the claim and its `apa`, and fails if either disagrees with the record.
+   A canonical row with no claim is checked against its own `apa` only — which
+   canon built from the same DOI, so it cannot re-establish that the DOI is the
+   intended paper: its stamp records `claim_basis: "canonical-apa"` and the audit
+   warns `identity-not-reestablished` until you confirm the DOI by hand and
+   acknowledge it.
 2. Turn any existing hand checks (`verify_note` text, informal manual-check
    results) into `handcheck.py --ingest` result files; re-check any whose source
    is not recorded.

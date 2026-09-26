@@ -302,7 +302,8 @@ Feed it the live table directly — `python3 tools/verify.py --rows rows.json --
 verify_report.json`. **Keep each search agent's claim on its row** as
 `search_author` / `search_year` / `search_title` (the row template does). Before
 canon, `apa` is empty, so those fields ARE the expectations; after canon (a row
-stamped `canonical_at`) the canonical `apa` is. Do not write a per-project
+stamped `canonical_at`) they still are, and the canonical `apa` must agree with the
+record as well. Do not write a per-project
 converter script: fourteen projects did, each with its own first-author regex, and
 five more wrote `make_verify_input.py` because the `apa`-only path verified nothing.
 
@@ -1741,8 +1742,14 @@ gate fail every OLD row that lacks the new records, not just the new batch.
 
 Procedure, in order:
 
-1. `verify.py --rows rows.json` over the WHOLE table, not just the new rows —
-   canonical rows are checked against their own `apa`.
+1. `verify.py --rows rows.json` over the WHOLE table, not just the new rows.
+   A canonical row that kept its search claim (`search_*`) is checked against
+   BOTH the claim and its `apa`, and fails if either disagrees with the record.
+   A canonical row with no claim is checked against its own `apa` only — which
+   canon built from the same DOI, so it cannot re-establish that the DOI is the
+   intended paper: its stamp records `claim_basis: "canonical-apa"` and the audit
+   warns `identity-not-reestablished` until you confirm the DOI by hand and
+   acknowledge it.
 2. Turn any existing hand checks (`verify_note` text, informal manual-check results)
    into `handcheck.py --ingest` result files; re-check any whose source is not
    recorded.

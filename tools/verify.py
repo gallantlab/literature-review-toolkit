@@ -43,9 +43,9 @@ Or:   python3 verify.py --rows rows.json --out report.json    # straight from th
 With --rows the citation list is derived from rows.json (rows_to_citations):
 label = the row key, doi from `doi`/`link`, and the expected first author, year
 and title from the SEARCH AGENT's claim (`search_author` / `search_year` /
-`search_title`) until the row is canonical, and from its `apa` after — so a
-project needs no converter script, and a pre-canon table is not verified
-against its own empty `apa`.
+`search_title`), and once the row is canonical from its `apa` as well (both must
+agree with the record) — so a project needs no converter script, and a
+pre-canon table is not verified against its own empty `apa`.
 
 A lookup that fails transiently is retried once more at the end of the run,
 after a cool-down (--retry-wait). To re-check a few rows later:
@@ -171,27 +171,36 @@ def rows_to_citations(rows, keyf=None):
     """rows.json -> the citation list this tool verifies.
 
     The expectations must be an INDEPENDENT claim. Before canon a row's `apa` is
-    empty (references.py fills it from the very DOI being checked), so a pre-canon
-    row is checked against what the search agent reported (`search_author` /
-    `search_year` / `search_title`). A row stamped `canonical_at` is checked
-    against its canonical `apa`, whose hand fixes supersede the agent's claim.
+    empty (references.py fills it from the very DOI being checked), so a row is
+    checked against what the search agent reported (`search_author` /
+    `search_year` / `search_title`). A canonical row (`canonical_at`) with that
+    claim is checked against BOTH the claim and its canonical `apa`
+    (`alt_expect`): the apa alone was built from the very DOI being checked, so
+    it cannot re-establish that the DOI is the intended paper. A canonical row
+    with no claim is checked against its apa only, and the stamp records
+    `claim_basis: "canonical-apa"` so the audit asks a human to confirm it.
     Rows with neither yield no expectations and verify as UNCHECKED."""
     keyf = keyf or common.key_field(rows)
     out = []
     for r in rows:
         apa = r.get("apa", "") or ""
         claim = any(r.get(k) for k in ("search_author", "search_year", "search_title"))
-        if claim and not r.get("canonical_at"):
-            title = r.get("search_title") or ""
-            author = claim_surname(r.get("search_author"))
-            year = str(r.get("search_year") or "")
+        p = common.parse_apa(apa)
+        from_apa = {"title": p["title"] if p else "",
+                    "expect_first_author": common.lead_surname(apa) if apa else "",
+                    "expect_year": str(p["year"]) if p else ""}
+        if claim:
+            c = {"title": r.get("search_title") or "",
+                 "expect_first_author": claim_surname(r.get("search_author")),
+                 "expect_year": str(r.get("search_year") or "")}
+            if r.get("canonical_at") and any(from_apa.values()):
+                c["alt_expect"] = from_apa
+                c["claim_basis"] = "search+canonical-apa"
         else:
-            p = common.parse_apa(apa)
-            title = p["title"] if p else ""
-            author = common.lead_surname(apa) if apa else ""
-            year = str(p["year"]) if p else ""
-        c = {"label": r.get(keyf, "?"), "doi": common.doi_of(r), "arxiv": r.get("arxiv"),
-             "title": title, "expect_first_author": author, "expect_year": year}
+            c = dict(from_apa)
+            if r.get("canonical_at") and apa:
+                c["claim_basis"] = "canonical-apa"
+        c = {"label": r.get(keyf, "?"), "doi": common.doi_of(r), "arxiv": r.get("arxiv"), **c}
         for k in ("pmid", "pmcid"):
             if r.get(k):
                 c[k] = str(r[k])
@@ -232,6 +241,8 @@ def stamp_rows(rows, results, keyf, asof):
         doi, aid = common.ids_of(row)
         row["verified"] = {"verdict": res.get("verdict"), "doi": doi, "arxiv": aid,
                            "source": res.get("source"), "issues": list(res.get("issues") or []), "at": asof}
+        if res.get("claim_basis"):
+            row["verified"]["claim_basis"] = res["claim_basis"]
         n += 1
     return n
 
@@ -296,6 +307,17 @@ def _year_issue(c, recs):
     if expect_year.isdigit() and clean and all(abs(int(expect_year) - y) > 1 for y in clean):
         return [f"year mismatch: expected {expect_year}, got {'/'.join(years)}"]
     return []
+
+
+def _claim_issues(c, found, journal=None):
+    """Every way the record(s) disagree with the expectations in `c`."""
+    if journal is not None:
+        # Both ids: the journal record is what canon prints, so it gets the full
+        # check; the preprint gets the author check (preprints are often retitled
+        # on publication, so its title is not held against the claim).
+        return (_author_issue(c, journal, "journal DOI: ") + _title_issue(c, journal, "journal DOI: ")
+                + _author_issue(c, found, "arXiv: ") + _year_issue(c, [journal, found]))
+    return _author_issue(c, found) + _year_issue(c, [found]) + _title_issue(c, found)
 
 
 def verify_one(c, arxiv_results=None, arxiv_errored=None):
@@ -406,16 +428,13 @@ def verify_one(c, arxiv_results=None, arxiv_errored=None):
         return {"verdict": "UNCHECKED", "found": found, "source": src,
                 "issues": ["no expected author/year/title to check the record against"]}
 
+    issues = _claim_issues(c, found, journal)
+    if c.get("alt_expect"):
+        # a canonical row: its apa must agree with the record as well as the claim
+        issues += ["canonical apa: " + i for i in _claim_issues(dict(c, **c["alt_expect"]), found, journal)]
     if journal is not None:
-        # Both ids: the journal record is what canon prints, so it gets the full
-        # check; the preprint gets the author check (preprints are often retitled
-        # on publication, so its title is not held against the claim).
-        issues = (_author_issue(c, journal, "journal DOI: ") + _title_issue(c, journal, "journal DOI: ")
-                  + _author_issue(c, found, "arXiv: ") + _year_issue(c, [journal, found]))
         return {"verdict": "OK" if not issues else "MISMATCH", "issues": issues,
                 "found": journal, "source": "arxiv+doi"}
-
-    issues = _author_issue(c, found) + _year_issue(c, [found]) + _title_issue(c, found)
 
     if issues and errored and src == "title-search":
         # The authoritative lookup (DOI/PMID) could not complete and the fallback
@@ -473,6 +492,8 @@ def _verify_pass(cits, sleep, chunk=50):
             r = {"verdict": "ERROR", "found": None, "source": None,
                  "issues": [f"{type(e).__name__}: {e}"]}
         r["label"] = c.get("label", "?")
+        if c.get("claim_basis"):
+            r["claim_basis"] = c["claim_basis"]      # stamp_rows records what the verdict rests on
         out.append(r)
         _print_result(c, r)
         if common.request_count() != before:
@@ -497,7 +518,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--citations", help="JSON citation list (else --rows, else stdin)")
     ap.add_argument("--rows", help="verify a rows.json directly (label = row key; expectations "
-                    "from the search agent's claim before canon, the canonical apa after)")
+                    "from the search agent's claim, plus the canonical apa after canon)")
     ap.add_argument("--key", default=None, help="row key field for --rows (default: ref, else label)")
     ap.add_argument("--out", help="JSON output file (else stdout)")
     ap.add_argument("--only", help="comma-separated labels: verify just these rows")

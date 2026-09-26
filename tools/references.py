@@ -379,7 +379,11 @@ def row_gate_defects(r, warn):
                    else "verified under a different DOI/arXiv id" if common.stamp_ids(st) != common.ids_of(r)
                    else f"verdict {st.get('verdict')} not resolved")
             d.append(f"unverified ({why})")
-        elif not r.get("canonical_at"):
+        elif (r.get("verified") or {}).get("claim_basis") == "canonical-apa":
+            warn("identity-not-reestablished", "verified only against its own canonical apa (the row "
+                 "has no search claim), which canon built from this same DOI; confirm by hand that the "
+                 "DOI is the intended paper")
+        if common.verified_ok(r) and not r.get("canonical_at"):
             warn("kept-existing-apa", "verified but not rebuilt by canon (the source had no usable "
                  "record); confirm the apa by hand")
     else:

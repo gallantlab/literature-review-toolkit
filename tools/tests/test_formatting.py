@@ -1633,8 +1633,8 @@ check("rows_to_citations: 'D. Amodei' shape yields the surname",
       verify.rows_to_citations([dict(_pre, search_author="D. Amodei")])[0]["expect_first_author"], "Amodei")
 _canon = dict(_pre, apa="Amodei, D., & Olah, C. (2016). Concrete problems in AI safety. arXiv.",
               canonical_at="2026-09-25", search_author="Wrong, X.")
-check("rows_to_citations: a canonical row is checked against its apa",
-      verify.rows_to_citations([_canon])[0]["expect_first_author"], "Amodei")
+check("rows_to_citations: a canonical row is checked against its apa too",
+      verify.rows_to_citations([_canon])[0]["alt_expect"]["expect_first_author"], "Amodei")
 with _patched(verify, lookup_crossref=lambda d: {"title": "T", "year": "2020",
                                                    "first_author": "Smith J", "journal": "J"}):
     _r = verify.verify_one({"label": "N", "doi": "10.1/n"})
@@ -2543,6 +2543,42 @@ finally:
 check_true("references prints 'DOI does not exist' for a 404", "✗ Z1: DOI does not exist" in _i1out.getvalue(),
            _i1out.getvalue())
 check_true("...not 'fetch failed'", "fetch failed" not in _i1out.getvalue())
+
+# ---- final fixes I2: upgrade verify re-establishes identity (2026-09-25) ------
+_i2rec = {"title": "Concrete problems in AI safety", "year": "2016", "first_author": "Amodei D", "journal": "arXiv"}
+_i2row = {"ref": "U1", "doi": "10.1/u1", "search_author": "Amodei, D.", "search_year": 2016,
+          "search_title": "Concrete problems in AI safety", "canonical_at": "2026-08-18",
+          "apa": "Amodei, D., & Olah, C. (2016). Concrete problems in AI safety. arXiv."}
+_i2c = verify.rows_to_citations([_i2row])[0]
+check("a canonical row with a search claim is checked against the claim",
+      (_i2c["expect_first_author"], _i2c["title"]), ("Amodei", "Concrete problems in AI safety"))
+check("...and against its canonical apa as alt_expect",
+      (_i2c["alt_expect"]["expect_first_author"], _i2c["alt_expect"]["expect_year"]), ("Amodei", "2016"))
+with _patched(verify, lookup_crossref=lambda d: dict(_i2rec)):
+    check("both claims agree with the record -> OK", verify.verify_one(dict(_i2c))["verdict"], "OK")
+    _r = verify.verify_one(verify.rows_to_citations([dict(_i2row, apa="Zhou, Q. (2001). Retinal circuits. J.")])[0])
+    check("an apa that disagrees with the record -> MISMATCH, even when the claim agrees", _r["verdict"], "MISMATCH")
+    check_true("...the issue is labeled as the canonical apa's",
+               any(i.startswith("canonical apa: ") for i in _r["issues"]), str(_r))
+    _r = verify.verify_one(verify.rows_to_citations([dict(_i2row, search_author="Zhou, Q.")])[0])
+    check("a claim that disagrees with the record -> MISMATCH, even when the apa agrees", _r["verdict"], "MISMATCH")
+_i2bare = {k: v for k, v in _i2row.items() if not k.startswith("search_")}
+_i2c = verify.rows_to_citations([_i2bare])[0]
+check("a canonical row with no search claim has claim_basis canonical-apa",
+      (_i2c.get("claim_basis"), "alt_expect" in _i2c), ("canonical-apa", False))
+with _patched(verify, lookup_crossref=lambda d: dict(_i2rec)), _sleeps():
+    _i2res = verify._verify_pass([_i2c], 0)
+_i2rows = [dict(_i2bare)]
+verify.stamp_rows(_i2rows, _i2res, "ref", "2026-09-25")
+check("stamp_rows copies claim_basis into verified", _i2rows[0]["verified"].get("claim_basis"), "canonical-apa")
+_i2g = dict(_grow("U2", "10.1/u2"))
+_i2g["verified"]["claim_basis"] = "canonical-apa"
+_rep = references.audit_rows([_i2g], "ref")
+check("the audit warns identity-not-reestablished for a canonical-apa basis",
+      [w for w, _ in _rep["unacked"].get("U2", [])], ["identity-not-reestablished"])
+check("...and an acknowledgment clears it",
+      references.audit_rows([_i2g], "ref", {"U2": {"identity-not-reestablished": "DOI checked by hand"}})["failed"],
+      False)
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
