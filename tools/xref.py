@@ -25,7 +25,8 @@ fetch that fails transiently gets a second try at the end of the run, after
 --retry-wait.
 
 Also writes `<out>.run.json` = {"complete", "incomplete": [slugs still unfetched],
-"at"} beside --out, so candidates.py --add can tell a partial run from a full one.
+"at", "tool": "xref", "n_papers": papers with a DOI/arXiv id} beside --out, so
+candidates.py --add can tell a partial run from a full one.
 """
 import argparse
 import datetime
@@ -339,7 +340,8 @@ def main():
         out.append({"doi": doi, "n_citations": len(slugs), "cited_by": slugs, **meta.get(doi, {})})
 
     common.dump_json(out, args.out, indent=1)
-    common.write_run_sidecar(args.out, incomplete, datetime.date.today().isoformat(), indent=1)
+    common.write_run_sidecar(args.out, incomplete, datetime.date.today().isoformat(), indent=1,
+                             tool="xref", n_papers=sum(1 for p in papers if p.get("doi")))
 
     # Summary to stderr
     print(f"\n{'cnt':>3}  {'doi':40s}  {'auth/year':25s}  title", file=sys.stderr)

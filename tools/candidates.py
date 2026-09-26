@@ -2,10 +2,12 @@
 """The candidate ledger: every paper xref or forward citations suggest gets a recorded decision.
 
 candidates.json maps DOI -> {title, year, first_author, sources, decision, reason, at},
-plus `_runs`: {source: {at, n, complete}}, recorded by each --add, so the audit
-can tell that xref and forward citations were actually run, and whether that run
-finished (`complete` comes from the FILE.run.json sidecar xref.py/forward.py
-write beside their --out; a missing or incomplete sidecar records complete=False).
+plus `_runs`: {source: {at, n, complete, n_papers}}, recorded by each --add, so
+the audit can tell that xref and forward citations were actually run, whether
+that run finished, and whether it covered every sourced row (`complete` and
+`n_papers` come from the FILE.run.json sidecar xref.py/forward.py write beside
+their --out; a missing or incomplete sidecar records complete=False). --add
+refuses a sidecar written by the other tool than --source names.
 Keys starting with "_" are records, not candidates.
 The audit fails while any candidate is pending, and the spreadsheet lists every
 excluded one with its reason, so a paper that is not in the review was visibly
@@ -70,14 +72,32 @@ def corpus_dois(rows):
     return out
 
 
-def add(ledger, found, source, corpus, asof=None, complete=True):
+def run_record(sidecar, source):
+    """(complete, n_papers) from a <FILE>.run.json sidecar (None when absent:
+    an incomplete run of unknown size). Raises ValueError when the sidecar was
+    written by the other tool than `source` names -- a forward run recorded as
+    the xref pass would satisfy the audit's no-xref-run check without one."""
+    if sidecar is None:
+        return False, None
+    tool = sidecar.get("tool")
+    if tool is not None and tool != source:
+        raise ValueError(f"the run sidecar was written by {tool}, not {source}: "
+                         f"use --source {tool}, or add the {source} output")
+    n = sidecar.get("n_papers")
+    return bool(sidecar.get("complete")), (n if isinstance(n, int) else None)
+
+
+def add(ledger, found, source, corpus, asof=None, complete=True, n_papers=None):
     """Record `found` (xref / forward output) as candidates, and the run itself
     under ledger["_runs"][source]. `complete` records whether the run that
-    produced `found` finished (from its <out>.run.json sidecar); main() passes
-    False when the sidecar says so or is missing."""
+    produced `found` finished, and `n_papers` how many sourced papers it read
+    (both from its <out>.run.json sidecar, via run_record); main() passes
+    complete=False when the sidecar says so or is missing."""
     runs = ledger.setdefault("_runs", {})
     runs[source] = {"at": asof or datetime.date.today().isoformat(), "n": len(found),
                     "complete": bool(complete)}
+    if n_papers is not None:
+        runs[source]["n_papers"] = n_papers
     added = skipped = 0
     for e in found:
         d = _doi(e.get("doi"))
@@ -163,9 +183,13 @@ def main():
     if args.add:
         if not args.source:
             ap.error("--add needs --source")
-        sidecar = common.load_optional_json(f"{args.add}.run.json", None)
-        complete = bool(sidecar and sidecar.get("complete"))
-        a, s = add(ledger, common.load_json(args.add), args.source, corpus, args.asof, complete=complete)
+        try:
+            complete, n_papers = run_record(common.load_optional_json(f"{args.add}.run.json", None),
+                                            args.source)
+        except ValueError as e:
+            ap.error(str(e))
+        a, s = add(ledger, common.load_json(args.add), args.source, corpus, args.asof,
+                   complete=complete, n_papers=n_papers)
         common.dump_json(ledger, path)
         print(f"added {a} candidate(s), skipped {s} already in the corpus -> {path}")
     elif args.decide:

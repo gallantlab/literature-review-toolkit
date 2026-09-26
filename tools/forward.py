@@ -14,8 +14,8 @@ are under-represented.
     python3 tools/forward.py --rows rows.json --out forward_candidates.json --email you@inst.edu
 
 Also writes `<out>.run.json` = {"complete", "incomplete": [refs whose landmark
-pull failed], "at"} beside --out, so candidates.py --add can tell a partial run
-from a full one.
+pull failed], "at", "tool": "forward", "n_papers": rows with a DOI/arXiv id}
+beside --out, so candidates.py --add can tell a partial run from a full one.
 """
 import argparse
 import datetime
@@ -123,7 +123,8 @@ def main():
     cands, n_nodoi = score(by_landmark, set(wids.values()), set(dois), args.min_shared)
     out = args.out or os.path.join(here, "forward_candidates.json")
     common.dump_json(cands, out)
-    common.write_run_sidecar(out, failed, datetime.date.today().isoformat())
+    common.write_run_sidecar(out, failed, datetime.date.today().isoformat(), tool="forward",
+                             n_papers=sum(1 for r in rows if common.doi_of(r) or common.arxiv_id_of(r)))
     print(f"{len(cands)} candidate(s) from {len(by_landmark)} landmark(s) -> {out} "
           f"({n_nodoi} more had no DOI). Recent papers are under-represented (pulls are citation-ordered).")
     if failed:

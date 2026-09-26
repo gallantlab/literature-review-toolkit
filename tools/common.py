@@ -220,16 +220,23 @@ def dump_json(obj, path, indent=2):
         json.dump(obj, f, indent=indent, ensure_ascii=False)
 
 
-def write_run_sidecar(out, incomplete, asof, indent=2):
-    """Write <out>.run.json = {"complete", "incomplete", "at"}, shared by
-    xref.py and forward.py so their two copies of this snippet cannot drift.
-    candidates.py --add reads it beside the file it is adding, to record
-    whether the run that produced `out` finished (`complete`); `incomplete`
-    is the refs/slugs still unresolved, and `asof` the date to stamp.
-    `indent` matches dump_json's own default; xref.py passes 1, matching its
-    pre-refactor indentation for `out` itself."""
-    dump_json({"complete": not incomplete, "incomplete": list(incomplete), "at": asof},
-              f"{out}.run.json", indent=indent)
+def write_run_sidecar(out, incomplete, asof, indent=2, tool=None, n_papers=None):
+    """Write <out>.run.json = {"complete", "incomplete", "at", "tool",
+    "n_papers"}, shared by xref.py and forward.py so their two copies of this
+    snippet cannot drift. candidates.py --add reads it beside the file it is
+    adding, to record whether the run that produced `out` finished
+    (`complete`), refuse it under the wrong --source (`tool`: "xref" or
+    "forward"), and record how many sourced papers the run read (`n_papers`),
+    which the audit compares with the table's; `incomplete` is the refs/slugs
+    still unresolved, and `asof` the date to stamp. `tool`/`n_papers` are
+    written only when given. `indent` matches dump_json's own default; xref.py
+    passes 1, matching its pre-refactor indentation for `out` itself."""
+    rec = {"complete": not incomplete, "incomplete": list(incomplete), "at": asof}
+    if tool is not None:
+        rec["tool"] = tool
+    if n_papers is not None:
+        rec["n_papers"] = n_papers
+    dump_json(rec, f"{out}.run.json", indent=indent)
 
 
 def fold(s):

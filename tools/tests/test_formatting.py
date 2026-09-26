@@ -4095,6 +4095,59 @@ check_true("M1: verify of a DOI missing from both registries (DataCite via curl)
            _m1_v["verdict"] != "ERROR", str(_m1_v))
 check("M1: canonical says 'DOI does not exist'", _m1_cn, {"error": "DOI does not exist (404)", "source": "missing"})
 
+# ---- final review M2: the run sidecar names its tool and paper count (2026-09-26) ----
+# A forward sidecar added as --source xref (or an xref run over an older, smaller
+# table) was recorded as a full run of the other pass.
+_m2d = _tmpf.mkdtemp()
+_m2out = os.path.join(_m2d, "x.json")
+common.write_run_sidecar(_m2out, [], "2026-09-26", tool="xref", n_papers=3)
+check("M2: write_run_sidecar records tool and n_papers",
+      common.load_json(f"{_m2out}.run.json"),
+      {"complete": True, "incomplete": [], "at": "2026-09-26", "tool": "xref", "n_papers": 3})
+_t4x_run([])
+check("M2: xref.py's sidecar names the tool and the papers it read",
+      {k: common.load_json(f"{_t4xout}.run.json").get(k) for k in ("tool", "n_papers")},
+      {"tool": "xref", "n_papers": 2})
+_t4f_run(lambda wid, per, email: [])
+check("M2: forward.py's sidecar names the tool and the papers it read",
+      {k: common.load_json(os.path.join(_t4fd, "forward_candidates.json.run.json")).get(k)
+       for k in ("tool", "n_papers")}, {"tool": "forward", "n_papers": 1})
+
+check_true("M2: run_record refuses a sidecar from the other tool",
+           _raises(lambda: candidates.run_record({"complete": True, "tool": "forward", "n_papers": 1}, "xref")))
+check("M2: run_record reads complete and n_papers",
+      candidates.run_record({"complete": True, "tool": "xref", "n_papers": 4}, "xref"), (True, 4))
+check("M2: a missing sidecar is an incomplete run of unknown size", candidates.run_record(None, "xref"),
+      (False, None))
+
+_m2rp = os.path.join(_m2d, "rows.json")
+common.dump_json([{"ref": "R1", "doi": "10.1/r1"}, {"ref": "R2", "doi": "10.1/r2"}], _m2rp)
+_m2add = os.path.join(_m2d, "forward_candidates.json")
+common.dump_json([{"doi": "10.9/f", "shared": 3}], _m2add)
+common.dump_json({"complete": True, "incomplete": [], "at": "2026-09-26", "tool": "forward", "n_papers": 1},
+                 f"{_m2add}.run.json")
+_t4e_add(_m2rp, _m2add, "xref")
+check("M2: candidates --add refuses --source xref for a forward sidecar (nothing written)",
+      os.path.exists(os.path.join(_m2d, "candidates.json")), False)
+_t4e_add(_m2rp, _m2add, "forward")
+check("M2: candidates --add records n_papers under _runs[source]",
+      common.load_json(os.path.join(_m2d, "candidates.json"))["_runs"]["forward"].get("n_papers"), 1)
+
+_m2rows = [_grow("P1", "10.1/p1"), dict(_grow("P2", "10.1/p2"),
+                                         apa="Jones, K. (2019). Another study entirely. Neuron, 2, 3-4.")]
+_m2L = {"_runs": {"xref": {"at": "d", "n": 1, "complete": True, "n_papers": 2},
+                  "forward": {"at": "d", "n": 1, "complete": True, "n_papers": 1}}}
+_rep = references.audit_rows(_m2rows, "ref", ledger=_m2L)
+check("M2: a run over fewer papers than the table's sourced rows warns partial-<source>-run",
+      [w for w, _ in _rep["unacked"].get("*", [])], ["partial-forward-run"])
+check("M2: ...and fails the audit until acknowledged", _rep["failed"], True)
+_rep = references.audit_rows(_m2rows, "ref", ledger=_m2L,
+                             acks={"*": {"partial-forward-run": "the added row is a data set"}})
+check("M2: partial-forward-run is ack-able", _rep["failed"], False)
+_m2L["_runs"]["forward"]["n_papers"] = 2
+check("M2: a run over every sourced row does not warn",
+      references.audit_rows(_m2rows, "ref", ledger=_m2L)["unacked"].get("*", []), [])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

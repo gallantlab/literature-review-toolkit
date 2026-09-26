@@ -536,6 +536,7 @@ def audit_rows(rows, keyf, acks=None, ledger=None):
         else:
             corpus += candidates.candidate_defects(ledger, candidates.corpus_dois(rows))
             runs = ledger.get("_runs") if isinstance(ledger.get("_runs"), dict) else {}
+            n_sourced = sum(1 for r in rows if doi_of(r) or common.arxiv_id_of(r))
             for src, what in (("xref", "backward cross-citation (xref.py)"),
                               ("forward", "forward citation (forward.py)")):
                 if src not in runs:
@@ -545,6 +546,11 @@ def audit_rows(rows, keyf, acks=None, ledger=None):
                     warn("*", f"incomplete-{src}-run", f"the last {what} run did not complete (some "
                          "fetches failed): re-run it, or acknowledge why this review proceeds without "
                          "full coverage")
+                n_run = (runs.get(src) or {}).get("n_papers")
+                if src in runs and isinstance(n_run, int) and n_run < n_sourced:
+                    warn("*", f"partial-{src}-run", f"the last {what} run read {n_run} paper(s) but the "
+                         f"table has {n_sourced} with a DOI/arXiv id (rows added since?): re-run it and "
+                         f"candidates.py --add, or acknowledge why the new rows need no {src} pass")
     unacked = {}
     for k, ws in warnings.items():
         for wid, text in ws:
