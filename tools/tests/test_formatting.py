@@ -1702,7 +1702,7 @@ check("summary_sha ignores surrounding whitespace", common.summary_sha(" A b. ")
 check_true("summary_sha sees an edit", common.summary_sha("A b.") != common.summary_sha("A c."))
 check_true("title_score lives in common", common.title_score("Sparse coding in visual cortex",
                                                                "Sparse Coding in Visual Cortex.") > 0.99)
-check_true("verify uses the common title_score", verify.title_score is common.title_score)
+check_true("verify uses the common title_agrees", verify.title_agrees is common.title_agrees)
 check("load_optional_json returns the default for a missing file",
       common.load_optional_json("/nonexistent/litreview.json", {}), {})
 
@@ -3316,6 +3316,32 @@ _n, _err = handcheck.ingest(_t2rows_h3, "ref",
 check("an old-format hand-check-input entry (no apa_sha) is refused explicitly, stamps nothing",
       (_n, _err, "hand_verified" in _t2rows_h3[0]),
       (0, ["H3: hand-check input predates --prepare binding; re-run --prepare"], False))
+
+# ---- Task 3: verify's title check without one-way containment (2026-09-26) -
+# title_score's one-way containment let a short claim ("Deep learning") match a
+# longer, unrelated record title ("Deep learning in neural networks: An
+# overview") because it only checked the short title's words against the long
+# one. title_agrees requires two-way agreement instead, except when one title
+# is exactly the other's main title (a dropped subtitle).
+check_true("title_agrees: a short claim contained in an unrelated longer title is NOT an agreement",
+           common.title_agrees("Deep learning",
+                                "Deep learning in neural networks: An overview") < 0.5)
+check_true("title_agrees: a dropped subtitle still agrees",
+           common.title_agrees("The free-energy principle",
+                                "The free-energy principle: A unified brain theory?") == 1.0)
+check_true("title_agrees: dropping a subtitle agrees in the other direction too",
+           common.title_agrees("The free-energy principle: A unified brain theory?",
+                                "The free-energy principle") == 1.0)
+check_true("title_agrees: case/punctuation differences agree",
+           common.title_agrees("Sparse coding in visual cortex",
+                                "Sparse Coding in Visual Cortex.") == 1.0)
+check("title_agrees: a missing title returns None", common.title_agrees("", "Deep learning"), None)
+check("verify._title_issue: the containment case is now a title mismatch",
+      len(verify._title_issue({"title": "Deep learning"},
+                               {"title": "Deep learning in neural networks: An overview"})), 1)
+check("verify._title_issue: a dropped subtitle raises no issue",
+      verify._title_issue({"title": "The free-energy principle"},
+                           {"title": "The free-energy principle: A unified brain theory?"}), [])
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

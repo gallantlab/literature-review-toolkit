@@ -394,6 +394,57 @@ def title_match(a, b):
             and sum(w in sa for w in tb) / len(tb) >= TITLE_MATCH)
 
 
+def _main_title(t):
+    """The text before the first ':' / ' - ' / '?' subtitle break, normalized
+    (whichever break comes first) — the part of a title an agent keeps when
+    it drops a subtitle."""
+    t = t or ""
+    idx = len(t)
+    for sep in (":", " - ", "?"):
+        i = t.find(sep)
+        if i != -1 and i < idx:
+            idx = i
+    return _title_words(t[:idx])
+
+
+def title_agrees(claim, record):
+    """Similarity of a claimed title and a found record's title, in [0, 1], or
+    None if either is missing.
+
+    Unlike title_score, this refuses a short claim that merely happens to be
+    CONTAINED in an unrelated longer record title — title_score's one-way
+    containment let "Deep learning" match "Deep learning in neural networks:
+    An overview" (a different paper), because it only checked the short
+    title's words against the long one. title_agrees instead returns:
+    - 1.0 when one title equals the other's main title (see _main_title) —
+      exactly the case of an agent dropping a subtitle, which is what the
+      one-way check was built to tolerate;
+    - otherwise max(character-similarity ratio, two-way containment), where
+      two-way containment is the MIN of each title's content words found in
+      the other, so a short title inside a longer, unrelated one no longer
+      passes on one direction alone.
+
+    Calibrated on 2,473 OK verdicts from five corpora (2026-09-26): at
+    threshold 0.5, exactly one past OK verdict newly falls below it (a claim
+    that paraphrased a title rather than quoting it), while the "Deep
+    learning" containment case above scores 0.46 — correctly below 0.5. See
+    verify.TITLE_MIN.
+    """
+    import difflib
+    a, b = _title_words(claim), _title_words(record)
+    if not a or not b:
+        return None
+    ma, mb = _main_title(claim), _main_title(record)
+    if (ma and ma == b) or (mb and mb == a):
+        return 1.0
+    ta = [w for w in a.split() if w not in _TITLE_STOP]
+    tb = [w for w in b.split() if w not in _TITLE_STOP]
+    contained = (min(sum(w in set(tb) for w in ta) / len(ta),
+                      sum(w in set(ta) for w in tb) / len(tb))
+                 if ta and tb else 0.0)
+    return max(difflib.SequenceMatcher(None, a, b).ratio(), contained)
+
+
 def attach_counts(rows, counts, keyf=None):
     """Attach citations.py output to rows in place: counts[key]['openalex'/'s2'/
     's2_influential'] -> row['cite_openalex'/'cite_s2'/'cite_s2_influential'] —

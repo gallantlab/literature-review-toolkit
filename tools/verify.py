@@ -294,10 +294,12 @@ def override(rows, keyf, ref, reason, asof):
                               "doi": doi, "arxiv": aid, "at": asof}
 
 
-# Title similarity lives in common (merge_lanes and handcheck use it too). On
-# 2,473 OK verdicts from five corpora, one scored under 0.7 — a preprint retitled
-# on publication; garbage title-search hits score 0.14–0.31.
-title_score = common.title_score
+# Title agreement lives in common (title_agrees requires two-way agreement,
+# unlike title_score's one-way containment, which merge_lanes and handcheck
+# still use for their own deferral/candidate matching). Calibrated on 2,473 OK
+# verdicts from five corpora: at 0.5, exactly one past OK verdict newly falls
+# below it. See common.title_agrees for the full calibration note.
+title_agrees = common.title_agrees
 
 
 TITLE_MIN = 0.5
@@ -317,7 +319,7 @@ def _author_issue(c, rec, where=""):
 
 
 def _title_issue(c, rec, where=""):
-    s = title_score(c.get("title"), rec.get("title"))
+    s = title_agrees(c.get("title"), rec.get("title"))
     if s is not None and s < TITLE_MIN:
         return [f"{where}title mismatch ({s:.2f}): expected '{c['title'][:80]}', "
                 f"got '{rec['title'][:80]}'"]
