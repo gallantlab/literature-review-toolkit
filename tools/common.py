@@ -904,14 +904,22 @@ def crossref_work(doi, fallback_venue=""):
     return crossref_record(msg, fallback_venue)
 
 
+_VOWELS = set("aeiou" "аеёиоуыэюя" "αεηιουω")   # Latin (accents folded), Cyrillic, Greek
+
+
 def is_initials(tok):
-    """True for an initials token: 1-4 uppercase letters of any script, dotted or
-    not, hyphenated or not ("J", "JL", "JLKM", "J.L.", "J.-L.", "J-H", "Ł", "ĐT",
-    "И"). Judged on the raw token, before any casing."""
+    """True for an initials token, any script, dotted or not, hyphenated or not:
+    1-2 uppercase letters ("J", "JL", "J.-L.", "Ł", "ĐT", "И"), or 3-4 that are
+    not a pronounceable word ("JLK", "JLKM", "DZN"; "CYC", "GWY" with only a Y;
+    "IIA" with no consonant). A word has a vowel (A E I O U, accents folded) and
+    a consonant: "CHEN", "WANG", "KING", "MEER", "ANNA" are words, not initials.
+    Judged on the raw token, before any casing."""
     parts = (tok or "").replace(".", "").split("-")
     letters = "".join(parts)
-    return (all(parts) and 1 <= len(letters) <= 4
-            and all(ch.isalpha() and ch.isupper() for ch in letters))
+    if not (all(parts) and 1 <= len(letters) <= 4 and all(ch.isalpha() and ch.isupper() for ch in letters)):
+        return False
+    vowel = [fold(ch).lower() in _VOWELS for ch in letters]
+    return len(letters) <= 2 or not (any(vowel) and not all(vowel))
 
 
 _SUFFIX = re.compile(r"(?i)^(?:jr|sr|[2-9](?:nd|rd|th))\.?$")

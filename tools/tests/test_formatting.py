@@ -4637,6 +4637,31 @@ check("R3.1: a deferral whose first_author is '?' is unconfirmed, not matched",
       ([d["title"] for d in _r31rep2["unconfirmed"]], _r31rep2["deferrals_matched"]), (["Exact Deferral Title"], []))
 check("R3.1: ...and merge_lanes exits 1", _merge_exit(_r31raw, os.path.join(_r31d, "rows.json")), 1)
 
+# ---- author fix round 3, item 2: capitalized words are not initials (2026-09-26) ----
+# 3-4 capitals counted as initials, so "Hao CHEN" read as the surname Hao.
+check_true("R3.2: 3-4 capitals with no vowel are initials",
+           all(common.is_initials(t) for t in ("JLK", "JLKM", "ŁS", "J", "JL", "DZN")))
+check_true("R3.2: ...and with a vowel they are words",
+           not any(common.is_initials(t) for t in ("CHEN", "WANG", "ZHAO", "KING", "ROUX", "ANNA", "MEER", "LEE")))
+check_true("R3.2: 'Hao CHEN' mismatches 'Hao J'", _mA("Hao CHEN", "Hao J") != [])
+for _ae, _aa in (("Hao CHEN", "Chen H"), ("Yang WANG", "Wang Y"), ("MARK KING", "King M"),
+                 ("van der Meer", "VAN DER MEER J"), ("de la Cruz", "DE LA CRUZ J")):
+    check(f"R3.2: {_ae!r} matches {_aa!r}", _mA(_ae, _aa), [])
+check_true("R3.2: 'Van, A.' mismatches 'VAN DER MEER J'", _mA("Van, A.", "VAN DER MEER J") != [])
+for _cin, _cout in (("J WANG", "WANG"), ("Y ZHAO", "ZHAO"), ("Smith JLKM", "Smith"), ("Hao CHEN", "CHEN")):
+    check(f"R3.2: claim_surname({_cin!r})", verify.claim_surname(_cin), _cout)
+check("R3.2: DataCite Personal 'Hao CHEN' -> 'Chen, H.'",
+      _c1_people([{"name": "Hao CHEN", "nameType": "Personal"}]), (["Chen, H."], []))
+_r32rows = merge_lanes.merge([
+    _lane("R1", [_p("R1-01", doi="10.1/r1", title="Another shared title", year=2021, au="Hao, J.")]),
+    _lane("R2", [_p("R2-01", doi="10.1/r2", title="Another shared title", year=2021, au="Hao CHEN")])])[0]
+check("R3.2: merge keeps 'Hao, J.' and 'Hao CHEN' apart", [r["ref"] for r in _r32rows], ["R1-01", "R2-01"])
+
+# (item 2 calibration: PubMed initials with only a Y, or no consonant, are initials)
+for _cin, _cout in (("Chou CYC", "Chou"), ("Ang GWY", "Ang"), ("Groen IIA", "Groen")):
+    check(f"R3.2: claim_surname({_cin!r})", verify.claim_surname(_cin), _cout)
+    check(f"R3.2: {_cout!r} matches {_cin!r}", _mA(_cout, _cin), [])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
