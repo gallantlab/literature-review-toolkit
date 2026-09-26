@@ -251,11 +251,11 @@ def rows_to_citations(rows, keyf=None):
         claim = any(r.get(k) for k in ("search_author", "search_year", "search_title"))
         p = common.parse_apa(apa)
         from_apa = {"title": p["title"] if p else "",
-                    "expect_first_author": common.lead_surname(apa) if apa else "",
+                    "expect_surname": common.lead_surname(apa) if apa else "",
                     "expect_year": str(p["year"]) if p else ""}
         if claim:
             c = {"title": r.get("search_title") or "",
-                 "expect_first_author": claim_surname(r.get("search_author")),
+                 "expect_first_author": (r.get("search_author") or "").strip(),
                  "expect_year": str(r.get("search_year") or "")}
             if r.get("canonical_at") and any(from_apa.values()):
                 c["alt_expect"] = from_apa
@@ -371,33 +371,57 @@ def _hyphen_parts(tok):
     return {p for p in tok.split("-") if len(p) >= 2} if "-" in tok else set()
 
 
-def _surname_tokens(name):
-    """The surname (claim_surname) of a claim or a record's first_author, as
-    tokens without nobiliary particles ("Van Essen DC" -> essen; "van den Heuvel
-    M" -> heuvel); a surname made only of particles ("Le") keeps them."""
-    toks = _name_tokens(claim_surname(name))
+def _core(surname):
+    """A surname's tokens without nobiliary particles ("van den Heuvel" -> heuvel);
+    one made only of particles ("Le") keeps them."""
+    toks = _name_tokens(surname)
     return [t for t in toks if t not in common.PARTICLES] or toks
 
 
+def _tok_agrees(a, t):
+    """Whole-word agreement, or a 2+ letter part of a hyphenated t ("hanna" / "andrews-hanna")."""
+    return a == t or a in _hyphen_parts(t)
+
+
+def surname_agrees(claim, record, claim_is_surname=False):
+    """True when the surname of `claim` agrees with the surname of `record`
+    (a first_author such as "van den Heuvel M"); None when the record has no
+    readable surname. Both are parsed by claim_surname, once -- unless
+    `claim_is_surname` (an apa-derived lead surname, used as-is) -- so given
+    names and initials never take part. The claim's first non-particle surname
+    word must agree with a word of the record's surname; any further claim
+    surname word ("Lambon Ralph", "Thomas Yeo") must appear in the record's name."""
+    c = _core(claim if claim_is_surname else claim_surname(claim))
+    r = _core(claim_surname(record))
+    if not c:
+        return True
+    if not r:
+        return None
+    full = _name_tokens(record)
+    return (any(_tok_agrees(c[0], t) for t in r)
+            and all(any(_tok_agrees(x, t) for t in full) for x in c[1:]))
+
+
 def _author_issue(c, rec, where=""):
-    # Surname against surname. Both sides go through claim_surname, so given
-    # names and initials never take part ("J. Smith" cannot match "Jones J" on
-    # the J, "Min" cannot match "Seung-Min Park"). The claim's first surname
-    # token that is not a particle must equal a token of the record's surname, or
-    # a 2+ letter part of a hyphenated one ("Hanna" / "Andrews-Hanna"). Whole
-    # words only: "Lee" does not match "Leeson", nor "Han" "Andrews-Hanna".
+    # Surname against surname (surname_agrees): "J. Smith" cannot match "Jones J"
+    # on the J, "Min" cannot match "Seung-Min Park", "Lee" cannot match "Leeson".
+    # A claim is either `expect_first_author` (what a search agent or a
+    # --citations file reported, parsed here once) or `expect_surname` (the lead
+    # surname of the row's apa, used as-is).
     # Calibrated on the same 2,474 OK verdicts as the title check, and on 3,042
     # search-agent claims against their rows' apa: no past OK verdict is flagged.
-    expect_t = _surname_tokens(c.get("expect_first_author"))
-    actual_t = _surname_tokens(rec.get("first_author"))
-    if expect_t and not actual_t and str(rec.get("first_author") or "").strip():
+    is_surname = bool(str(c.get("expect_surname") or "").strip())
+    claim = c.get("expect_surname") if is_surname else c.get("expect_first_author")
+    got = str(rec.get("first_author") or "")
+    if not str(claim or "").strip() or not got.strip():
+        return []
+    ok = surname_agrees(claim, got, is_surname)
+    if ok is None:
         # fail closed: a record author with no readable word cannot confirm the claim
         return [f"{where}first-author mismatch: could not read the record's first author "
-                f"'{rec['first_author']}' (expected '{c.get('expect_first_author')}')"]
-    if expect_t and actual_t and not any(expect_t[0] == t or expect_t[0] in _hyphen_parts(t)
-                                         for t in actual_t):
-        return [f"{where}first-author mismatch: expected '{c.get('expect_first_author')}', "
-                f"got '{rec['first_author']}'"]
+                f"'{got}' (expected '{claim}')"]
+    if not ok:
+        return [f"{where}first-author mismatch: expected '{claim}', got '{got}'"]
     return []
 
 
@@ -534,7 +558,8 @@ def verify_one(c, arxiv_results=None, arxiv_errored=None):
         return {"verdict": "MISMATCH", "found": found, "source": src,
                 "issues": [f"DOI {doi} does not resolve; {src} found '{(found.get('title') or '')[:80]}'"]}
 
-    if not any(str(c.get(k) or "").strip() for k in ("expect_first_author", "expect_year", "title")):
+    if not any(str(c.get(k) or "").strip()
+               for k in ("expect_first_author", "expect_surname", "expect_year", "title")):
         # Nothing to compare: the DOI resolves, which proves only that it exists.
         # Reporting that as OK is how a pre-canon table once passed with every
         # expectation blank (see rows_to_citations).

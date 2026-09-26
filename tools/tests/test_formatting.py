@@ -795,7 +795,7 @@ _ROW = {"ref": "A1", "apa": "Tang, J., & Huth, A. G. (2023). Semantic reconstruc
 check("rows_to_citations derives the verify input from rows.json",
       verify.rows_to_citations([_ROW]),
       [{"label": "A1", "doi": "10.1038/x", "arxiv": "2305.1", "title": "Semantic reconstruction",
-        "expect_first_author": "Tang", "expect_year": "2023"}])
+        "expect_surname": "Tang", "expect_year": "2023"}])
 check("rows_to_citations keeps a row with no DOI (title search still runs)",
       verify.rows_to_citations([{"ref": "B", "apa": "K, J. (1982). Old book. Pub."}])[0]["doi"], None)
 check("rows_to_papers derives the xref input", xref.rows_to_papers([_ROW]), [{"slug": "A1", "doi": "10.1038/x"}])
@@ -1630,13 +1630,14 @@ _pre = {"ref": "P1", "doi": "10.1/p", "apa": "", "search_author": "Amodei, D.",
 _c = verify.rows_to_citations([_pre])[0]
 check("rows_to_citations: pre-canon expectations come from search_*",
       (_c["expect_first_author"], _c["expect_year"], _c["title"]),
-      ("Amodei", "2016", "Concrete problems in AI safety"))
-check("rows_to_citations: 'D. Amodei' shape yields the surname",
-      verify.rows_to_citations([dict(_pre, search_author="D. Amodei")])[0]["expect_first_author"], "Amodei")
+      ("Amodei, D.", "2016", "Concrete problems in AI safety"))
+check("rows_to_citations: 'D. Amodei' shape yields the surname (parsed once, by the author check)",
+      verify.claim_surname(verify.rows_to_citations([dict(_pre, search_author="D. Amodei")])[0]
+                           ["expect_first_author"]), "Amodei")
 _canon = dict(_pre, apa="Amodei, D., & Olah, C. (2016). Concrete problems in AI safety. arXiv.",
               canonical_at="2026-09-25", search_author="Wrong, X.")
 check("rows_to_citations: a canonical row is checked against its apa too",
-      verify.rows_to_citations([_canon])[0]["alt_expect"]["expect_first_author"], "Amodei")
+      verify.rows_to_citations([_canon])[0]["alt_expect"]["expect_surname"], "Amodei")
 with _patched(verify, lookup_crossref=lambda d: {"title": "T", "year": "2020",
                                                    "first_author": "Smith J", "journal": "J"}):
     _r = verify.verify_one({"label": "N", "doi": "10.1/n"})
@@ -2853,9 +2854,9 @@ _i2row = {"ref": "U1", "doi": "10.1/u1", "search_author": "Amodei, D.", "search_
           "apa": "Amodei, D., & Olah, C. (2016). Concrete problems in AI safety. arXiv."}
 _i2c = verify.rows_to_citations([_i2row])[0]
 check("a canonical row with a search claim is checked against the claim",
-      (_i2c["expect_first_author"], _i2c["title"]), ("Amodei", "Concrete problems in AI safety"))
+      (_i2c["expect_first_author"], _i2c["title"]), ("Amodei, D.", "Concrete problems in AI safety"))
 check("...and against its canonical apa as alt_expect",
-      (_i2c["alt_expect"]["expect_first_author"], _i2c["alt_expect"]["expect_year"]), ("Amodei", "2016"))
+      (_i2c["alt_expect"]["expect_surname"], _i2c["alt_expect"]["expect_year"]), ("Amodei", "2016"))
 with _patched(verify, lookup_crossref=lambda d: dict(_i2rec)):
     check("both claims agree with the record -> OK", verify.verify_one(dict(_i2c))["verdict"], "OK")
     _r = verify.verify_one(verify.rows_to_citations([dict(_i2row, apa="Zhou, Q. (2001). Retinal circuits. J.")])[0])
@@ -4522,6 +4523,35 @@ check("R2.2: a record author with no readable word is reported, not skipped",
       _mA("Smith", "( — )"), ["first-author mismatch: could not read the record's first author '( — )' "
                               "(expected 'Smith')"])
 check("R2.2: a record with no first author at all is still not checked", _mA("Smith", ""), [])
+
+# ---- author fix round 2, item 3: the claim is parsed once (2026-09-26) ----
+# rows_to_citations applied claim_surname and _author_issue parsed it again, so
+# "Dupré la Tour" keyed on "Tour" and "Lambon Ralph" on "Ralph".
+def _r3(search_author, apa, record):
+    """(claim-path issues, apa-path issues) for a canonical row with a claim."""
+    c = verify.rows_to_citations([{"ref": "R3", "doi": "10.1/r3", "search_author": search_author,
+                                   "apa": apa, "canonical_at": "2026-09-26"}], "ref")[0]
+    rec = {"first_author": record}
+    return verify._author_issue(c, rec), verify._author_issue(dict(c, **c["alt_expect"]), rec)
+
+
+_r3c = verify.rows_to_citations([{"ref": "R3", "doi": "10.1/r3", "search_author": "Dupré la Tour T",
+                                  "apa": "Dupré la Tour, T. (2020). T. V.", "canonical_at": "x"}], "ref")[0]
+check("R2.3: a claim carries the raw search_author; the apa path an expect_surname used as-is",
+      (_r3c["expect_first_author"], _r3c["alt_expect"].get("expect_surname"),
+       "expect_first_author" in _r3c["alt_expect"]), ("Dupré la Tour T", "Dupré la Tour", False))
+for _sa, _apa, _rec in (("Dupré la Tour T", "Dupré la Tour, T. (2020). T. V.", "Tour X"),
+                        ("Lambon Ralph MA", "Lambon Ralph, M. A. (2020). T. V.", "Ralph J"),
+                        ("Thomas Yeo BT", "Thomas Yeo, B. T. (2020). T. V.", "Thomas R")):
+    _i = _r3(_sa, _apa, _rec)
+    check_true(f"R2.3: {_sa!r} vs {_rec!r} mismatches on the claim path and the apa path",
+               _i[0] != [] and _i[1] != [], str(_i))
+check("R2.3: ...and the right record matches on both", _r3("Dupré la Tour T", "Dupré la Tour, T. (2020). T. V.",
+                                                          "Dupré la Tour T"), ([], []))
+check("R2.3: a --citations input's expect_first_author is raw and parsed once",
+      verify._author_issue({"expect_first_author": "Lambon Ralph MA"}, {"first_author": "Lambon Ralph M"}), [])
+check_true("R2.3: ...so 'Lambon Ralph MA' does not match 'Ralph J'",
+           verify._author_issue({"expect_first_author": "Lambon Ralph MA"}, {"first_author": "Ralph J"}) != [])
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
