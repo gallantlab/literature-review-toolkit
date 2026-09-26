@@ -18,9 +18,10 @@ Input format (JSON list):
 Run:  python3 xref.py --papers list.json --out xref.json --min-cites 3
 Or:   python3 xref.py --rows rows.json --out xref.json     # slug = row key, DOI from link
 
-arXiv DOIs (10.48550/...) are registered at DataCite, not CrossRef, so they have
-no CrossRef reference list and are skipped without a request. A fetch that fails
-transiently gets a second try at the end of the run, after --retry-wait.
+arXiv papers' reference lists come from Semantic Scholar (CrossRef has none); so
+do those of papers whose CrossRef record has no list. Set S2_API_KEY. A CrossRef
+fetch that fails transiently gets a second try at the end of the run, after
+--retry-wait.
 """
 import argparse
 import os
@@ -106,45 +107,118 @@ def pdf_refs(pdf_path):
     return out
 
 
+S2_REF_FIELDS = "paperId,referenceCount,references.externalIds,references.title"
+
+
+def s2_id_for(doi):
+    m = common.ARXIV_DOI.match(doi)
+    return f"ARXIV:{common.norm_arxiv(m.group(1))}" if m else f"DOI:{doi}"
+
+
+def _ref_doi(ext):
+    """A cited paper's DOI in the form corpus DOIs take (arXiv as 10.48550/arxiv.<id>)."""
+    ext = ext or {}
+    if ext.get("DOI"):
+        return ext["DOI"].lower()
+    if ext.get("ArXiv"):
+        return f"10.48550/arxiv.{ext['ArXiv']}".lower()
+    return ""
+
+
+def _s2_ref(r):
+    return {"doi": _ref_doi((r or {}).get("externalIds")), "author": "", "year": "",
+            "title": (r or {}).get("title") or "", "journal": "", "raw": ""}
+
+
+def _s2_all_refs(pid):
+    refs, offset = [], 0
+    while True:
+        page = common.s2_request(f"paper/{urllib.parse.quote(pid, safe=':')}/references"
+                                 f"?fields=externalIds,title&limit=1000&offset={offset}")
+        refs += [x.get("citedPaper") for x in page.get("data") or []]
+        if "next" not in page:
+            return refs
+        offset = page["next"]
+
+
+def s2_refs(dois, chunk=100):
+    """Reference lists from Semantic Scholar -> {doi: [refs] | None}. None = the
+    fetch could not complete; [] = S2 has no such paper or no list (complete)."""
+    out = {}
+    for i in range(0, len(dois), chunk):
+        part = dois[i:i + chunk]
+        try:
+            res = common.s2_request(f"paper/batch?fields={S2_REF_FIELDS}",
+                                    {"ids": [s2_id_for(d) for d in part]})
+        except Exception as e:
+            print(f"  S2 references batch {i}: {type(e).__name__}: {e}", file=sys.stderr)
+            out.update({d: None for d in part})
+            continue
+        for d, p in zip(part, res):
+            if not p:
+                out[d] = []
+                continue
+            refs = p.get("references") or []
+            if (p.get("referenceCount") or 0) > len(refs) and p.get("paperId"):
+                try:
+                    refs = _s2_all_refs(p["paperId"])
+                except Exception as e:
+                    print(f"  S2 references {d}: {type(e).__name__}: {e}", file=sys.stderr)
+                    out[d] = None
+                    continue
+            out[d] = [_s2_ref(r) for r in refs if r]
+    return out
+
+
 def fetch_all(papers, sleep=0.4, retry_wait=60.0):
     """Reference lists for every paper -> ({slug: refs}, [slugs still incomplete]).
 
-    Pauses only after a paper that made a request, and gives each incomplete
-    fetch one more try after `retry_wait` before reporting it."""
-    all_refs, incomplete = {}, []
-
-    def one(p):
+    CrossRef first for journal DOIs (one more try after `retry_wait` for an
+    incomplete fetch); Semantic Scholar, batched, for arXiv DOIs and for any
+    paper CrossRef holds no reference list for."""
+    all_refs, incomplete, to_s2 = {}, [], []
+    for p in papers:
         doi = p.get("doi")
         if doi and common.ARXIV_DOI.match(doi):
-            return [], "arxiv-doi"          # DataCite DOI: CrossRef has no record, a certain 404
-        if doi:
-            return crossref_refs(doi), "crossref"
-        return pdf_refs(p.get("pdf")), "pdf"
-
-    for p in papers:
+            to_s2.append(p)
+            continue
         before = common.request_count()
-        refs, src = one(p)
-        if refs is None:          # fetch did not complete — not the same as "cites nothing"
+        refs = crossref_refs(doi) if doi else pdf_refs(p.get("pdf"))
+        if refs is None:
             incomplete.append(p)
             refs = []
-        print(f"  {p['slug']:50s} {len(refs):>4d} refs ({src})", file=sys.stderr)
+        elif doi and not refs:
+            to_s2.append(p)
+        print(f"  {p['slug']:50s} {len(refs):>4d} refs ({'crossref' if doi else 'pdf'})", file=sys.stderr)
         all_refs[p["slug"]] = refs
         if common.request_count() != before:
             time.sleep(sleep)
     if incomplete:
-        print(f"  [retry] {len(incomplete)} incomplete fetch(es); cooling down {retry_wait:.0f}s, "
-              "then one more try…", file=sys.stderr)
+        print(f"  [retry] {len(incomplete)} incomplete CrossRef fetch(es); cooling down {retry_wait:.0f}s…",
+              file=sys.stderr)
         time.sleep(retry_wait)
         still = []
         for p in incomplete:
-            refs, src = one(p)
+            refs = crossref_refs(p["doi"])
             if refs is None:
                 still.append(p)
-                refs = []
-            print(f"  {p['slug']:50s} {len(refs):>4d} refs ({src}, retry)", file=sys.stderr)
-            all_refs[p["slug"]] = refs
+            elif not refs:
+                to_s2.append(p)
+            all_refs[p["slug"]] = refs or []
             time.sleep(sleep)
         incomplete = still
+    if to_s2:
+        got = s2_refs([p["doi"] for p in to_s2])
+        for p in to_s2:
+            refs = got.get(p["doi"])
+            if refs is None:
+                incomplete.append(p)
+                all_refs.setdefault(p["slug"], [])
+                continue
+            if refs:
+                all_refs[p["slug"]] = refs
+            all_refs.setdefault(p["slug"], [])
+            print(f"  {p['slug']:50s} {len(all_refs[p['slug']]):>4d} refs (s2)", file=sys.stderr)
     return all_refs, [p["slug"] for p in incomplete]
 
 
@@ -176,6 +250,8 @@ def main():
                     help="pause after each paper that made a request (default 0.4 s)")
     ap.add_argument("--retry-wait", type=float, default=60.0,
                     help="cool-down before incomplete fetches get their second try (default 60 s)")
+    ap.add_argument("--allow-incomplete", action="store_true",
+                    help="exit 0 even when some reference lists could not be fetched (said in the output)")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"),
                     help="Contact email for CrossRef User-Agent (required; "
                          "or set LITREVIEW_EMAIL env var)")
@@ -269,7 +345,7 @@ def main():
               f"(throttle/network) even after a retry: {', '.join(incomplete)}\n"
               "Their papers contributed ZERO references above — the frequency table and "
               "any --internal-out in-degrees are undercounted. Re-run.", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(0 if args.allow_incomplete else 1)
 
 
 if __name__ == "__main__":
