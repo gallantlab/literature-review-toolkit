@@ -337,14 +337,12 @@ title_agrees = common.title_agrees
 TITLE_MIN = 0.5
 
 
-_ARTICLES = ("the", "a", "an")
-
-
 def _name_tokens(name):
-    """Lowercased, accent-folded word tokens of a name, a leading article
-    dropped ("The pandas development team" -> pandas, development, team)."""
+    """Lowercased, accent-folded word tokens of a name, a leading "the" dropped
+    ("The pandas development team" -> pandas, development, team). Only "the":
+    "An" and "A" are real surnames ("An J"), and a group name opens with "The"."""
     toks = re.findall(r"[\w'-]+", common.fold(str(name or "")))
-    return toks[1:] if len(toks) > 1 and toks[0] in _ARTICLES else toks
+    return toks[1:] if len(toks) > 1 and toks[0] == "the" else toks
 
 
 def _surname_agrees(a, b):
@@ -362,10 +360,10 @@ def _drop_initials(toks):
 
 def _author_issue(c, rec, where=""):
     # Whole-token surname match ("Tang" vs "Tang J"), either way round, with a
-    # leading article ignored and initials dropped from both sides (so "J. Smith"
-    # cannot match "Jones J" on the "j"). Substring containment once let a group creator
-    # "The pandas development team" match "Matthews" (it contains "the"), and
-    # "Lee" match "Leeson".
+    # leading "the" ignored and initials dropped from both sides (so "J. Smith"
+    # cannot match "Jones J" on the "j"). Substring containment once let a group
+    # creator "The pandas development team" match "Matthews" (it contains "the"),
+    # and "Lee" match "Leeson".
     expect_t = _drop_initials(_name_tokens(c.get("expect_first_author")))
     actual_t = _drop_initials(_name_tokens(rec.get("first_author")))
     if (expect_t and actual_t and not _surname_agrees(expect_t, actual_t)

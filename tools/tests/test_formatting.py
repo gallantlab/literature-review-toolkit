@@ -4386,6 +4386,16 @@ check("A4: 'J. Smith' matches the record 'Smith J'", _m8("J. Smith", "Smith J"),
 check("A4: a one-letter surname still compares (nothing else is left on that side)", _m8("O", "O K"), [])
 check_true("A4: ...and still mismatches another one-letter surname", _m8("O", "Q K") != [])
 
+# ---- author fix 1: the surname "An" is not an article (2026-09-26) ----
+# _name_tokens dropped a leading "a"/"an" as an article, so the record "An J"
+# lost its surname and mismatched a correct claim "An".
+check("A1: 'An' matches 'An J'", _m8("An", "An J"), [])
+check("A1: 'A' matches 'A J'", _m8("A", "A J"), [])
+check("A1: 'An' matches the record 'An JH'", _m8("An", "An JH"), [])
+check_true("A1: 'The pandas development team' still does not match 'Matthews'",
+           _m8("The pandas development team", "Matthews") != [])
+check("A1: 'Tang' still matches 'Tang J'", _m8("Tang", "Tang J"), [])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
