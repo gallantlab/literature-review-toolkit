@@ -145,14 +145,20 @@ def ingest(rows, keyf, results, abstracts, manifest, asof):
     for res in results:
         k, v = res.get("ref"), res.get("verdict")
         seen.add(k)
+        row = by.get(k)
+        if row is None or k not in manifest["refs"]:
+            # Checked before the duplicate check: a ref outside the manifest was
+            # never recognized, so that is what to say -- even when it also
+            # appears more than once in `results`, which "more than one result"
+            # would misreport as a ref this audit does know about.
+            if k not in reported:
+                errors.append(f"{k}: not in this summary audit")
+                reported.add(k)
+            continue
         if k in dupes:
             if k not in reported:
                 errors.append(f"{k}: more than one result; keep one")
                 reported.add(k)
-            continue
-        row = by.get(k)
-        if row is None or k not in manifest["refs"]:
-            errors.append(f"{k}: not in this summary audit")
             continue
         if common.summary_sha(row.get("summary")) != manifest["sha"].get(k):
             errors.append(f"{k}: summary changed since --prepare; re-run --prepare")

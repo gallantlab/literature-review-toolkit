@@ -2228,6 +2228,15 @@ _n4, _err4 = summary_audit.ingest(_S4, "ref", [{"ref": "A", "verdict": "supporte
 check("a duplicate result for the same ref stamps neither and is reported once",
       (_n4, "summary_check" in _S4[0], _err4), (0, False, ["A: more than one result; keep one"]))
 
+# a ref that is BOTH a duplicate and outside the manifest reports "not in this
+# summary audit" -- not "more than one result", which would say the ref was
+# recognized when it was not.
+_man5 = {"refs": [], "sha": {}, "no_abstract": [], "ids": {}, "abstract_sha": {}}
+_n5, _err5 = summary_audit.ingest([], "ref", [{"ref": "Z", "verdict": "supported"},
+                                              {"ref": "Z", "verdict": "supported"}],
+                                  {}, _man5, "2026-09-26")
+check("a duplicate ref outside the manifest reports 'not in this summary audit' first",
+      _err5, ["Z: not in this summary audit"])
 
 # ---- lane schema 2 in the search template (2026-09-26) ---------------------
 with open(os.path.join(os.path.dirname(common.__file__), "search_prompt_template.md"), encoding="utf-8") as _fh:
