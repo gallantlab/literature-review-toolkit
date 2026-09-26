@@ -370,8 +370,12 @@ takes the surname out of both the claim and the record the same way ("Smith J",
 match "Jones J", nor "Min" "Seung-Min Park". The claim's surname must be a whole
 word of the record's, or one part of a hyphenated one ("Heuvel" / "van den Heuvel",
 "Hanna" / "Andrews-Hanna", but not "Han"), and a particle alone is not enough, so
-"Van Essen" does not match "Van Dijk". A group such as "The pandas development
-team" is compared whole, and "An" stays a surname.
+"Van Essen" does not match "Van Dijk". Every word of a compound claim surname must
+appear in the record's name, so "Lambon Ralph" does not match "Ralph J". Initials
+of any script count as initials ("Nowak Ł" does not match "Kowalski Ł"). A group
+author ("ATLAS Collaboration", "The pandas development team") is compared whole,
+"An" stays a surname, and a record author with no readable word fails the check.
+merge_lanes.py uses the same comparison for its duplicate and deferral checks.
 
 | Verdict | Meaning | Action |
 |---|---|---|

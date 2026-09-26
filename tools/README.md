@@ -56,7 +56,8 @@ python3 tools/verify.py --citations cits.json --out report.json       # from a c
 **Input.** With `--rows`, every field is derived from `rows.json`: the key from
 `ref`, the DOI from `link`, and the expected author, year and title from `apa`.
 A `--citations` list has one object per item: `{label, pmcid?, pmid?, doi?,
-arxiv?, title?, expect_first_author?, expect_year?}`.
+arxiv?, title?, expect_first_author?, expect_year?}`, where `expect_first_author`
+is the author as reported, in any shape ("Tang J", "J. Tang", "Tang, J.").
 
 **Lookup order.** arXiv papers (an `arxiv` id or a `10.48550/arXiv.<id>` DOI) go
 to the arXiv API, fetched in batches because per-paper calls trigger a temporary
@@ -67,10 +68,15 @@ there counts the same as resolving in CrossRef, and a 404 from both registries i
 "does not resolve" even when the DataCite fetch fell back to curl. The
 first-author check compares surnames: it takes the surname out of both the claim
 and the record ("Smith J", "J. Smith", "Smith, J." and an arXiv "John Smith" all
-give Smith), ignores initials and given names, and needs the claim's surname to
-match a whole word of the record's ("Tang" matches "Tang J", "Heuvel" matches "van
-den Heuvel M", "Hanna" matches "Andrews-Hanna J"; "Van Essen" does not match "Van
-Dijk", nor "Min" "Seung-Min Park").
+give Smith; initials of any script, "Ł" or "И", count as initials), ignores
+initials and given names, and needs the claim's surname to match a whole word of
+the record's ("Tang" matches "Tang J", "Heuvel" matches "van den Heuvel M", "Hanna"
+matches "Andrews-Hanna J"; "Van Essen" does not match "Van Dijk", nor "Min"
+"Seung-Min Park", nor "Lambon Ralph" "Ralph J"). A group author ("ATLAS
+Collaboration", "Allen Institute for Brain Science") is compared whole, and a
+record author with no readable word is a mismatch, not a skipped check.
+merge_lanes.py uses the same comparison to tell a duplicate from two papers that
+share a title.
 
 **Verdicts.**
 

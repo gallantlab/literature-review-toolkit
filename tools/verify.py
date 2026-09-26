@@ -37,7 +37,7 @@ Input format (JSON list of dicts):
    "doi":   "10.1038/s41593-...", # optional (incl. arXiv DOIs 10.48550/arXiv.X)
    "arxiv": "2305.18274",         # optional; bare arXiv id (else parsed from doi)
    "title": "Semantic reconstruction ...",  # optional, used as fallback search
-   "expect_first_author": "Tang J",  # optional; if given, will be checked
+   "expect_first_author": "Tang J",  # optional; as reported (any shape), checked by surname
    "expect_year": "2023"             # optional; if given, will be checked
   },
   ...
@@ -416,8 +416,10 @@ def _author_issue(c, rec, where=""):
     # A claim is either `expect_first_author` (what a search agent or a
     # --citations file reported, parsed here once) or `expect_surname` (the lead
     # surname of the row's apa, used as-is).
-    # Calibrated on the same 2,474 OK verdicts as the title check, and on 3,042
-    # search-agent claims against their rows' apa: no past OK verdict is flagged.
+    # Calibrated on the same OK verdicts as the title check, with each claim
+    # rebuilt as rows_to_citations now builds it: 4 of 2,471 are flagged, all a
+    # compound surname the record shortened ("Quian Quiroga" / "Quiroga R"), which
+    # a human confirms; 3 of 3,042 search-agent claims against their rows' apa.
     is_surname = bool(str(c.get("expect_surname") or "").strip())
     claim = c.get("expect_surname") if is_surname else c.get("expect_first_author")
     got = str(rec.get("first_author") or "")

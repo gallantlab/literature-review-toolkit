@@ -316,14 +316,23 @@ five more wrote `make_verify_input.py` because the `apa`-only path verified noth
 
 What a verdict checks: the first-author **surname**, surname against surname. The
 surname is taken out of both the claim and the record the same way ("Smith J",
-"Smith JL", "J. Smith", "Smith, J.", "LI J", "Van Essen DC", "Hagler DJ Jr"; an
-arXiv author "Aaron van den Oord" is read as "van den Oord"), so initials and given
+"Smith JL", "J. Smith", "Smith, J.", "LI J", "Van Essen DC", "Hagler DJ Jr",
+"Kowalski Ł"; an arXiv author "Aaron van den Oord" is read as "van den Oord"), and
+the claim is parsed once (a search agent's `search_author` as reported; on a
+canonical row, also the apa's lead surname as it stands). So initials and given
 names never take part: "J. Smith" cannot match "Jones J", "Ma" cannot match "Smith
-MA", "Min" cannot match "Seung-Min Park". The claim's first surname word that is
-not a particle must be a whole word of the record's surname, or one part of a
-hyphenated one ("Heuvel" / "van den Heuvel", "Hanna" / "Andrews-Hanna"; not "Han",
-and "Van Essen" does not match "Van Dijk"). A group name opening with "The" is
-compared whole; "An" is a surname, not an article. Then the year
+MA", "Min" cannot match "Seung-Min Park", "Nowak Ł" cannot match "Kowalski Ł". The
+claim's first surname word that is not a particle must be a whole word of the
+record's surname, or one part of a hyphenated one ("Heuvel" / "van den Heuvel",
+"Hanna" / "Andrews-Hanna"; not "Han", and "Van Essen" does not match "Van Dijk"),
+and any further word of a compound claim surname must appear in the record's name
+("Lambon Ralph" does not match "Ralph J"; a record that shortened a compound
+surname, "Quian Quiroga" to "Quiroga", is a mismatch to confirm by hand). A group
+author (a name with Collaboration, Consortium, Institute, Laboratory, Team, ... in
+it, or opening with "The") is compared whole, so "CMS Collaboration" does not match
+"ATLAS Collaboration"; "An" is a surname, not an article; a record author with no
+readable word fails the check. merge_lanes.py uses the same comparison for its
+duplicate and deferral checks. Then the year
 (±1, since a preprint and its version of record differ), and the **title**
 (agreement ≥ 0.5). Title agreement requires the two titles to actually match, not
 merely one to be *contained in* the other — a short claim such as "Deep learning"
