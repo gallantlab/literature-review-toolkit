@@ -62,7 +62,9 @@ in `tools/README.md` and `PLAYBOOK.md`.
   re-checked with `--retry-from`); `NOT-FOUND` means every lookup completed and
   nothing matched (likely fabricated); `UNCHECKED` means the row carried no claim,
   so a resolving DOI proved nothing. A match needs the first author, the year
-  (±1) and the title to agree. arXiv ids are fetched in batches so rate limits
+  (±1) and the title to agree; a journal DOI is verified only by its own CrossRef
+  record, so one that does not resolve is a MISMATCH even when a PubMed or title
+  search finds the claimed paper. arXiv ids are fetched in batches so rate limits
   cannot produce false NOT-FOUNDs. Accepts a citation list or `rows.json`
   (`--rows`). `--rows` stamps each row as `verified` (verdict, ids, source, date);
   `--override REF --reason "..."` records a cleared false alarm, refused without an

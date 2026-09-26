@@ -311,7 +311,13 @@ What a verdict checks: the first-author surname (fuzzy containment), the year
 (similarity ≥ 0.5, which on 2,473 past OK verdicts flagged exactly one: a preprint
 retitled on publication). A row with **both** an arXiv id and a journal DOI has
 both checked, because canon cites the journal DOI: a wrong DOI beside a right
-arXiv id is a MISMATCH.
+arXiv id is a MISMATCH. The same holds for PubMed and PMC ids: **a journal DOI is
+verified only by its own CrossRef record.** A row with a PMID/PMCID and a DOI is
+checked against the DOI's record; a DOI that does not resolve is a MISMATCH ("DOI
+... does not resolve; pmid found ...") even when a PubMed or title search finds the
+claimed paper — a real title with a fabricated DOI once verified OK that way. Canon
+reports a DOI CrossRef does not have (404) as "DOI does not exist", not as a fetch
+failure to retry.
 
 **Retries are built in.** An ERROR row gets a second try at the end of the run
 after a 60 s cool-down (`--retry-wait`), with smaller arXiv batches. Anything still

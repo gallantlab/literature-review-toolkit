@@ -350,10 +350,24 @@ def verify_one(c, arxiv_results=None, arxiv_errored=None):
         if journal is None:
             return {"verdict": "MISMATCH", "found": found, "source": "arxiv",
                     "issues": [f"journal DOI {doi} not found in CrossRef (the arXiv id resolves)"]}
+    doi_missing = False      # the row's journal DOI is a clean miss in CrossRef
+    if not found and doi and not is_arxiv_doi:
+        # A journal DOI is what canon prints, so only its OWN record can verify
+        # it. Checked first, and a PMC/PMID/title hit never stands in for it: a
+        # fabricated DOI attached to a real title once verified OK that way.
+        try:
+            found = lookup_crossref(doi)
+        except Exception as e:
+            if not _is_transient(e):
+                raise
+            return {"verdict": "ERROR", "found": None, "source": None,
+                    "issues": ["DOI lookup failed (rate-limit/network) — re-run to verify"]}
+        if found:
+            src = "doi"
+        else:
+            doi_missing = True
     if not found:
-        for fn, key in [(lookup_pmc, "pmcid"), (lookup_pubmed_id, "pmid"), (lookup_crossref, "doi")]:
-            if key == "doi" and is_arxiv_doi:
-                continue     # CrossRef has no 10.48550 DOIs: a guaranteed 404
+        for fn, key in [(lookup_pmc, "pmcid"), (lookup_pubmed_id, "pmid")]:
             if c.get(key):
                 try:
                     r = fn(c[key])
@@ -380,6 +394,10 @@ def verify_one(c, arxiv_results=None, arxiv_errored=None):
             return {"verdict": "ERROR", "found": None, "source": None,
                     "issues": ["lookup failed (rate-limit/network) — re-run to verify"]}
         return {"verdict": "NOT-FOUND", "found": None, "source": None}
+
+    if doi_missing:
+        return {"verdict": "MISMATCH", "found": found, "source": src,
+                "issues": [f"DOI {doi} does not resolve; {src} found '{(found.get('title') or '')[:80]}'"]}
 
     if not any(str(c.get(k) or "").strip() for k in ("expect_first_author", "expect_year", "title")):
         # Nothing to compare: the DOI resolves, which proves only that it exists.

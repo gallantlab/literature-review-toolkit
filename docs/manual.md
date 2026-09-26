@@ -353,7 +353,9 @@ Checks every citation against PubMed, PMC, CrossRef and arXiv, and exits 0 only
 when every verdict is `OK`. Before canon, the claim it checks is what the search
 agent reported, kept on each row as `search_author`, `search_year` and
 `search_title`; after canon it is the canonical `apa`. A row with both an arXiv id
-and a journal DOI has both checked.
+and a journal DOI has both checked. A journal DOI is verified only by its own
+CrossRef record: a DOI that does not resolve is a `MISMATCH`, even when a PubMed
+or title search finds the claimed paper.
 
 | Verdict | Meaning | Action |
 |---|---|---|

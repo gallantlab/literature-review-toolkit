@@ -37,6 +37,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 
 import candidates
 import common
@@ -118,6 +119,11 @@ def canonical(row, arxiv_cache=None):
             r = crossref(doi, fv)
         else:
             return None
+    except urllib.error.HTTPError as e:
+        if e.code == 404 and (journal_doi or not aid):
+            # CrossRef has no such DOI: not a fetch to retry, a reference to fix
+            return {"error": "DOI does not exist (404)", "source": "missing"}
+        return {"error": f"{type(e).__name__}: {e}", "source": "error"}
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}", "source": "error"}
     if r and doi:
@@ -495,6 +501,7 @@ def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None):
     arXiv-routed rows are prefetched in batches first, so they cost no request
     and no pause of their own; a row that fetch-fails gets one more try after
     `retry_wait`. Returns {"rebuilt": n, "failed": [keys still failing],
+    "missing": [keys whose DOI CrossRef does not have (404; not retried)],
     "kept": [keys whose source had no usable record, so the old apa stayed],
     "unverified": [keys not verified for their current DOI/arxiv id, so left
     un-rebuilt]}."""
@@ -505,7 +512,7 @@ def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None):
     # the audit then fails it — canon never prints a wrong paper beautifully.
     unverified = [r.get(keyf, "?") for r in targets if not common.verified_ok(r)]
     targets = [r for r in targets if common.verified_ok(r)]
-    rebuilt, failed, kept = 0, [], []
+    rebuilt, failed, kept, missing = 0, [], [], []
 
     def one_pass(batch, chunk):
         nonlocal rebuilt
@@ -522,6 +529,8 @@ def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None):
                     r["link"] = res["link"]
                 stamp_canonical(r, asof)
                 rebuilt += 1
+            elif res and res.get("source") == "missing":
+                missing.append(k)
             elif res and res.get("error"):
                 print(f"  [fetch-fail] {k}: {res['error']}", file=sys.stderr)
                 bad.append(r)
@@ -538,7 +547,7 @@ def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None):
         time.sleep(retry_wait)
         bad = one_pass(bad, 25)
     failed = [r.get(keyf, "?") for r in bad]
-    return {"rebuilt": rebuilt, "failed": failed, "kept": kept, "unverified": unverified}
+    return {"rebuilt": rebuilt, "failed": failed, "missing": missing, "kept": kept, "unverified": unverified}
 
 
 def main():
@@ -581,7 +590,7 @@ def main():
         if missing:
             ap.error(f"--only names keys not in {args.rows}: {', '.join(sorted(missing))}")
     repaired, rebuilt = {}, 0
-    result = {"rebuilt": 0, "failed": [], "kept": [], "unverified": []}
+    result = {"rebuilt": 0, "failed": [], "missing": [], "kept": [], "unverified": []}
     if not args.repair and not args.audit and not args.list_acks:
         result = canon_rows(rows, keyf, args.asof, sleep=args.sleep,
                             retry_wait=args.retry_wait, only=only)
@@ -616,11 +625,14 @@ def main():
     for k in result["failed"]:
         print(f"  ✗ {k}: fetch failed twice — NOT rebuilt, its apa is not canonical; "
               f"re-run with --only {k}")
+    for k in result["missing"]:
+        print(f"  ✗ {k}: DOI does not exist (CrossRef 404) — NOT rebuilt; fix or drop the DOI, "
+              "then re-verify")
     for k in result["unverified"]:
         print(f"  ✗ {k}: not verified for its current DOI/arXiv id — NOT rebuilt. Run "
               "verify.py --rows first, or clear a false alarm with verify.py --override")
     print_report(report, len(rows))
-    if report["failed"] or result["failed"] or result["unverified"]:
+    if report["failed"] or result["failed"] or result["missing"] or result["unverified"]:
         sys.exit(1)
     print("✓ all references pass the audit")
 

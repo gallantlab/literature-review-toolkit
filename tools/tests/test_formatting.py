@@ -901,13 +901,15 @@ _r = verify.verify_one({"label": "E15", "doi": "10.1364/josaa.2.000284",
                         "title": "Spatiotemporal energy models for the perception of motion",
                         "expect_first_author": "Adelson", "expect_year": "1985"})
 check("throttled DOI lookup + unrelated title hit -> ERROR, not MISMATCH", _r["verdict"], "ERROR")
-# ...but a title-search hit that DOES match the claim is still accepted as OK.
+# ...and a title-search hit that DOES match the claim is not OK either: only the DOI's
+# own record can verify the DOI (final fixes I1), so a throttled DOI lookup is re-run.
 verify.lookup_pubmed_title = lambda t: {"title": "Spatiotemporal energy models for the perception of motion",
                                         "year": "1985", "first_author": "Adelson EH", "journal": "JOSA A"}
 _r = verify.verify_one({"label": "E15", "doi": "10.1364/josaa.2.000284",
                         "title": "Spatiotemporal energy models for the perception of motion",
                         "expect_first_author": "Adelson", "expect_year": "1985"})
-check("throttled DOI lookup + matching title hit -> OK", _r["verdict"], "OK")
+check("throttled DOI lookup + matching title hit -> ERROR (the DOI itself is unchecked)",
+      _r["verdict"], "ERROR")
 verify.lookup_crossref, verify.lookup_pubmed_title = _orig_cr, _orig_pt
 
 # ---- two deposit defects that shipped through the gate on a 588-row corpus ------
@@ -2489,6 +2491,58 @@ check("find_doi rejects a containment-only title match",
       handcheck.find_doi({"ref": "B", "search_title": "Deep learning", "search_year": 2015}, (_c2dl,)), [])
 check_true("the search template requires first_author and year on deferrals",
            "first_author` and `year` are required" in _TPL)
+
+# ---- final fixes I1: a fabricated DOI with a real title is not OK (2026-09-25) -----
+_i1rec = {"title": "Spatiotemporal energy models for the perception of motion", "year": "1985",
+          "first_author": "Adelson EH", "journal": "JOSA A"}
+_i1c = {"label": "F", "doi": "10.9/fabricated", "title": _i1rec["title"],
+        "expect_first_author": "Adelson", "expect_year": "1985"}
+with _patched(verify, lookup_crossref=lambda d: None, lookup_pubmed_title=lambda t: dict(_i1rec)):
+    _r = verify.verify_one(dict(_i1c))
+check("a DOI that does not resolve + a title-search hit is MISMATCH, not OK", _r["verdict"], "MISMATCH")
+check_true("...naming the DOI that does not resolve",
+           any("DOI 10.9/fabricated does not resolve; title-search found" in i for i in _r["issues"]), str(_r))
+with _patched(verify, lookup_crossref=lambda d: None, lookup_pubmed_id=lambda i: dict(_i1rec),
+              lookup_pubmed_title=lambda t: None):
+    _r = verify.verify_one(dict(_i1c, pmid="123"))
+check("a DOI that does not resolve + a PMID hit is MISMATCH", _r["verdict"], "MISMATCH")
+check_true("...naming the PMID source", any("does not resolve; pmid found" in i for i in _r["issues"]), str(_r))
+_i1other = dict(_i1rec, first_author="Zhou Q", title="An unrelated paper on retinal circuits")
+with _patched(verify, lookup_crossref=lambda d: dict(_i1other), lookup_pubmed_id=lambda i: dict(_i1rec)):
+    _r = verify.verify_one(dict(_i1c, pmid="123"))
+check("with a PMID and a DOI, the claim is checked against the DOI record",
+      (_r["verdict"], _r["source"]), ("MISMATCH", "doi"))
+with _patched(verify, lookup_crossref=lambda d: dict(_i1rec), lookup_pubmed_id=lambda i: dict(_i1other)):
+    _r = verify.verify_one(dict(_i1c, pmid="123"))
+check("a PMID row whose DOI resolves and matches is OK from the DOI", (_r["verdict"], _r["source"]),
+      ("OK", "doi"))
+
+
+def _i1_404(doi, fv=""):
+    raise urllib.error.HTTPError("u", 404, "Not Found", {}, None)
+
+
+with _patched(common, crossref_work=_i1_404):
+    check("canonical: a CrossRef 404 is a missing DOI, not a fetch error",
+          references.canonical({"ref": "Z", "doi": "10.9/fabricated"}),
+          {"error": "DOI does not exist (404)", "source": "missing"})
+_i1d = _tmpf.mkdtemp()
+_i1rp = os.path.join(_i1d, "rows.json")
+common.dump_json([_stamp({"ref": "Z1", "doi": "10.9/fabricated", "search_title": "T"})], _i1rp)
+_i1out = io.StringIO()
+_argv = sys.argv
+sys.argv = ["references.py", "--rows", _i1rp, "--email", "t@example.org", "--retry-wait", "0"]
+try:
+    with _patched(common, crossref_work=_i1_404), _sleeps(), _ctx.redirect_stdout(_i1out), \
+            _ctx.redirect_stderr(io.StringIO()):
+        references.main()
+except SystemExit:
+    pass
+finally:
+    sys.argv = _argv
+check_true("references prints 'DOI does not exist' for a 404", "✗ Z1: DOI does not exist" in _i1out.getvalue(),
+           _i1out.getvalue())
+check_true("...not 'fetch failed'", "fetch failed" not in _i1out.getvalue())
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
