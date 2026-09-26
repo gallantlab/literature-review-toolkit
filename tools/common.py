@@ -671,7 +671,8 @@ def norm_arxiv(aid):
 
 def arxiv_entries(xml_bytes):
     """Parse an arXiv API Atom feed -> [{id, title, year, authors, first_author,
-    journal_ref}], skipping the API's synthetic 'Error' entry (an unknown id)."""
+    journal_ref, summary}], skipping the API's synthetic 'Error' entry (an
+    unknown id)."""
     import xml.etree.ElementTree as ET
     out = []
     for e in ET.fromstring(xml_bytes).findall(f"{ATOM}entry"):
@@ -687,7 +688,8 @@ def arxiv_entries(xml_bytes):
                     # the venue year by a year or two — callers tolerate ±1.
                     "year": (e.findtext(f"{ATOM}published") or "")[:4],
                     "authors": authors, "first_author": authors[0] if authors else "",
-                    "journal_ref": (e.findtext(f"{ARXIV_NS}journal_ref") or "").strip()})
+                    "journal_ref": (e.findtext(f"{ARXIV_NS}journal_ref") or "").strip(),
+                    "summary": " ".join((e.findtext(f"{ATOM}summary") or "").split())})
     return out
 
 

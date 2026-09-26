@@ -2016,6 +2016,37 @@ check_true("a handcheck-ingested row passes the audit's hand-check gate",
                [_grow(), dict(_rows[0], canonical_at=common.GATES_SINCE, summary="")], "ref")["defects"].get("B1", [])))
 
 
+# ---- abstracts.py (2026-09-26) ---------------------------------------------
+import abstracts  # noqa: E402
+
+_feed = (b'<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/abs/2301.00001v1</id>'
+         b'<title>T</title><summary>  We show\n that it works. </summary>'
+         b'<published>2023-01-01T00:00:00Z</published><author><name>A B</name></author></entry></feed>')
+check("arxiv_entries returns the abstract", common.arxiv_entries(_feed)[0]["summary"], "We show that it works.")
+check("reconstruct rebuilds an OpenAlex inverted index",
+      abstracts.reconstruct({"works": [1], "It": [0], "well.": [2]}), "It works well.")
+_R = [{"ref": "X", "arxiv": "2301.00001", "summary": "s"}, {"ref": "J", "doi": "10.1/J", "summary": "s"},
+      {"ref": "K", "doi": "10.1/k", "summary": "s"}, {"ref": "P", "pmid": "123", "summary": "s"},
+      {"ref": "H", "doi": "10.1/h", "summary": "s"}, {"ref": "N", "summary": "s"}]
+_asked = {}
+
+
+def _fx(name, answer):
+    def f(ids):
+        _asked[name] = list(ids)
+        return {i: answer for i in ids if i in answer_keys[name]}
+    return f
+
+
+answer_keys = {"arxiv": {"2301.00001"}, "openalex": {"10.1/j"}, "s2": {"DOI:10.1/k"}, "pubmed": {"123"}}
+_ab, _missing = abstracts.collect(_R, "ref", {"H": {"text": "hand-added", "source": "landing-page", "url": "u"}},
+                                  {n: _fx(n, "text-" + n) for n in answer_keys})
+check("collect takes each source in order", {k: v["source"] for k, v in _ab.items()},
+      {"X": "arxiv", "J": "openalex", "K": "s2", "P": "pubmed", "H": "landing-page"})
+check("collect never re-fetches an existing entry", "10.1/h" in _asked["openalex"], False)
+check("collect reports rows with a summary and no abstract", _missing, ["N"])
+
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
