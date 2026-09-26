@@ -4414,7 +4414,11 @@ check("A4b: claim_surname('Van Essen D')", verify.claim_surname("Van Essen D"), 
 check("A4b: claim_surname('Thomas Yeo BT')", verify.claim_surname("Thomas Yeo BT"), "Thomas Yeo")
 check("A4b: claim_surname('Van Essen DC') matches the record 'Van Essen D'",
       _m8(verify.claim_surname("Van Essen DC"), "Van Essen D"), [])
-check("A4b: 'Thomas Yeo B' matches the record 'Yeo B'", _m8(verify.claim_surname("Thomas Yeo B"), "Yeo B"), [])
+# (round 4, B: "Thomas Yeo" is given-first words, so "Thomas" must agree with the
+# record's initial; a compound claim against a shortened record is confirmed by hand)
+check_true("A4b: 'Thomas Yeo' (from 'Thomas Yeo B') mismatches the record 'Yeo B'",
+           _m8(verify.claim_surname("Thomas Yeo B"), "Yeo B") != [])
+check("A4b: ...but matches 'Yeo T'", _m8(verify.claim_surname("Thomas Yeo B"), "Yeo T"), [])
 check("A4b: a given-first name is unchanged ('Jane Smith')", verify.claim_surname("Jane Smith"), "Smith")
 
 # ---- author fix round 1, B: claim_surname reads every PubMed shape (2026-09-26) ----
@@ -4644,11 +4648,13 @@ check_true("R3.2: 3-4 capitals with no vowel are initials",
 check_true("R3.2: ...and with a vowel they are words",
            not any(common.is_initials(t) for t in ("CHEN", "WANG", "ZHAO", "KING", "ROUX", "ANNA", "MEER", "LEE")))
 check_true("R3.2: 'Hao CHEN' mismatches 'Hao J'", _mA("Hao CHEN", "Hao J") != [])
-for _ae, _aa in (("Hao CHEN", "Chen H"), ("Yang WANG", "Wang Y"), ("MARK KING", "King M"),
-                 ("van der Meer", "VAN DER MEER J"), ("de la Cruz", "DE LA CRUZ J")):
+# (round 4, B: "Hao CHEN" / "Yang WANG" are ambiguous, an issue to confirm by hand)
+for _ae in ("Hao CHEN", "Yang WANG"):
+    check_true(f"R3.2: {_ae!r} is ambiguous", isinstance(verify.claim_surname(_ae), verify.Ambiguous))
+for _ae, _aa in (("MARK KING", "King M"), ("van der Meer", "VAN DER MEER J"), ("de la Cruz", "DE LA CRUZ J")):
     check(f"R3.2: {_ae!r} matches {_aa!r}", _mA(_ae, _aa), [])
 check_true("R3.2: 'Van, A.' mismatches 'VAN DER MEER J'", _mA("Van, A.", "VAN DER MEER J") != [])
-for _cin, _cout in (("J WANG", "WANG"), ("Y ZHAO", "ZHAO"), ("Smith JLKM", "Smith"), ("Hao CHEN", "CHEN")):
+for _cin, _cout in (("J WANG", "WANG"), ("Y ZHAO", "ZHAO"), ("Smith JLKM", "Smith")):
     check(f"R3.2: claim_surname({_cin!r})", verify.claim_surname(_cin), _cout)
 check("R3.2: DataCite Personal 'Hao CHEN' -> 'Chen, H.'",
       _c1_people([{"name": "Hao CHEN", "nameType": "Personal"}]), (["Chen, H."], []))
@@ -4710,6 +4716,25 @@ for _rin, _rout in (("Collins AGE", "Collins"), ("Park JAE", "Park"), ("Chen H",
     check(f"R4.A: record_surname({_rin!r})", verify.record_surname(_rin), _rout)
 check("R4.A: the real PubMed record 'Collins AGE' matches the claim 'Collins A'", _mA("Collins A", "Collins AGE"), [])
 check_true("R4.A: ...and 'Smith' does not match it", _mA("Smith", "Collins AGE") != [])
+
+# ---- author fix round 4, B: claim shapes, an ambiguous one fails closed (2026-09-26) ----
+for _bin, _bout in (("Lambon Ralph, Matthew A.", "Lambon Ralph"), ("Garcia Lopez, Juan K.", "Garcia Lopez"),
+                    ("Dupré la Tour, Tom X.", "Dupré la Tour"), ("Thomas Yeo, Boon T.", "Thomas Yeo"),
+                    ("Smith JL, Jones K", "Smith"), ("Smith J, K. Jones", "Smith"), ("Smith, J. L.", "Smith"),
+                    ("CHEN Hao", "CHEN"), ("Smith JLK", "Smith"), ("John Smith", "Smith")):
+    check(f"R4.B: claim_surname({_bin!r})", verify.claim_surname(_bin), _bout)
+check_true("R4.B: 'Hao CHEN' / 'Collins AGE' / 'Smith AGE' are ambiguous",
+           all(isinstance(verify.claim_surname(n), verify.Ambiguous) for n in ("Hao CHEN", "Collins AGE", "Smith AGE")))
+for _be, _ba in (("Smith AGE", "Collins AGE"), ("Hao CHEN", "Hao J"), ("Collins AGE", "Collins AGE")):
+    check(f"R4.B: ambiguous claim {_be!r} vs {_ba!r} is an issue to confirm by hand", _mA(_be, _ba),
+          [f"first-author mismatch: ambiguous first-author form ('{_be}'); confirm by hand"])
+check("R4.B: 'John Smith' matches 'Smith J' (the given name agrees with the initial)", _mA("John Smith", "Smith J"), [])
+check_true("R4.B: 'John Smith' mismatches 'Smith K'", _mA("John Smith", "Smith K") != [])
+check_true("R4.B: 'Lambon Ralph' mismatches 'Ralph J'", _mA("Lambon Ralph", "Ralph J") != [])
+check("R4.B: 'Lambon Ralph' matches 'Lambon Ralph M'", _mA("Lambon Ralph", "Lambon Ralph M"), [])
+check_true("R4.B: 'Dupré la Tour' mismatches 'Tour X'", _mA("Dupré la Tour", "Tour X") != [])
+check("R4.B: 'CHEN Hao' matches 'Chen H'", _mA("CHEN Hao", "Chen H"), [])
+check("R4.B: merge never treats an ambiguous claim as agreeing", verify.claims_agree("Hao, J.", "Hao CHEN"), None)
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

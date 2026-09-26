@@ -196,11 +196,26 @@ def lookup_arxiv_batch(aids, chunk=50, sleep=3.0):
 # A generational suffix PubMed puts after the initials ("Hagler DJ Jr", "Smith EL 3rd").
 
 
-def _is_another_name(seg):
-    """True when the text after a comma is a second person rather than a given
-    name: a word followed by initials ("Jones K") or initials then a word
-    ("K. Jones"). "J. L.", "John" and "John Paul" are given names."""
-    toks = seg.split()
+class Ambiguous(str):
+    """claim_surname's answer for a form that cannot be read safely: a mixed-case
+    word followed by a 3-4 letter capitalized WORD ("Hao CHEN" is given name +
+    surname, "Collins AGE" is surname + initials; nothing tells them apart). The
+    author check fails closed on it: a human confirms by hand."""
+
+
+def _has_lower(tok):
+    return any(ch.islower() for ch in tok)
+
+
+def _caps_word(tok):
+    """A 3-4 letter capitalized token that is a word, not initials ("CHEN", "AGE")."""
+    letters = tok.replace(".", "").replace("-", "")
+    return 3 <= len(letters) <= 4 and letters.isalpha() and letters.isupper() and not common.is_initials(tok)
+
+
+def _full_name(toks):
+    """A whole name rather than a bare family: words then initials ("Smith JL")
+    or initials then a word ("K. Jones")."""
     if len(toks) < 2:
         return False
     if common.words_then_initials(toks):
@@ -211,41 +226,61 @@ def _is_another_name(seg):
     return 0 < k < len(toks) and all(len(t) >= 2 and not common.is_initials(t) for t in toks[k:])
 
 
-def claim_surname(name):
-    """Surname out of whatever shape a search agent reported a first author in:
-    'Gilbert, C. D.' / 'C. D. Gilbert' / 'Gilbert CD' / 'Gilbert' -> 'Gilbert'.
-    A list gives its first name ("Smith J; Jones K", "Smith JL, Jones K"). A
-    comma otherwise means family-first (APA); so do words followed only by initials
-    ('Smith J', 'Smith JL', 'Smith J.-L.', 'Van Essen DC', PubMed style), which
-    give all the words, and an all-caps PubMed form made only of initials-shaped
-    tokens ('LI J', 'AN J', 'O K'), which gives its first token. A trailing
-    'Jr'/'Sr'/'3rd' is dropped; a name opening with a particle ('de Lange Dzn')
-    or a group name (common.is_group) is returned whole; otherwise the last
-    token that is not an initial."""
-    name = re.sub(r"\s*(?:,?\s*et al\.?|&.*)$", "", (name or "").split(";")[0].strip())
+def _claim_shape(name):
+    """A CLAIMED first author -> (family, given words, ambiguous). See claim_surname."""
+    name = re.sub(r"\s*(?:,?\s*et al\.?|&.*)$", "", str(name or "").split(";")[0].strip())
     if not name:
-        return ""
+        return "", [], False
     if "," in name:
-        first, rest = (x.strip() for x in name.split(",", 1))
-        if _is_another_name(rest.split(",")[0]):
-            return claim_surname(first)   # a list: "Smith JL, Jones K" -> its first name
-        return first                      # family-first: "Smith, J. L.", "Doe, John"
+        first = name.split(",", 1)[0].strip()
+        ft = first.split()
+        if _full_name(ft):
+            return _claim_shape(first)   # a list: "Smith JL, Jones K" -> its first name
+        # family-first: "Smith, J. L.", "Lambon Ralph, Matthew A."
+        return first, [], len(ft) > 1 and _caps_word(ft[-1]) and any(_has_lower(t) for t in ft[:-1])
     toks = name.split()
     if len(toks) > 1 and common.is_group(name):
-        return name   # a group ("ATLAS Collaboration"): its last word is no surname
+        return name, [], False   # a group ("ATLAS Collaboration"): its last word is no surname
     toks = common.strip_suffixes(toks)
     split = common.words_then_initials(toks)   # particles are words even in capitals
     if split:
-        return split[0]
+        return split[0], [], False
     if len(toks) > 1 and all(common.is_initials(t) for t in toks):
-        return toks[0]
+        return toks[0], [], False   # all-caps PubMed: "LI J", "O K"
+    first = toks[0].replace("-", "")
+    if (len(toks) > 1 and first.isalpha() and first.isupper() and not common.is_initials(toks[0])
+            and all(_has_lower(t) for t in toks[1:])):
+        return toks[0], [], False   # a surname in capitals, then given names: "CHEN Hao"
+    if len(toks) > 1 and _caps_word(toks[-1]) and any(_has_lower(t) for t in toks[:-1]):
+        return name, [], True       # "Hao CHEN" or "Collins AGE": which is the surname?
     if len(toks) > 1 and toks[0].lower() in common.PARTICLES:
-        return " ".join(toks)   # opens with a particle: already a surname ("de Lange Dzn")
+        return " ".join(toks), [], False   # opens with a particle: already a surname ("de Lange Dzn")
+    if len(toks) > 1 and not any(common.is_initials(t) or sum(ch.isalpha() for ch in t) < 2 for t in toks):
+        return toks[-1], toks[:-1], False   # given-first words: "John Smith", "Lambon Ralph"
     # the last token that is not an initial, and never a single letter while a
     # longer word exists ("Kowalski ł" -> Kowalski)
     parts = [p for p in toks if not (len(p.rstrip(".")) == 1 and p.endswith("."))] or toks
     longer = [p for p in parts if sum(ch.isalpha() for ch in p) >= 2]
-    return (longer or parts)[-1]
+    return (longer or parts)[-1], [], False
+
+
+def claim_surname(name):
+    """Surname out of whatever shape a search agent reported a first author in:
+    'Gilbert, C. D.' / 'C. D. Gilbert' / 'Gilbert CD' / 'Gilbert' -> 'Gilbert'.
+    A list gives its first name ("Smith J; Jones K", "Smith JL, Jones K"). A comma
+    otherwise means family-first ("Lambon Ralph, Matthew A." -> Lambon Ralph); so
+    do words followed only by unambiguous initials ('Smith J', 'Smith JLK',
+    'Smith J.-L.', 'Van Essen DC', PubMed style), which give all the words, and an
+    all-caps form made only of initials-shaped tokens ('LI J', 'O K'), which gives
+    its first token; a capitalized word before given names ('CHEN Hao') is the
+    surname. A trailing 'Jr'/'Sr'/'3rd' is dropped; a name opening with a particle
+    ('de Lange Dzn') or a group name (common.is_group) is returned whole. Words
+    with no initials ('John Smith') give the last word, the rest being given names
+    (see surname_agrees). A mixed-case word before a 3-4 letter capitalized word
+    ('Hao CHEN', 'Collins AGE') is ambiguous: an Ambiguous marker is returned.
+    Otherwise the last token that is not an initial."""
+    fam, _, ambiguous = _claim_shape(name)
+    return Ambiguous(str(name).strip()) if ambiguous else fam
 
 
 def rows_to_citations(rows, keyf=None):
@@ -400,16 +435,6 @@ def _tok_agrees(a, t):
     return a == t or a in _hyphen_parts(t)
 
 
-def _parsed(name, is_surname=False):
-    """A name's surname tokens (_core); [] for no name; None when the name is
-    unknown -- a placeholder ("?", "anon"), or no readable surname word."""
-    if not str(name or "").strip():
-        return []
-    if common.is_unknown_name(name):
-        return None
-    return _core(name if is_surname else claim_surname(name)) or None
-
-
 def _caps_short(tok):
     """1-4 capitals, dotted or hyphenated: in a mixed-case record ("Collins AGE")
     such a trailing token can only be initials."""
@@ -451,41 +476,69 @@ def _parsed_record(first_author):
     return _core(record_surname(first_author)) or None
 
 
+def _claim_parts(name, is_surname=False):
+    """A claim -> (family tokens, given-name tokens); ([], []) for no claim; None
+    when unknown ("?", "anon", no readable surname); "ambiguous" for an Ambiguous
+    form. An apa-derived lead surname (`is_surname`) is used as-is."""
+    if not str(name or "").strip():
+        return [], []
+    if common.is_unknown_name(name):
+        return None
+    fam, given, ambiguous = (str(name).strip(), [], False) if is_surname else _claim_shape(name)
+    if ambiguous:
+        return "ambiguous"
+    core = _core(fam)
+    if not core:
+        return None
+    return core, [t for w in given for t in _name_tokens(w) if t not in common.PARTICLES]
+
+
 def is_unknown(name):
-    """True for a given name that cannot be read as a surname (see _parsed)."""
-    return _parsed(name) is None
+    """True for a given name that cannot be read as a surname: unknown or ambiguous."""
+    return bool(str(name or "").strip()) and _claim_parts(name) in (None, "ambiguous")
 
 
 def surname_agrees(claim, record, claim_is_surname=False):
-    """True when the surname of `claim` agrees with the surname of `record`
-    (a first_author such as "van den Heuvel M"); None when either is unknown
-    (a placeholder such as "?" or no readable surname): an unknown never agrees.
-    Both are parsed by claim_surname, once -- unless `claim_is_surname` (an
-    apa-derived lead surname, used as-is) -- so given names and initials never
-    take part. The claim's first non-particle surname word must agree with a word
-    of the record's surname; any further claim surname word ("Lambon Ralph",
-    "Thomas Yeo") must appear in the record's name. A group author
+    """True when the claimed first author agrees with the record's (a first_author
+    in the source contract's "Family INITIALS" shape, see _record_parts); None when
+    either is unknown or the claim is ambiguous: those never agree. The claim is
+    parsed once by _claim_shape -- unless `claim_is_surname` (an apa-derived lead
+    surname, used as-is) -- so initials never take part. The claim's first
+    non-particle family word must agree with a word of the record's family; any
+    further claim family word ("Lambon Ralph", "de Lange Dzn") must appear in the
+    record's name; and a claim's given names ("John Smith") must each be a word
+    of the record's family or start with one of its initials. A group author
     (common.is_group) compares whole: all its words must match."""
-    c, r = _parsed(claim, claim_is_surname), _parsed_record(record)
-    if c is None or r is None:
+    pc, r = _claim_parts(claim, claim_is_surname), _parsed_record(record)
+    if pc is None or pc == "ambiguous" or r is None:
         return None
+    c, given = pc
     if not c or not r:
         return True
     if common.is_group(claim) or common.is_group(record):
         return set(c) == set(r)   # a group compares whole: "CMS Collaboration" is not "ATLAS Collaboration"
     fam, tail = _record_parts(record)
     full = _name_tokens(fam) + _name_tokens(" ".join(tail))
+    letters = {common.fold(ch).lower() for t in tail for ch in t if ch.isalpha()}
     return (any(_tok_agrees(c[0], t) for t in r)
-            and all(any(_tok_agrees(x, t) for t in full) for x in c[1:]))
+            and all(any(_tok_agrees(x, t) for t in full) for x in c[1:])
+            and all(any(_tok_agrees(w, t) for t in r) or w[:1] in letters for w in given))
 
 
 def claims_agree(a, b):
-    """Two CLAIMED first authors (neither is a record) name the same surname:
-    surname_agrees either way round; None when either is unknown. merge_lanes
-    uses it to tell a duplicate from two papers sharing a title ("An, J." is not
-    "Chan, H.")."""
-    x, y = surname_agrees(a, b), surname_agrees(b, a)
-    return None if x is None or y is None else (x or y)
+    """Two CLAIMED first authors (neither is a record) name the same surname: the
+    first family word of either agrees with a family word of the other (a group
+    compares whole); None when either is unknown or ambiguous. merge_lanes uses it
+    to tell a duplicate from two papers sharing a title ("An, J." is not "Chan, H.")."""
+    pa, pb = _claim_parts(a), _claim_parts(b)
+    if pa in (None, "ambiguous") or pb in (None, "ambiguous"):
+        return None
+    ca, cb = pa[0], pb[0]
+    if not ca or not cb:
+        return True
+    if common.is_group(a) or common.is_group(b):
+        return set(ca) == set(cb)
+    return any(_tok_agrees(ca[0], t) for t in cb) or any(_tok_agrees(cb[0], t) for t in ca)
 
 
 def _author_issue(c, rec, where=""):
@@ -493,8 +546,10 @@ def _author_issue(c, rec, where=""):
     # on the J, "Min" cannot match "Seung-Min Park", "Lee" cannot match "Leeson".
     # A claim is either `expect_first_author` (what a search agent or a
     # --citations file reported, parsed here once) or `expect_surname` (the lead
-    # surname of the row's apa, used as-is). An unknown name on either side ("?",
-    # "anon", no readable word) is an issue: it can confirm nothing.
+    # surname of the row's apa, used as-is); the record is parsed by its source
+    # contract (_record_parts). An unknown name on either side ("?", "anon", no
+    # readable word), or an ambiguous claim ("Hao CHEN"), is an issue: it can
+    # confirm nothing.
     # Calibrated on the same OK verdicts as the title check, with each claim
     # rebuilt as rows_to_citations now builds it: 4 of 2,471 are flagged, all a
     # compound surname the record shortened ("Quian Quiroga" / "Quiroga R"), which
@@ -504,9 +559,12 @@ def _author_issue(c, rec, where=""):
     got = str(rec.get("first_author") or "")
     if not str(claim or "").strip() or not got.strip():
         return []
-    if _parsed(claim, is_surname) is None:
+    pc = _claim_parts(claim, is_surname)
+    if pc is None:
         return [f"{where}first-author mismatch: could not read the claimed first author "
                 f"'{claim}' (got '{got}')"]
+    if pc == "ambiguous":
+        return [f"{where}first-author mismatch: ambiguous first-author form ('{claim}'); confirm by hand"]
     if _parsed_record(got) is None:
         return [f"{where}first-author mismatch: could not read the record's first author "
                 f"'{got}' (expected '{claim}')"]
