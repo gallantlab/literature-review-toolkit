@@ -236,7 +236,9 @@ python3 tools/merge_lanes.py --raw search_raw --out rows.json
 ```
 
 It dedups by DOI, then arXiv id, then normalized title + year, and records the
-other lanes that returned a paper (`also_lanes`). A title+year match alone is
+other lanes that returned a paper (`also_lanes`). An arXiv-only paper gets its
+arXiv DOI (`10.48550/arXiv.<id>`), so the DOI-keyed coverage checks (`xref.py`,
+the candidate ledger) see it. A title+year match alone is
 only a hint, not a merge: it is treated as the same paper only when the lanes'
 claimed author/year agree and the rows do not carry two *different* journal DOIs
 (an arXiv preprint's DOI and its own journal DOI are the same paper and still

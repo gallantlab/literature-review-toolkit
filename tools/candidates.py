@@ -36,7 +36,14 @@ def entries(ledger):
 
 
 def corpus_dois(rows):
-    return {_doi(common.doi_of(r)) for r in rows if common.doi_of(r)}
+    """Every row's DOI, lowercased; an arXiv-only row counts by its arXiv DOI."""
+    out = set()
+    for r in rows:
+        aid = common.arxiv_id_of(r)
+        d = common.doi_of(r) or (f"10.48550/arXiv.{common.norm_arxiv(aid)}" if aid else "")
+        if d:
+            out.add(_doi(d))
+    return out
 
 
 def add(ledger, found, source, corpus, asof=None):

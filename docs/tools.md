@@ -43,7 +43,8 @@ in `tools/README.md` and `PLAYBOOK.md`.
 ## What each tool refuses to guess
 
 - **`merge_lanes.py`** dedups schema-2 lane files by DOI, then arXiv id, then
-  normalized title + year; a title+year match alone is treated as the same
+  normalized title + year (an arXiv-only paper gets its `10.48550/arXiv.<id>`
+  DOI); a title+year match alone is treated as the same
   paper only when the lanes' claims agree and the rows do not carry two
   different journal DOIs, otherwise both rows are kept as a possible pair. It
   also title-scores every pair of kept rows after the merge (similarity ≥ 0.9,

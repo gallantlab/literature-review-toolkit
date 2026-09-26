@@ -2935,6 +2935,16 @@ _e = _i10_run(merge_lanes, ["merge_lanes.py", "--append", _i10lane, "--into", _i
               append=lambda rows, keyf, lane: (_i10_touch(_i10rp), ([], [], []))[1])
 check_true("merge_lanes --append refuses a rows.json that changed", isinstance(_e, RuntimeError), repr(_e))
 
+# ---- final fixes I11: arXiv-only rows are visible to coverage (2026-09-25) -----
+_i11 = merge_lanes.to_row(_p("A-01", arxiv="2301.00001v2"), "A")
+check("to_row gives an arXiv-only paper its arXiv DOI and doi.org link", (_i11["doi"], _i11["link"], _i11["arxiv"]),
+      ("10.48550/arXiv.2301.00001", "https://doi.org/10.48550/arXiv.2301.00001", "2301.00001"))
+check("xref.rows_to_papers falls back to the arXiv DOI form",
+      xref.rows_to_papers([{"ref": "X", "arxiv": "2301.00001"}]), [{"slug": "X", "doi": "10.48550/arXiv.2301.00001"}])
+check("candidates.corpus_dois falls back to the arXiv DOI form",
+      candidates.corpus_dois([{"ref": "X", "arxiv": "2301.00001v2"}, {"ref": "D", "doi": "10.1/D"}]),
+      {"10.48550/arxiv.2301.00001", "10.1/d"})
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

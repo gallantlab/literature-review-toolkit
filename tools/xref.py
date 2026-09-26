@@ -45,7 +45,8 @@ def rows_to_papers(rows, keyf=None):
     keyf = keyf or common.key_field(rows)
     out = []
     for r in rows:
-        doi = common.doi_of(r)
+        aid = common.arxiv_id_of(r)
+        doi = common.doi_of(r) or (f"10.48550/arXiv.{common.norm_arxiv(aid)}" if aid else None)
         if not doi and not r.get("pdf"):
             continue
         p = {"slug": r.get(keyf, "?"), "doi": doi}

@@ -65,6 +65,9 @@ def to_row(p, lane):
     doi = _bare(p.get("doi") or "") or (_bare(link) if "doi.org/" in link else "")
     m = common.ARXIV_DOI.match(doi)
     arxiv = common.norm_arxiv(p.get("arxiv") or (m.group(1) if m else ""))
+    if arxiv and not doi:
+        # the arXiv DOI form, so DOI-keyed coverage (xref, candidates) sees the paper
+        doi = f"10.48550/arXiv.{arxiv}"
     sourced = bool(doi or arxiv)
     return {"ref": p.get("ref"), "lane": lane, "topic": p.get("topic", ""), "doi": doi, "arxiv": arxiv,
             "link": f"https://doi.org/{doi}" if doi else (p.get("link") or ""),
