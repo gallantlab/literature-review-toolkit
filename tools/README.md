@@ -19,7 +19,7 @@ and CI fails if any copy is stale.
 | Script | Phase | Purpose | Flags |
 |---|---|---|---|
 | `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--out` `--raw` `--report` |
-| `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / arXiv. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
+| `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / DataCite / arXiv. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
 | `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--email` `--ingest` `--key` `--prepare` `--rows` |
 | `references.py` | 3f | Canonical reference builder — make EVERY reference perfect, in both modes. | `--acks` `--asof` `--audit` `--candidates` `--email` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
 | `sentence_case.py` | 3f | Post-canon pass — propose strict APA-7 sentence case for reference titles. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
@@ -60,7 +60,10 @@ arxiv?, title?, expect_first_author?, expect_year?}`.
 
 **Lookup order.** arXiv papers (an `arxiv` id or a `10.48550/arXiv.<id>` DOI) go
 to the arXiv API, fetched in batches because per-paper calls trigger a temporary
-ban. Everything else tries PMC, PubMed, CrossRef, then a title search.
+ban. Everything else tries PMC, PubMed, CrossRef, then a title search. A journal
+DOI CrossRef does not hold (Zenodo, figshare, OSF, Dryad software/data-set
+deposits) is checked against DataCite next; resolving there counts the same as
+resolving in CrossRef.
 
 **Verdicts.**
 
@@ -98,7 +101,11 @@ published paper is cited by its version of record.
   (`ANDERSON` → `Anderson`);
 - unescaped HTML, with all-caps titles sentence-cased;
 - a real venue, including preprint servers CrossRef leaves blank (`bioRxiv`,
-  `PsyArXiv`, `arXiv`, or arXiv's `journal_ref` when present).
+  `PsyArXiv`, `arXiv`, or arXiv's `journal_ref` when present);
+- a DataCite-registered software/data-set/preprint DOI CrossRef does not hold
+  (Zenodo, figshare, OSF, Dryad): `Authors (Year). Title (Version v)
+  [Data set|Computer software|Preprint]. Publisher.`, with the bracket and
+  version omitted when DataCite has none.
 
 **`--audit` fails on** a missing author or year, `et al.`, an HTML entity or
 markup tag, `?.` or `!.`, a U+2010/U+2011 hyphen, a malformed initial (`L. (.`,
@@ -143,7 +150,9 @@ python3 tools/sentence_case.py --rows rows.json --proper proper_nouns.json --app
   of any subtitle. Each part of a hyphenated word is judged separately.
 - **`--proper`** takes `{"words": [...], "phrases": [...]}`. Phrases let a generic
   word lowercase while a named entity keeps it (`yoga practitioners`, but
-  `Sahaja Yoga`).
+  `Sahaja Yoga`). DataCite's bracket descriptors (`[Data set]`,
+  `[Computer software]`, `[Preprint]`) are fixed punctuation, not Title Case —
+  add them here too.
 - **`--vocab`** groups the proposed changes by distinct word instead of by title.
   On a large corpus, hundreds of title diffs collapse into a short list where a
   mis-cased proper noun stands out.

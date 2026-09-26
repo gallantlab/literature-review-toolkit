@@ -655,12 +655,44 @@ def build_chapter_apa(people, year, title, book, pages=None, publisher=None):
     return MARKUP.sub("", s).translate(UNI_HYPHEN)
 
 
+# A resourceTypeGeneral that gets a bracket descriptor in the APA-7 reference;
+# anything else (Text, Collection, ...) prints no bracket at all.
+DATACITE_DESCRIPTORS = {"Dataset": "Data set", "Software": "Computer software", "Preprint": "Preprint"}
+
+
+def build_datacite_apa(people, year, title, version=None, resource_type="", publisher=""):
+    """APA-7 for a DataCite-registered deposit (Zenodo/figshare/OSF/Dryad software,
+    data set or preprint): `Authors (Year). Title (Version v) [Descriptor].
+    Publisher.` `(Version …)` is omitted when `version` is falsy; the bracket
+    descriptor is 'Data set', 'Computer software' or 'Preprint' for those three
+    resourceTypeGeneral values and omitted for any other."""
+    import html
+    t = norm_title(title).rstrip(".")
+    s = f"{join_authors(people)} ({year}). {t}"
+    if version:
+        s += f" (Version {version})"
+    descriptor = DATACITE_DESCRIPTORS.get(resource_type)
+    if descriptor:
+        s += f" [{descriptor}]"
+    s += "."
+    publisher = clean_venue(publisher)
+    if publisher:
+        s += f" {publisher}."
+    s = html.unescape(re.sub(r"\s+", " ", s).strip())
+    return MARKUP.sub("", s).translate(UNI_HYPHEN)
+
+
 # ---- authoritative-source records -------------------------------------------
 # references.py (canon), verify.py (existence check) and xref.py (resolve a cited
 # DOI) each read the same CrossRef message / arXiv Atom entry. One reading here,
 # so the date-field preference and the author handling cannot drift again.
 CROSSREF_API = "https://api.crossref.org/works/"
 ARXIV_API = "https://export.arxiv.org/api/query"   # http:// now answers with a 301
+# Zenodo, figshare, OSF and Dryad software/data-set DOIs are registered with
+# DataCite, not CrossRef, so a CrossRef 404 on one of those DOIs is not "does not
+# exist" -- it is "wrong registry". DataCite is consulted as a fallback wherever
+# CrossRef comes back with a clean 404.
+DATACITE_API = "https://api.datacite.org/dois/"
 
 
 def crossref_record(msg, fallback_venue=""):
@@ -721,6 +753,58 @@ def crossref_work(doi, fallback_venue=""):
     import urllib.parse
     msg = http_json(f"{CROSSREF_API}{urllib.parse.quote(doi)}")["message"]
     return crossref_record(msg, fallback_venue)
+
+
+def datacite_record(attrs, fallback_venue=""):
+    """Normalize a DataCite `data.attributes` dict to the SAME shape
+    crossref_record() returns, plus `version` and `resource_type`
+    (`types.resourceTypeGeneral`: Software, Dataset, Preprint, ...).
+
+    DataCite is the registry behind Zenodo/figshare/OSF/Dryad DOIs — software and
+    data-set deposits CrossRef does not hold. A creator's `familyName`/`givenName`
+    are used when a given name is present; a creator with NO given name (a group,
+    such as "The pandas development team", even when DataCite's nameType says
+    "Personal") is kept whole as its family name and formatted with no initials
+    (common.person() already does this when `given` is empty). `publisher` may be
+    a bare string or `{"name": ...}`; `journal` mirrors it, matching the field
+    crossref_record() uses for the venue.
+    """
+    authors = []
+    for c in attrs.get("creators") or []:
+        if not isinstance(c, dict):
+            continue
+        given = (c.get("givenName") or "").strip()
+        fam = (c.get("familyName") or c.get("name") or "").strip()
+        if fam:
+            authors.append((fam, given))
+    fam, giv = authors[0] if authors else ("", "")
+    publisher = attrs.get("publisher")
+    if isinstance(publisher, dict):
+        publisher = publisher.get("name", "")
+    publisher = (publisher or "").strip() or clean_venue(fallback_venue)
+    titles = attrs.get("titles") or [{}]
+    title = norm_title((titles[0] or {}).get("title", ""))
+    year = attrs.get("publicationYear")
+    return {"title": title, "year": str(year) if year else "",
+            "authors": authors, "people": [person(f, g) for f, g in authors],
+            "first_author": f"{fam} {giv[:1]}".strip(), "journal": publisher,
+            "volume": attrs.get("volume"), "issue": attrs.get("issue"),
+            "pages": attrs.get("page"), "book": "", "publisher": publisher,
+            "version": attrs.get("version") or "",
+            "resource_type": (attrs.get("types") or {}).get("resourceTypeGeneral", "")}
+
+
+def datacite_work(doi, fallback_venue=""):
+    """Fetch one DOI from DataCite -> datacite_record(). Raises on a transient
+    failure (so callers can tell ERROR from NOT-FOUND, same contract as
+    crossref_work); a 404 propagates too. Goes through http_json (so its curl
+    fallback applies): urllib's connection is dropped deterministically on some
+    networks for api.datacite.org while curl fetches the same URL without
+    trouble — the same class of stack/proxy interaction http()'s curl fallback
+    exists for."""
+    import urllib.parse
+    data = http_json(f"{DATACITE_API}{urllib.parse.quote(doi)}")["data"]
+    return datacite_record(data.get("attributes") or {}, fallback_venue)
 
 
 def norm_arxiv(aid):

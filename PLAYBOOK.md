@@ -317,12 +317,15 @@ What a verdict checks: the first-author surname (fuzzy containment), the year
 retitled on publication). A row with **both** an arXiv id and a journal DOI has
 both checked, because canon cites the journal DOI: a wrong DOI beside a right
 arXiv id is a MISMATCH. The same holds for PubMed and PMC ids: **a journal DOI is
-verified only by its own CrossRef record.** A row with a PMID/PMCID and a DOI is
-checked against the DOI's record; a DOI that does not resolve is a MISMATCH ("DOI
-... does not resolve; pmid found ...") even when a PubMed or title search finds the
-claimed paper — a real title with a fabricated DOI once verified OK that way. Canon
-reports a DOI CrossRef does not have (404) as "DOI does not exist", not as a fetch
-failure to retry.
+verified only by its own CrossRef record** — or, on a clean CrossRef 404, its
+**DataCite** record (Zenodo, figshare, OSF and Dryad software, data-set and some
+preprint deposits register there instead of CrossRef; resolving in DataCite
+counts the same as resolving in CrossRef). A row with a PMID/PMCID and a DOI is
+checked against the DOI's record; a DOI that does not resolve in EITHER registry
+is a MISMATCH ("DOI ... does not resolve; pmid found ...") even when a PubMed or
+title search finds the claimed paper — a real title with a fabricated DOI once
+verified OK that way. Canon reports a DOI missing from both CrossRef and
+DataCite (404) as "DOI does not exist", not as a fetch failure to retry.
 
 **Retries are built in.** An ERROR row gets a second try at the end of the run
 after a 60 s cool-down (`--retry-wait`), with smaller arXiv batches. Anything still
@@ -416,8 +419,11 @@ python3 tools/references.py --rows rows.json --out rows.json   # rebuild + repor
 python3 tools/references.py --rows rows.json --audit           # gate: exit 1 on any defect
 ```
 
-It pulls CrossRef (DOIs) or the arXiv API (arXiv ids / `10.48550/arXiv.*` DOIs),
-then builds APA-7 with: full author list (>20 → 19 + ellipsis + last), correct
+It pulls CrossRef (DOIs) or the arXiv API (arXiv ids / `10.48550/arXiv.*` DOIs) —
+and, when CrossRef has no such DOI, DataCite (Zenodo, figshare, OSF, Dryad
+software/data-set/preprint deposits): `Authors (Year). Title (Version v)
+[Data set|Computer software|Preprint]. Publisher.`, the bracket and version
+omitted when absent — then builds APA-7 with: full author list (>20 → 19 + ellipsis + last), correct
 initials and nobiliary particles (`de Heer`, `Dupré la Tour`), fixed name casing
 (`ANDERSON`→`Anderson`, `zhang`→`Zhang`), HTML-unescaped + sentence-cased
 all-caps titles, and a real venue — including preprint servers CrossRef leaves
@@ -488,7 +494,9 @@ tool proposes, you review, then `--apply`. Keep the corpus's proper nouns in a
 per-project `--proper` allowlist file so a generic word lowercases while a named
 entity does not (`yoga practitioners` but `Sahaja Yoga`). On a large corpus use
 `--vocab` to review the ~N distinct token changes rather than 150 title diffs — a
-mis-cased proper noun is obvious there and invisible in a long diff.
+mis-cased proper noun is obvious there and invisible in a long diff. DataCite's
+bracket descriptors (`[Data set]`, `[Computer software]`, `[Preprint]`) belong in
+that same `--proper` allowlist — they are fixed punctuation, not Title Case.
 
 ### Phase 4 (OPTIONAL) — Download PDFs
 
@@ -1722,7 +1730,7 @@ it is stale); the per-tool detail is in `tools/README.md` and `docs/tools.md`.
 | Script | Phase | Purpose | Flags |
 |---|---|---|---|
 | `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--out` `--raw` `--report` |
-| `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / arXiv. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
+| `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / DataCite / arXiv. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
 | `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--email` `--ingest` `--key` `--prepare` `--rows` |
 | `references.py` | 3f | Canonical reference builder — make EVERY reference perfect, in both modes. | `--acks` `--asof` `--audit` `--candidates` `--email` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
 | `sentence_case.py` | 3f | Post-canon pass — propose strict APA-7 sentence case for reference titles. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |

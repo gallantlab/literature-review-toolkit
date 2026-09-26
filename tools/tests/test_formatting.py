@@ -2532,8 +2532,8 @@ def _i1_404(doi, fv=""):
     raise urllib.error.HTTPError("u", 404, "Not Found", {}, None)
 
 
-with _patched(common, crossref_work=_i1_404):
-    check("canonical: a CrossRef 404 is a missing DOI, not a fetch error",
+with _patched(common, crossref_work=_i1_404, datacite_work=_i1_404):
+    check("canonical: a CrossRef 404 (and DataCite 404 too) is a missing DOI, not a fetch error",
           references.canonical({"ref": "Z", "doi": "10.9/fabricated"}),
           {"error": "DOI does not exist (404)", "source": "missing"})
 _i1d = _tmpf.mkdtemp()
@@ -2543,7 +2543,7 @@ _i1out = io.StringIO()
 _argv = sys.argv
 sys.argv = ["references.py", "--rows", _i1rp, "--email", "t@example.org", "--retry-wait", "0"]
 try:
-    with _patched(common, crossref_work=_i1_404), _sleeps(), _ctx.redirect_stdout(_i1out), \
+    with _patched(common, crossref_work=_i1_404, datacite_work=_i1_404), _sleeps(), _ctx.redirect_stdout(_i1out), \
             _ctx.redirect_stderr(io.StringIO()):
         references.main()
 except SystemExit:
@@ -2553,6 +2553,133 @@ finally:
 check_true("references prints 'DOI does not exist' for a 404", "✗ Z1: DOI does not exist" in _i1out.getvalue(),
            _i1out.getvalue())
 check_true("...not 'fetch failed'", "fetch failed" not in _i1out.getvalue())
+
+# ---- Task 1: DataCite DOIs verify and canonicalize (2026-09-26) ------------
+# CrossRef does not hold Zenodo/figshare/OSF/Dryad software/data-set/preprint
+# DOIs; they are registered with DataCite instead. Shape below is from a live
+# probe of api.datacite.org/dois/10.5281/zenodo.3509134.
+def _dc_attrs(**over):
+    base = {"types": {"resourceTypeGeneral": "Software"}, "publicationYear": 2020,
+            "publisher": "Zenodo", "version": "v1.0.0",
+            "creators": [{"name": "The pandas development team", "nameType": "Personal",
+                         "familyName": "The pandas development team"}],
+            "titles": [{"title": "pandas-dev/pandas: Pandas"}]}
+    base.update(over)
+    return base
+
+
+_dcr = common.datacite_record(_dc_attrs())
+check("datacite_record: a group creator with no givenName is kept whole, no initials",
+      _dcr["people"], ["The pandas development team"])
+check("datacite_record: title/year/version/resource_type/journal/publisher",
+      (_dcr["title"], _dcr["year"], _dcr["version"], _dcr["resource_type"],
+       _dcr["journal"], _dcr["publisher"]),
+      ("pandas-dev/pandas: Pandas", "2020", "v1.0.0", "Software", "Zenodo", "Zenodo"))
+check("datacite_record: publisher as a dict is normalized to its name",
+      common.datacite_record(_dc_attrs(publisher={"name": "Zenodo"}))["journal"], "Zenodo")
+check("datacite_record: a personal creator with a given name formats with initials",
+      common.datacite_record(_dc_attrs(creators=[{"familyName": "Smith", "givenName": "Jane"}]))["people"],
+      ["Smith, J."])
+check("datacite_record: never a chapter (book is always empty)",
+      common.datacite_record(_dc_attrs())["book"], "")
+
+check("build_datacite_apa: group creator, software descriptor, version",
+      common.build_datacite_apa(["The pandas development team"], "2020", "pandas-dev/pandas: Pandas",
+                                "v1.0.0", "Software", "Zenodo"),
+      "The pandas development team (2020). pandas-dev/pandas: Pandas (Version v1.0.0) "
+      "[Computer software]. Zenodo.")
+check("build_datacite_apa: no version omits the parenthetical; Dataset -> Data set",
+      common.build_datacite_apa(["Smith, J."], "2021", "A dataset", None, "Dataset", "Dryad"),
+      "Smith, J. (2021). A dataset [Data set]. Dryad.")
+check("build_datacite_apa: Preprint descriptor",
+      common.build_datacite_apa(["Smith, J."], "2021", "A preprint", None, "Preprint", "OSF"),
+      "Smith, J. (2021). A preprint [Preprint]. OSF.")
+check("build_datacite_apa: an unrecognized resource type omits the bracket",
+      common.build_datacite_apa(["Smith, J."], "2021", "A thing", None, "Other", "Figshare"),
+      "Smith, J. (2021). A thing. Figshare.")
+_dc_apa_ok = common.build_datacite_apa(["The pandas development team"], "2020",
+                                       "pandas-dev/pandas: Pandas", "v1.0.0", "Software", "Zenodo")
+check("build_datacite_apa passes the audit (no empty venue, no defects)",
+      references.audit(_dc_apa_ok, True)[0], [])
+
+
+def _dc_json_body(url, **k):
+    return {"data": {"attributes": _dc_attrs()}}
+
+
+with _patched(common, http_json=_dc_json_body):
+    _dw = common.datacite_work("10.5281/zenodo.3509134")
+check("datacite_work: fetched through http_json and normalized like crossref_work",
+      (_dw["title"], _dw["resource_type"]), ("pandas-dev/pandas: Pandas", "Software"))
+
+
+def _dc_404(*a, **k):
+    raise urllib.error.HTTPError("u", 404, "Not Found", {}, None)
+
+
+with _patched(common, http_json=_dc_404):
+    check_true("datacite_work: a 404 propagates like crossref_work",
+               _raises(lambda: common.datacite_work("10.5281/zenodo.nonexistent")))
+
+
+def _cr_404(doi, fallback_venue=""):
+    raise urllib.error.HTTPError("u", 404, "no", {}, None)
+
+
+_dc_rec = dict(common.datacite_record(_dc_attrs()))
+with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_dc_rec)):
+    _lc = verify.lookup_crossref("10.5281/zenodo.3509134")
+check("verify.lookup_crossref: falls back to DataCite on a clean CrossRef 404",
+      (_lc["title"], _lc["source"]), ("pandas-dev/pandas: Pandas", "datacite"))
+
+with _patched(common, crossref_work=_cr_404, datacite_work=_cr_404):
+    check("verify.lookup_crossref: a DOI missing from BOTH CrossRef and DataCite is still a clean miss",
+          verify.lookup_crossref("10.5281/zenodo.nonexistent"), None)
+
+_dc_c = {"label": "DC1", "doi": "10.5281/zenodo.3509134",
+         "expect_first_author": "The pandas development team", "expect_year": "2020",
+         "title": "pandas-dev/pandas: Pandas"}
+with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_dc_rec)):
+    _dcv = verify.verify_one(dict(_dc_c))
+check("verify_one: a DataCite-only DOI verifies OK with source datacite",
+      (_dcv["verdict"], _dcv["source"]), ("OK", "datacite"))
+
+_dc_i1c = {"label": "DCF", "doi": "10.5281/zenodo.fabricated", "title": _i1rec["title"],
+           "expect_first_author": "Adelson", "expect_year": "1985"}
+with _patched(common, crossref_work=_cr_404, datacite_work=_cr_404), \
+        _patched(verify, lookup_pubmed_title=lambda t: dict(_i1rec)):
+    _dcm = verify.verify_one(dict(_dc_i1c))
+check("verify_one (I1 unchanged): a DOI missing from BOTH registries + a title-search hit is MISMATCH",
+      _dcm["verdict"], "MISMATCH")
+check_true("...naming the DOI that does not resolve",
+           any("does not resolve" in i for i in _dcm["issues"]), str(_dcm))
+
+
+# references.canonical(): CrossRef 404 -> DataCite; both 404 -> unchanged "DOI does not exist"
+def _dc_row(ref="DC1", doi="10.5281/zenodo.3509134"):
+    return _stamp({"ref": ref, "doi": doi, "apa": ""})
+
+
+with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_dc_rec)):
+    _dcres = references.canonical(_dc_row())
+check("canonical: CrossRef 404 falls back to DataCite",
+      _dcres["apa"],
+      "The pandas development team (2020). pandas-dev/pandas: Pandas (Version v1.0.0) "
+      "[Computer software]. Zenodo.")
+check("canonical: source is datacite", _dcres["source"], "datacite")
+
+with _patched(common, crossref_work=_cr_404, datacite_work=_cr_404):
+    check("canonical: a DOI missing from BOTH is still 'DOI does not exist' (unchanged)",
+          references.canonical(_dc_row()),
+          {"error": "DOI does not exist (404)", "source": "missing"})
+
+_dc_row2 = _dc_row("DC2")
+with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_dc_rec)), _sleeps():
+    _dcrows_res = references.canon_rows([_dc_row2], "ref", "2026-09-26", sleep=0, retry_wait=0)
+check("canon_rows: a DataCite-only DOI is rebuilt", _dcrows_res["rebuilt"], 1)
+_dc_audit = references.audit_rows([_dc_row2], "ref")
+check("canon_rows: the rebuilt apa passes references.audit_rows (no defects, gate passes)",
+      (_dc_audit["defects"], _dc_audit["failed"]), ({}, False))
 
 # ---- final fixes I2: upgrade verify re-establishes identity (2026-09-25) ------
 _i2rec = {"title": "Concrete problems in AI safety", "year": "2016", "first_author": "Amodei D", "journal": "arXiv"}

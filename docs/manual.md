@@ -350,13 +350,17 @@ the toolkit at `../tools/`.
 python3 ../tools/verify.py --rows rows.json --out verify_report.json
 ```
 
-Checks every citation against PubMed, PMC, CrossRef and arXiv, and exits 0 only
-when every verdict is `OK`. Before canon, the claim it checks is what the search
-agent reported, kept on each row as `search_author`, `search_year` and
-`search_title`; after canon the canonical `apa` must agree as well. A row with both an arXiv id
-and a journal DOI has both checked. A journal DOI is verified only by its own
-CrossRef record: a DOI that does not resolve is a `MISMATCH`, even when a PubMed
-or title search finds the claimed paper.
+Checks every citation against PubMed, PMC, CrossRef, DataCite and arXiv, and
+exits 0 only when every verdict is `OK`. Before canon, the claim it checks is
+what the search agent reported, kept on each row as `search_author`,
+`search_year` and `search_title`; after canon the canonical `apa` must agree as
+well. A row with both an arXiv id and a journal DOI has both checked. A journal
+DOI is verified only by its own CrossRef record — or, when CrossRef has no such
+DOI, its DataCite record: Zenodo, figshare, OSF and Dryad software, data-set
+and (some) preprint deposits register with DataCite instead, and resolving
+there counts the same as resolving in CrossRef. A DOI that does not resolve in
+EITHER registry is a `MISMATCH`, even when a PubMed or title search finds the
+claimed paper.
 
 | Verdict | Meaning | Action |
 |---|---|---|
@@ -418,7 +422,11 @@ python3 ../tools/sentence_case.py --rows rows.json --proper proper_nouns.json --
 
 `references.py` rebuilds every reference from its verified DOI or arXiv id into
 APA-7: full author lists, name particles, real venue names (including bioRxiv and
-PsyArXiv), and unescaped HTML. A journal DOI replaces an arXiv preprint as the
+PsyArXiv), and unescaped HTML. A DOI CrossRef does not hold is looked up in
+DataCite next — Zenodo, figshare, OSF and Dryad software, data-set and preprint
+deposits register there — and rebuilt as `Authors (Year). Title (Version v)
+[Data set|Computer software|Preprint]. Publisher.`, with the bracket descriptor
+and `(Version …)` omitted when DataCite has none. A journal DOI replaces an arXiv preprint as the
 version of record. Only a DOI-less book or report keeps a hand-written reference.
 
 `--audit` is a hard gate. It also warns about near-duplicate rows and multi-word
@@ -460,6 +468,12 @@ and `no-forward-run`.
 !!! warning "Non-English titles are skipped by default"
     Sentence case would lowercase German nouns, so `sentence_case.py` detects and
     skips non-English titles and lists them; `--include-foreign` overrides.
+
+!!! note "Allowlist DataCite's bracket descriptors"
+    `[Data set]`, `[Computer software]` and `[Preprint]` are fixed APA-7
+    punctuation, not Title Case a human wrote — add them as `phrases` in the
+    corpus's `--proper` file so `sentence_case.py` does not try to lowercase
+    them.
 
 After this phase, `rows.json` is the live table (contract rule 6).
 

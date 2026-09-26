@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a list of citations against PMC / PubMed / CrossRef / arXiv.
+"""Verify a list of citations against PMC / PubMed / CrossRef / DataCite / arXiv.
 
 Reports one verdict per citation: OK, MISMATCH (author/year/title), NOT-FOUND,
 ERROR, or UNCHECKED (the row carried no claim to check, so a resolving DOI proves
@@ -21,6 +21,13 @@ MISMATCH, which reads as "skip" and lets a whole class of papers (AI/ML venues,
 preprints) dodge the check. So this tool resolves arXiv DOIs and bare `arxiv`
 ids directly against the arXiv API, prefetched in BATCHES (the API takes many
 ids per `id_list` call and rate-limits a per-paper loop into a ban).
+
+A DOI missing from CrossRef is not necessarily fake: Zenodo, figshare, OSF and
+Dryad software/data-set (and some preprint) deposits are registered with
+DataCite instead, so a clean CrossRef 404 is followed by a DataCite lookup
+before the DOI is called MISMATCH. A DOI missing from BOTH registries is still
+the existing "DOI does not resolve" — DataCite resolving it counts the same as
+CrossRef resolving it.
 
 Input format (JSON list of dicts):
 [
@@ -118,18 +125,39 @@ def lookup_pubmed_title(title):
 
 
 def lookup_crossref(doi):
-    # Let a transient failure propagate (verify_one reports it as ERROR); a clean
-    # miss (404 / unknown DOI) returns None. Swallowing everything to None — as
-    # this once did — hides rate-limiting as a false "not in CrossRef".
+    """CrossRef's record for `doi`, or DataCite's on a clean CrossRef miss —
+    Zenodo/figshare/OSF/Dryad software and data-set (and some preprint) DOIs are
+    registered with DataCite, not CrossRef, so a CrossRef 404 there is "wrong
+    registry", not "does not exist". The found record's `source` is "datacite"
+    in that case (verify_one reads it to label the verdict); a record found
+    directly in CrossRef carries no `source` key.
+
+    Let a transient failure from EITHER registry propagate (verify_one reports
+    it as ERROR); a clean miss from BOTH returns None — the existing "DOI does
+    not resolve" MISMATCH (I1) is unchanged: a DOI row is OK only if the DOI
+    itself resolved and matched, and DataCite resolving it counts the same as
+    CrossRef resolving it. Swallowing everything to None — as this once did —
+    hides rate-limiting as a false "not in CrossRef".
+    """
     try:
         r = common.crossref_work(doi)
+    except Exception as e:
+        if _is_transient(e):
+            raise
+        r = None
+    if r:
+        return {k: r[k] for k in ("title", "year", "first_author", "journal")}
+    try:
+        r = common.datacite_work(doi)
     except Exception as e:
         if _is_transient(e):
             raise
         return None
     if not r:
         return None
-    return {k: r[k] for k in ("title", "year", "first_author", "journal")}
+    rec = {k: r[k] for k in ("title", "year", "first_author", "journal")}
+    rec["source"] = "datacite"
+    return rec
 
 
 def _found_record(entry):
@@ -385,7 +413,7 @@ def verify_one(c, arxiv_results=None, arxiv_errored=None):
             return {"verdict": "ERROR", "found": None, "source": None,
                     "issues": ["DOI lookup failed (rate-limit/network) — re-run to verify"]}
         if found:
-            src = "doi"
+            src = found.get("source") or "doi"      # "datacite" when CrossRef missed
         else:
             doi_missing = True
     if not found:
@@ -434,7 +462,7 @@ def verify_one(c, arxiv_results=None, arxiv_errored=None):
         issues += ["canonical apa: " + i for i in _claim_issues(dict(c, **c["alt_expect"]), found, journal)]
     if journal is not None:
         return {"verdict": "OK" if not issues else "MISMATCH", "issues": issues,
-                "found": journal, "source": "arxiv+doi"}
+                "found": journal, "source": "arxiv+" + (journal.get("source") or "doi")}
 
     if issues and errored and src == "title-search":
         # The authoritative lookup (DOI/PMID) could not complete and the fallback

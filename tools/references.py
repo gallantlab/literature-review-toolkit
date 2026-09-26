@@ -4,8 +4,10 @@
 A reference's bibliographic text must never be trusted from a search agent's
 memory (topic mode) or OpenAlex's light metadata (lab mode). This rebuilds each
 `apa` from the *verified* DOI against the authoritative source — CrossRef for
-DOIs, the arXiv API for arXiv ids — through ONE formatter, then audits the result
-against a hard quality gate.
+DOIs (falling back to DataCite when CrossRef has no such DOI: Zenodo, figshare,
+OSF and Dryad software/data-set/preprint deposits register there instead), the
+arXiv API for arXiv ids — through ONE formatter, then audits the result against
+a hard quality gate.
 
 Pipeline position:
   topic mode:  search -> verify.py (catch fabrications) -> references.py (canonicalize)
@@ -65,6 +67,32 @@ def crossref(doi, fallback_venue=""):
     return {"apa": crossref_apa(r), "venue": r["book"] or r["journal"], "source": "crossref"}
 
 
+def datacite(doi, fallback_venue=""):
+    """APA for a DataCite-registered deposit (Zenodo/figshare/OSF/Dryad software,
+    data set or preprint) -- the same contract as crossref(): None on a record
+    with no usable authors, else {apa, venue, source}."""
+    r = common.datacite_work(doi, fallback_venue)
+    if not r or not r["people"]:
+        return None
+    apa = common.build_datacite_apa(r["people"], r["year"], r["title"], r["version"],
+                                    r["resource_type"], r["publisher"])
+    return {"apa": apa, "venue": r["journal"], "source": "datacite"}
+
+
+def _crossref_or_datacite(doi, fallback_venue=""):
+    """A journal DOI's canonical record: CrossRef first, then DataCite on a
+    clean CrossRef 404 (Zenodo/figshare/OSF/Dryad software and data-set DOIs are
+    registered with DataCite, not CrossRef). A non-404 CrossRef failure, or a
+    404 from DataCite too, propagates -- canonical()'s own except clauses cover
+    both: a 404 from BOTH registries is still "DOI does not exist"."""
+    try:
+        return crossref(doi, fallback_venue)
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            raise
+        return datacite(doi, fallback_venue)
+
+
 def arxiv(aid, fallback_venue="", entries=None):
     """APA from the arXiv record; `entries` is a common.arxiv_batch() prefetch
     (else this one id is fetched on its own)."""
@@ -105,7 +133,7 @@ def canonical(row, arxiv_cache=None):
     fv = row.get("venue", "")
     try:
         if journal_doi:
-            r = crossref(journal_doi, fv)
+            r = _crossref_or_datacite(journal_doi, fv)
         elif aid:
             if arxiv_cache is not None:
                 entries, errored = arxiv_cache
@@ -116,7 +144,7 @@ def canonical(row, arxiv_cache=None):
             else:
                 r = arxiv(aid, fv)
         elif doi:
-            r = crossref(doi, fv)
+            r = _crossref_or_datacite(doi, fv)
         else:
             return None
     except urllib.error.HTTPError as e:
