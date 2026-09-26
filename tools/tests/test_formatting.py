@@ -3103,6 +3103,28 @@ _e = _i10_run(merge_lanes, ["merge_lanes.py", "--append", _i10lane, "--into", _i
               append=lambda rows, keyf, lane: (_i10_touch(_i10rp), ([], [], []))[1])
 check_true("merge_lanes --append refuses a rows.json that changed", isinstance(_e, RuntimeError), repr(_e))
 
+# Entrance test: --append --into an empty table ([]) is refused -- common.key_field
+# would key the appended rows by "label" (its fallback for a table with no "ref"
+# row to look at), silently diverging from every fresh-merge table's "ref" key.
+_d5 = _tmpf.mkdtemp()
+_emptyrp = os.path.join(_d5, "rows.json")
+common.dump_json([], _emptyrp)
+_emptylane = os.path.join(_d5, "lane.json")
+common.dump_json(_lane("X", [_p("X-01", doi="10.1/x")]), _emptylane)
+_argv = sys.argv
+sys.argv = ["merge_lanes.py", "--append", _emptylane, "--into", _emptyrp]
+_exit = None
+try:
+    merge_lanes.main()
+except SystemExit as e:
+    _exit = e
+finally:
+    sys.argv = _argv
+check_true("merge_lanes --append --into an empty table is refused",
+           _exit is not None and _exit.code == 2, repr(_exit))
+check("merge_lanes --append --into an empty table leaves it untouched",
+      common.load_json(_emptyrp), [])
+
 # ---- final fixes I11: arXiv-only rows are visible to coverage (2026-09-25) -----
 _i11 = merge_lanes.to_row(_p("A-01", arxiv="2301.00001v2"), "A")
 check("to_row gives an arXiv-only paper its arXiv DOI and doi.org link", (_i11["doi"], _i11["link"], _i11["arxiv"]),

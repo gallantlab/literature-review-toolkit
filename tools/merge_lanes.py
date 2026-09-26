@@ -335,6 +335,13 @@ def main_append(ap, args):
     if not args.into:
         ap.error("--append needs --into rows.json")
     rows = common.load_json(args.into)
+    if not rows:
+        # common.key_field falls back to "label" when there is no row to look at,
+        # silently diverging from every fresh-merge table's "ref" key -- --raw/--out
+        # is the right tool for a first merge; --append is for growing one.
+        ap.error(f"{args.into} is empty; --append would key its rows by \"label\" "
+                 "(common.key_field's fallback with no row to look at) -- run "
+                 "merge_lanes.py --raw/--out for a first merge")
     loaded = os.path.getmtime(args.into)         # the write refuses a file changed since
     keyf = common.key_field(rows)
     added, skipped, pairs = append(rows, keyf, load_lane(args.append, args.allow_v1))
