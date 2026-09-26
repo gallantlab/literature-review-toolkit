@@ -1968,8 +1968,6 @@ check_true("--repair + --list-acks is refused with SystemExit(2)",
 
 # Entrance test: --list-acks prints REF<TAB>WARNING_ID<TAB>TEXT for every unacknowledged
 # warning and exits 1; once acknowledged it prints nothing and exits 0.
-import io  # noqa: E402
-
 _d2 = _tmpf.mkdtemp()
 _rp2, _ap2 = os.path.join(_d2, "rows.json"), os.path.join(_d2, "audit_acks.json")
 common.dump_json([_na], _rp2)
