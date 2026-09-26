@@ -17,6 +17,7 @@ import cite_check  # noqa: E402
 import common  # noqa: E402
 import families  # noqa: E402
 import families_figure  # noqa: E402
+import forward  # noqa: E402
 import gen_docs  # noqa: E402
 import prose_audit  # noqa: E402
 import references  # noqa: E402
@@ -2336,6 +2337,33 @@ check("a title-only hit with a conflicting/differing DOI is appended, not skippe
 check("...and skipped stays empty", _skipped2, [])
 check("...and reported as a possible pair for a human verdict",
       [(p["a"], p["b"]) for p in _pairs2], [("N1", "Y-01")])
+
+# ---- forward.py (2026-09-26) -----------------------------------------------
+_FR = [{"ref": "A", "doi": "10.1/a", "cite_openalex": 10}, {"ref": "B", "doi": "10.1/b", "cite_openalex": 500},
+       {"ref": "C", "doi": "10.1/c", "cite_openalex": 50}, {"ref": "N"}]
+check("landmarks: in-corpus in-degree first, then citations",
+      [r["ref"] for r in forward.pick_landmarks(_FR, "ref", {"A": 9, "C": 9}, 2)], ["C", "A"])
+
+
+def _w(wid, doi, refs, cites=5, title="T"):
+    return {"id": f"https://openalex.org/{wid}", "doi": f"https://doi.org/{doi}" if doi else None,
+            "display_name": title, "publication_year": 2024, "cited_by_count": cites,
+            "authorships": [{"author": {"display_name": "Ada Lovelace"}}],
+            "referenced_works": [f"https://openalex.org/{x}" for x in refs]}
+
+
+_corpus_w = {"W1", "W2", "W3"}
+_cands, _nodoi = forward.score({"A": [_w("W9", "10.9/new", ["W1", "W2", "W3"], 40), _w("W2", "10.1/b", ["W1"]),
+                                      _w("W8", "10.9/weak", ["W1"]), _w("W7", None, ["W1", "W2", "W3"])],
+                                "C": [_w("W9", "10.9/new", ["W1", "W2", "W3"], 40)]},
+                               _corpus_w, {"10.1/a", "10.1/b", "10.1/c"}, 3)
+check("score keeps papers citing >= 3 corpus papers, outside the corpus, with a DOI",
+      [(c["doi"], c["shared"], sorted(c["cites_landmarks"])) for c in _cands], [("10.9/new", 3, ["A", "C"])])
+check("score counts candidates dropped for lacking a DOI", _nodoi, 1)
+with _patched(common, http_json=lambda url, **k: {"results": [{"id": "https://openalex.org/W1",
+                                                               "doi": "https://doi.org/10.1/A"}]}), _sleeps():
+    check("openalex_ids maps DOIs to short work ids", forward.openalex_ids(["10.1/a"], "t@example.org"),
+          {"10.1/a": "W1"})
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
