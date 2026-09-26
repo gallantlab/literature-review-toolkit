@@ -130,11 +130,18 @@ def prepare(rows, keyf, searchers=(search_crossref, search_openalex)):
 
 
 def adopt(rows, keyf, doi_cands):
-    """Give each row with exactly one candidate that DOI; it then goes through verify."""
+    """Give each row with exactly one candidate that DOI; it then goes through verify.
+
+    A candidate ref that is no longer in the table (renamed or removed since
+    --prepare wrote handcheck_doi_candidates.json) is reported on stderr rather
+    than silently dropped -- a stale candidates file once looked like it adopted
+    nothing to worry about."""
     by = {r.get(keyf): r for r in rows}
     adopted, ambiguous = [], []
     for k, cands in doi_cands.items():
         if k not in by:
+            print(f"  ⚠ {k}: candidate DOI(s) for a ref not in this table (renamed/removed "
+                  "since --prepare); skipped", file=sys.stderr)
             continue
         if len(cands) != 1:
             ambiguous.append(k)

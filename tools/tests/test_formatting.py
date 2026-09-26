@@ -2087,6 +2087,13 @@ check("adopt moves a row with one found DOI into the verify path",
       (_ad, _rows[0]["doi"], _rows[0]["link"]), (["B1"], "10.7208/x", "https://doi.org/10.7208/x"))
 check("adopt skips an ambiguous row", handcheck.adopt([dict(_book)], "ref",
                                                       {"B1": [{"doi": "a"}, {"doi": "b"}]}), ([], ["B1"]))
+_adopt_err = io.StringIO()
+with _ctx.redirect_stderr(_adopt_err):
+    _ad9, _amb9 = handcheck.adopt([dict(_book)], "ref", {"ZZ": [{"doi": "10.1/z"}]})
+check("adopt does not adopt a candidate ref that is not in the table", (_ad9, _amb9), ([], []))
+check_true("adopt prints a note for a candidate ref not in the table",
+           "ZZ" in _adopt_err.getvalue() and "not in this table" in _adopt_err.getvalue(),
+           _adopt_err.getvalue())
 _rows = [dict(_book), {"ref": "B2", "apa": "Doe, J. (1970). Memo. Lab."}, {"ref": "D1", "doi": "10.1/d"}]
 _hc_in = [{"ref": "B1", "apa_sha": common.apa_sha(_book["apa"])},
           {"ref": "B2", "apa_sha": common.apa_sha("Doe, J. (1970). Memo. Lab.")}]
