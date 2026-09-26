@@ -4515,6 +4515,14 @@ check_true("R2.1: is_initials takes any uppercase script, 1-4 letters",
            all(common.is_initials(t) for t in ("Ł", "ŁS", "Đ.T.", "И", "J-H", "J.-L.", "JLKM"))
            and not any(common.is_initials(t) for t in ("Jr", "Li", "JLKMN", "ł", "1A", "-", "")))
 
+# ---- author fix round 2, item 2: an unreadable record author fails closed (2026-09-26) ----
+check_true("R2.2: 'Smith' vs a CrossRef 'Craig (' is a mismatch", _mA("Smith", "Craig (") != [])
+check("R2.2: ...while 'Craig' matches it", _mA("Craig", "Craig ("), [])
+check("R2.2: a record author with no readable word is reported, not skipped",
+      _mA("Smith", "( — )"), ["first-author mismatch: could not read the record's first author '( — )' "
+                              "(expected 'Smith')"])
+check("R2.2: a record with no first author at all is still not checked", _mA("Smith", ""), [])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

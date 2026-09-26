@@ -390,6 +390,10 @@ def _author_issue(c, rec, where=""):
     # search-agent claims against their rows' apa: no past OK verdict is flagged.
     expect_t = _surname_tokens(c.get("expect_first_author"))
     actual_t = _surname_tokens(rec.get("first_author"))
+    if expect_t and not actual_t and str(rec.get("first_author") or "").strip():
+        # fail closed: a record author with no readable word cannot confirm the claim
+        return [f"{where}first-author mismatch: could not read the record's first author "
+                f"'{rec['first_author']}' (expected '{c.get('expect_first_author')}')"]
     if expect_t and actual_t and not any(expect_t[0] == t or expect_t[0] in _hyphen_parts(t)
                                          for t in actual_t):
         return [f"{where}first-author mismatch: expected '{c.get('expect_first_author')}', "
