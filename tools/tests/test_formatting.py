@@ -4170,6 +4170,38 @@ for _m3extra in ((), ("--draft",)):
           (_m3code, sorted(f for f in os.listdir(_m3d) if f.endswith(".xlsx"))), (1, []))
     check_true("M3: ...naming the ledger's shape", "not a JSON object" in _m3err.getvalue(), _m3err.getvalue())
 
+# ---- final review M4: _runs values and sidecars must be objects (2026-09-26) ----
+check_true("M4: validate_ledger refuses a non-dict _runs value",
+           _raises(lambda: candidates.validate_ledger({"_runs": {"xref": True}})))
+try:
+    candidates.validate_ledger({"_runs": {"xref": ["complete"]}})
+    _m4msg = ""
+except ValueError as e:
+    _m4msg = str(e)
+check_true("M4: ...naming the source", "_runs" in _m4msg and "xref" in _m4msg, _m4msg)
+candidates.validate_ledger({"_runs": {"xref": {"complete": True}}})    # a dict value still passes
+check_true("M4: run_record refuses a non-dict sidecar", _raises(lambda: candidates.run_record([True], "xref")))
+_m4d = _tmpf.mkdtemp()
+_m4rp = os.path.join(_m4d, "rows.json")
+common.dump_json([{"ref": "R1", "doi": "10.1/r1"}], _m4rp)
+_m4add = os.path.join(_m4d, "xref.json")
+common.dump_json([{"doi": "10.9/e", "n_citations": 4}], _m4add)
+common.dump_json(["complete"], f"{_m4add}.run.json")
+_argv = sys.argv
+sys.argv = ["candidates.py", "--rows", _m4rp, "--add", _m4add, "--source", "xref"]
+_m4err = io.StringIO()
+try:
+    with _ctx.redirect_stdout(io.StringIO()), _ctx.redirect_stderr(_m4err):
+        candidates.main()
+except SystemExit:
+    pass
+finally:
+    sys.argv = _argv
+check("M4: candidates --add refuses a non-dict sidecar (no ledger written)",
+      os.path.exists(os.path.join(_m4d, "candidates.json")), False)
+check_true("M4: ...with a clear message naming the sidecar",
+           "run.json" in _m4err.getvalue() and "not a JSON object" in _m4err.getvalue(), _m4err.getvalue())
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

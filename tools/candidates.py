@@ -43,7 +43,7 @@ def validate_ledger(ledger):
     """Raise ValueError naming the bad entry when `ledger` is not a candidate
     ledger of the shape every reader assumes: a JSON object, each non-"_" key
     mapping to an object whose decision is pending/include/exclude, and
-    `_runs` (when present) an object. Every common.load_optional_json(...,
+    `_runs` (when present) an object of objects. Every common.load_optional_json(...,
     default) caller for candidates.json calls this right after loading, so a
     hand-edited or truncated file is reported by name -- as a candidates.py
     argparse error, or a references.py audit corpus defect -- instead of an
@@ -52,6 +52,9 @@ def validate_ledger(ledger):
         raise ValueError(f"candidate ledger is not a JSON object (got {type(ledger).__name__})")
     if "_runs" in ledger and not isinstance(ledger["_runs"], dict):
         raise ValueError(f"candidate ledger: _runs is not an object (got {type(ledger['_runs']).__name__})")
+    for src, run in (ledger.get("_runs") or {}).items():
+        if not isinstance(run, dict):
+            raise ValueError(f"candidate ledger: _runs[{src!r}] is not an object (got {type(run).__name__})")
     for d, c in ledger.items():
         if d.startswith("_"):
             continue
@@ -79,6 +82,9 @@ def run_record(sidecar, source):
     the xref pass would satisfy the audit's no-xref-run check without one."""
     if sidecar is None:
         return False, None
+    if not isinstance(sidecar, dict):
+        raise ValueError(f"the run sidecar is not a JSON object (got {type(sidecar).__name__}); "
+                         "re-run the tool that wrote it")
     tool = sidecar.get("tool")
     if tool is not None and tool != source:
         raise ValueError(f"the run sidecar was written by {tool}, not {source}: "
@@ -187,7 +193,7 @@ def main():
             complete, n_papers = run_record(common.load_optional_json(f"{args.add}.run.json", None),
                                             args.source)
         except ValueError as e:
-            ap.error(str(e))
+            ap.error(f"{args.add}.run.json: {e}")
         a, s = add(ledger, common.load_json(args.add), args.source, corpus, args.asof,
                    complete=complete, n_papers=n_papers)
         common.dump_json(ledger, path)
