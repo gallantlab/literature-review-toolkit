@@ -4417,6 +4417,14 @@ check("A4b: claim_surname('Van Essen DC') matches the record 'Van Essen D'",
 check("A4b: 'Thomas Yeo B' matches the record 'Yeo B'", _m8(verify.claim_surname("Thomas Yeo B"), "Yeo B"), [])
 check("A4b: a given-first name is unchanged ('Jane Smith')", verify.claim_surname("Jane Smith"), "Smith")
 
+# ---- author fix round 1, B: claim_surname reads every PubMed shape (2026-09-26) ----
+for _bin, _bout in (("LI J", "LI"), ("AN J", "AN"), ("O K", "O"), ("LEE JH", "LEE"),
+                    ("Smith J.-L.", "Smith"), ("King J-R", "King"), ("Smith JLK", "Smith"),
+                    ("SCHLEIDT W", "SCHLEIDT"), ("Van Essen DC", "Van Essen"),
+                    ("van den Heuvel MP", "van den Heuvel"), ("Thomas Yeo BT", "Thomas Yeo"),
+                    ("Quoc V. Le", "Le"), ("Hae-Jeong Park", "Park")):
+    check(f"B: claim_surname({_bin!r})", verify.claim_surname(_bin), _bout)
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

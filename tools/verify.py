@@ -188,15 +188,19 @@ def lookup_arxiv_batch(aids, chunk=50, sleep=3.0):
     return results, errored
 
 
-_INITIALS = re.compile(r"^(?:[A-ZÀ-Ý]\.?){1,2}$")   # "J", "JL", "J.", "J.L."
+# An initials token: 1-3 capitals, dotted or not, hyphenated or not ("J", "JL",
+# "JLK", "J.L.", "J.-L.", "J-R"). Judged on the raw token, before any casing.
+_INITIALS = re.compile(r"^[A-ZÀ-Ý]\.?(?:-?[A-ZÀ-Ý]\.?){0,2}$")
 
 
 def claim_surname(name):
     """Surname out of whatever shape a search agent reported a first author in:
     'Gilbert, C. D.' / 'C. D. Gilbert' / 'Gilbert CD' / 'Gilbert' -> 'Gilbert'.
     A comma means family-first (APA); so do words followed only by initials
-    ('Smith J', 'Smith JL', 'Smith J. L.', 'Van Essen DC', PubMed style), which
-    give all the words; otherwise the last token that is not an initial."""
+    ('Smith J', 'Smith JL', 'Smith J.-L.', 'Van Essen DC', PubMed style), which
+    give all the words, and an all-caps PubMed form made only of initials-shaped
+    tokens ('LI J', 'AN J', 'O K'), which gives its first token; otherwise the
+    last token that is not an initial."""
     name = re.sub(r"\s*(?:,?\s*et al\.?|&.*)$", "", (name or "").strip())
     if not name:
         return ""
@@ -208,6 +212,8 @@ def claim_surname(name):
         k -= 1
     if k < len(toks) and all(len(t) >= 2 and not _INITIALS.match(t) for t in toks[:k]):
         return " ".join(toks[:k])
+    if len(toks) > 1 and all(_INITIALS.match(t) for t in toks):
+        return toks[0]
     parts = [p for p in name.split() if not (len(p.rstrip(".")) == 1 and p.endswith("."))]
     return parts[-1] if parts else name
 
