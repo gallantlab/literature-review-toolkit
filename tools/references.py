@@ -384,13 +384,18 @@ def row_gate_defects(r, warn):
                  "has no search claim), which canon built from this same DOI; confirm by hand that the "
                  "DOI is the intended paper")
         if common.verified_ok(r) and not r.get("canonical_at"):
-            warn("kept-existing-apa", "verified but not rebuilt by canon (the source had no usable "
-                 "record); confirm the apa by hand")
+            # keyed to the apa text, so an acknowledgment lapses when the apa is edited
+            warn(f"kept-existing-apa:{common.apa_sha(r.get('apa'))[:8]}",
+                 "verified but not rebuilt by canon (the source had no usable record); "
+                 "confirm the apa by hand")
     else:
         hv = r.get("hand_verified")
         if not (isinstance(hv, dict) and hv.get("verdict") in ("confirmed", "corrected")
                 and str(hv.get("source_checked") or "").strip()):
             d.append("hand-check-missing (a DOI-less row needs handcheck.py --ingest)")
+        elif hv.get("apa_sha") != common.apa_sha(r.get("apa")):
+            d.append("hand-check-missing (apa changed since the hand check; re-check it and "
+                     "handcheck.py --ingest)")
     s = (r.get("summary") or "").strip()
     if s:
         sc = r.get("summary_check")
@@ -608,12 +613,17 @@ def main():
                             retry_wait=args.retry_wait, only=only)
         rebuilt = result["rebuilt"]
     if args.repair:
+        # On a legacy table the stamp guards it against an emitter overwrite. On a
+        # gated one canonical_at means "rebuilt from a verified source", which an
+        # offline string repair is not, so it must not be forged.
+        stamp = not common.is_gated(rows)
         for r in rows:
             fixed, what = repair(r.get("apa", ""))
             if what:
                 r["apa"] = fixed
                 repaired[r.get(keyf, "?")] = what
-            r.setdefault("canonical_at", args.asof)   # keep an existing date: repair is not canon
+            if stamp:
+                r.setdefault("canonical_at", args.asof)   # keep an existing date: repair is not canon
     if not args.audit and not args.list_acks:
         common.dump_json(rows, args.out or args.rows)
 

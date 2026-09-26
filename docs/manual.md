@@ -393,13 +393,15 @@ python3 ../tools/handcheck.py --rows rows.json --ingest handcheck_result.json
 ```
 
 `--prepare` searches CrossRef and OpenAlex for a DOI the row turns out to have
-(the same title, not merely contained in a longer one, and the same year) and writes the candidates it found plus a hand-
-check input and brief for everything else. `--adopt-dois` gives a row with exactly
+(the same title, not merely contained in a longer one, and the same year) and
+writes the candidates it found plus a hand-check input and brief for everything
+else. `--adopt-dois` gives a row with exactly
 one candidate that DOI, so it goes through `verify.py` like any other reference; a
 row with several candidates is left alone and named. `--ingest` records each
 checked row as `hand_verified` — `confirmed`, `corrected` (with the corrected APA),
 or `not-found` — with the source actually checked: a library catalog, the
-publisher's page, the post itself, never another paper's citation of it. A
+publisher's page, the post itself, never another paper's citation of it — and a
+hash of the `apa` it confirmed, so editing that `apa` later lapses the check. A
 `not-found` result exits nonzero: remove the row, or check it again.
 
 ### 5.2 Phase 3f: canonicalize every reference
@@ -421,7 +423,8 @@ version of record. Only a DOI-less book or report keeps a hand-written reference
 `--audit` is a hard gate. It also warns about near-duplicate rows and multi-word
 surnames that may be mis-split given names. Both need a human verdict, so read
 the warnings even when the gate passes. `--repair` fixes string damage (markup,
-Unicode hyphens, `?.`) offline, without re-fetching or undoing hand fixes.
+Unicode hyphens, `?.`) offline, without re-fetching or undoing hand fixes; it
+stamps `canonical_at` only on a legacy table, never on a gated one.
 
 Canon's refusal to rebuild an unverified row is **unconditional**: it rebuilds only
 rows verified for their current DOI/arXiv id, on every table — including one built

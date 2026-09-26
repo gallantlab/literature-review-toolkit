@@ -368,13 +368,16 @@ page and confirm author/year. Don't rely on the agent's claim.
 essay cannot be machine-verified, so a gated table needs a recorded hand check
 instead — the audit fails a DOI-less row without one. `tools/handcheck.py --prepare`
 searches CrossRef and OpenAlex for a DOI the row turns out to have (the same title
-by `common.title_match`, not merely contained in a longer one, and the same year) and writes the rest as a hand-check input plus a brief;
+by `common.title_match`, not merely contained in a longer one, and the same year)
+and writes the rest as a hand-check input plus a brief;
 `--adopt-dois` gives a row with exactly one candidate DOI that DOI, so it goes
 through `verify.py` like any other reference (a row with several candidates is left
 alone and named); `--ingest` records each checked row as `hand_verified` —
 `confirmed`, `corrected` (with the corrected APA), or `not-found` — with the source
 actually checked (a library catalog, the publisher's page, the post itself; never
-another paper's citation of it). Dispatch this as soon as a lane's DOI-less rows
+another paper's citation of it) and a hash of the `apa` it confirmed (`apa_sha`):
+editing that `apa` afterward lapses the hand check, and the audit fails the row as
+`hand-check-missing` until it is re-checked. Dispatch this as soon as a lane's DOI-less rows
 exist, alongside verify (see "Start verifying before the last lane lands" above).
 
 Common fabrication patterns to flag:
@@ -1734,7 +1737,9 @@ Notes the index cannot carry:
 - `verify.py` and `xref.py` accept `--rows rows.json` directly, so a project needs
   no converter script to feed them.
 - `references.py --repair` retrofits an old corpus offline (no re-fetch, so
-  post-canon hand fixes survive); canon and repair stamp rows `canonical_at`.
+  post-canon hand fixes survive); canon stamps rows `canonical_at`, and repair does
+  too on a legacy table only — on a gated table `canonical_at` means "rebuilt from
+  a verified source", which an offline repair is not.
 - `reconcile_downloads.py` matches by filename ↔ DOI substring first, then by
   first-author + year + title overlap on the first page (`pdftotext`), and refuses
   to move a PDF it is unsure about.

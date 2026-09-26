@@ -77,8 +77,9 @@ in `tools/README.md` and `PLAYBOOK.md`.
   exits 1 on any defect and warns on near-duplicate rows, possibly mis-split
   surnames, a deposit-year conflict, and a cached `year` that disagrees with the
   `apa` — all need a human verdict. `--repair` fixes string damage (markup,
-  Unicode hyphens, `?.`) offline, without re-fetching or undoing hand fixes. Both
-  stamp rows with `canonical_at`, which `common.write_rows` refuses to overwrite.
+  Unicode hyphens, `?.`) offline, without re-fetching or undoing hand fixes. Canon
+  stamps rows with `canonical_at`, which `common.write_rows` refuses to overwrite;
+  `--repair` stamps it only on a legacy (ungated) table.
   A row whose fetch fails twice is named and the run exits 1; `--only` rebuilds
   just the named rows. `--list-acks` prints every unacknowledged warning as
   `REF<TAB>WARNING_ID<TAB>TEXT` and exits nonzero only on those — never on a
@@ -90,8 +91,9 @@ in `tools/README.md` and `PLAYBOOK.md`.
   no API can verify it. `--prepare` searches CrossRef/OpenAlex for a DOI the row
   turns out to have; `--adopt-dois` gives a row with exactly one candidate that
   DOI, so it verifies normally; `--ingest` records `confirmed` / `corrected` /
-  `not-found` as `hand_verified`, with the source actually checked. A
-  `not-found` result exits nonzero.
+  `not-found` as `hand_verified`, with the source actually checked and a hash
+  of the `apa` it confirmed (an edited `apa` lapses the check). A `not-found`
+  result exits nonzero.
 - **`spreadsheet.py`** adds the `Cite` and `Family` columns when rows carry them.
   An unknown `source` renders white with a warning instead of failing. It also
   runs the same audit as `references.py --audit` and refuses to write a failing

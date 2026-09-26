@@ -322,6 +322,12 @@ def summary_sha(text):
     return hashlib.sha256((text or "").strip().encode("utf-8")).hexdigest()[:16]
 
 
+def apa_sha(apa):
+    """Short hash of a reference, casefolded and whitespace-collapsed, so a hand
+    check or an acknowledgment recorded for one apa lapses when its text changes."""
+    return summary_sha(" ".join((apa or "").casefold().split()))
+
+
 def load_optional_json(path, default):
     """load_json, or `default` when the file does not exist."""
     return load_json(path) if path and os.path.exists(path) else default

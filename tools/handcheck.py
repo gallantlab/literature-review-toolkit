@@ -167,7 +167,7 @@ def ingest(rows, keyf, results, asof):
                 continue
             row["apa"] = apa
         row["hand_verified"] = {"verdict": v, "source_checked": src, "changes": res.get("changes") or "",
-                                "at": asof}
+                                "apa_sha": common.apa_sha(row.get("apa")), "at": asof}
         if v != "not-found":
             row["verify_note"] = f"Hand-verified ({v}) against {src}"
         n += 1

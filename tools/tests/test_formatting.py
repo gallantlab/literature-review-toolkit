@@ -1874,7 +1874,8 @@ _nd = {"ref": "B1", "apa": "Kuhn, T. S. (1962). The structure of scientific revo
        "summary": "", "canonical_at": common.GATES_SINCE}
 check("a DOI-less row without a hand check fails", _codes(references.audit_rows([_grow(), _nd], "ref"), "B1"),
       ["hand-check-missing"])
-_nd_ok = dict(_nd, hand_verified={"verdict": "confirmed", "source_checked": "LoC catalog record"})
+_nd_ok = dict(_nd, hand_verified={"verdict": "confirmed", "source_checked": "LoC catalog record",
+                                  "apa_sha": common.apa_sha(_nd["apa"])})
 check("a hand-checked DOI-less row passes", references.audit_rows([_grow(), _nd_ok], "ref")["defects"], {})
 _ed = _grow()
 _ed["summary"] = "Tests whether a different thing happens."
@@ -1907,7 +1908,7 @@ _kept = _grow()
 del _kept["canonical_at"]
 _kept["verified"]["at"] = common.GATES_SINCE
 check_true("a verified row canon could not rebuild is a warning",
-           "kept-existing-apa" in [w for w, _ in references.audit_rows([_kept], "ref")["warnings"]["G1"]])
+           any(w.startswith("kept-existing-apa") for w, _ in references.audit_rows([_kept], "ref")["warnings"]["G1"]))
 _legacy = [{"ref": "L1", "doi": "10.1/l1", "canonical_at": "2026-08-18",
             "apa": "Lambon Ralph, M. A. (2017). The neural basis. Nat Rev Neurosci, 1, 1."}]
 _rep = references.audit_rows(_legacy, "ref")
@@ -2826,6 +2827,39 @@ try:
 finally:
     sys.argv = _argv
 check_true("candidates --list skips the _runs record", "_runs" not in _i8out.getvalue(), _i8out.getvalue())
+
+# ---- final fixes I9: a hand check is bound to the apa it confirmed (2026-09-25) ----
+check("apa_sha ignores case and whitespace", common.apa_sha(" Kuhn,  T. (1962). The Structure. "),
+      common.apa_sha("kuhn, t. (1962). the structure."))
+_i9rows = [{"ref": "B1", "apa": "Kuhn, T. S. (1962). The structure of scientific revolutions. U Chicago Press.",
+            "summary": "", "canonical_at": common.GATES_SINCE}]
+handcheck.ingest(_i9rows, "ref", [{"ref": "B1", "verdict": "confirmed", "source_checked": "LoC record"}],
+                 "2026-09-25")
+check("handcheck records the apa_sha it confirmed", _i9rows[0]["hand_verified"].get("apa_sha"),
+      common.apa_sha(_i9rows[0]["apa"]))
+check("a hand-checked row passes", _codes(references.audit_rows([_grow(), _i9rows[0]], "ref"), "B1"), [])
+_i9ed = dict(_i9rows[0], apa=_i9rows[0]["apa"].replace("1962", "1970"))
+_i9d = references.audit_rows([_grow(), _i9ed], "ref")["defects"].get("B1", [])
+check_true("an apa edited since the hand check is hand-check-missing",
+           any(x.startswith("hand-check-missing") and "apa changed since the hand check" in x for x in _i9d),
+           str(_i9d))
+_i9k = _grow("K1", "10.1/k1")
+del _i9k["canonical_at"]
+check("the kept-existing-apa warning id is bound to the apa",
+      [w for w, _ in references.audit_rows([_i9k], "ref")["warnings"]["K1"]],
+      [f"kept-existing-apa:{common.apa_sha(_i9k['apa'])[:8]}"])
+_i9rp = os.path.join(_tmpf.mkdtemp(), "rows.json")
+common.dump_json([dict(_i9k, apa=_i9k["apa"] + "?.")], _i9rp)
+_argv = sys.argv
+sys.argv = ["references.py", "--rows", _i9rp, "--repair", "--email", "t@example.org"]
+try:
+    with _ctx.redirect_stdout(io.StringIO()):
+        references.main()
+except SystemExit:
+    pass
+finally:
+    sys.argv = _argv
+check("--repair on a gated table does not stamp canonical_at", "canonical_at" in common.load_json(_i9rp)[0], False)
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:
