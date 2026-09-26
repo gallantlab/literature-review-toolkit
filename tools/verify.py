@@ -566,6 +566,7 @@ def main():
         cits = common.load_json(args.citations)
     elif args.rows:
         rows = common.load_json(args.rows)
+        loaded = os.path.getmtime(args.rows)     # stamping refuses a file changed since
         cits = rows_to_citations(rows, common.key_field(rows, args.key))
     else:
         cits = json.loads(sys.stdin.read())
@@ -577,7 +578,7 @@ def main():
     out = merge_reports(prior, fresh) if prior is not None else fresh
     if args.rows and not args.no_stamp:
         n = stamp_rows(rows, fresh, common.key_field(rows, args.key), args.asof)
-        common.dump_json(rows, args.rows)
+        common.save_rows(args.rows, rows, loaded)
         print(f"  stamped {n} row(s) in {args.rows}", file=sys.stderr)
 
     if args.out:

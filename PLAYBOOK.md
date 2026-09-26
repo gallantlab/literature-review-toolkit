@@ -378,7 +378,12 @@ actually checked (a library catalog, the publisher's page, the post itself; neve
 another paper's citation of it) and a hash of the `apa` it confirmed (`apa_sha`):
 editing that `apa` afterward lapses the hand check, and the audit fails the row as
 `hand-check-missing` until it is re-checked. Dispatch this as soon as a lane's DOI-less rows
-exist, alongside verify (see "Start verifying before the last lane lands" above).
+exist, alongside verify (see "Start verifying before the last lane lands" above), but
+run `--ingest` only once verify has finished: every tool that writes `rows.json`
+(verify, handcheck, summary_audit --ingest, references, merge_lanes --append)
+refuses to save over a file that changed since it loaded it, so a concurrent
+writer fails loudly ("rows.json changed since it was loaded; re-run") instead of
+silently dropping the other's stamps.
 
 Common fabrication patterns to flag:
 - Author name that doesn't appear in any of the paper's actual authors.
@@ -1814,7 +1819,9 @@ default is no (Phase 4 is opt-in only). Then the pipeline, in order:
  3. python3 tools/verify.py --rows rows.json --out verify_report.json  (Phase 3)
     Fix or drop each MISMATCH and NOT-FOUND, or clear a false alarm with
     --override REF --reason "...". In parallel: tools/handcheck.py --prepare
-    for the DOI-less rows, the hand-check agent, then --ingest (Phase 3e).
+    for the DOI-less rows and the hand-check agent; run handcheck.py --ingest
+    only after verify finishes (both write rows.json; the second writer is
+    refused, not merged) (Phase 3e).
 
  4. Pitch the families to the user (Phase 6b step 2): propose ~3-8 families
     (tools/families.py --digest) and let them use, change, or skip them.

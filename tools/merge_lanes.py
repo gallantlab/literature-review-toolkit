@@ -332,9 +332,10 @@ def main_append(ap, args):
     if not args.into:
         ap.error("--append needs --into rows.json")
     rows = common.load_json(args.into)
+    loaded = os.path.getmtime(args.into)         # the write refuses a file changed since
     keyf = common.key_field(rows)
     added, skipped, pairs = append(rows, keyf, load_lane(args.append, args.allow_v1))
-    common.dump_json(rows, args.into)
+    common.save_rows(args.into, rows, loaded)
     print(f"appended {len(added)} row(s) to {args.into}; run verify.py --rows --only {','.join(added)}")
     for s in skipped:
         print(f"  · {s['ref']}: {s['reason']}")

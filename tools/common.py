@@ -273,6 +273,17 @@ def write_rows(path, rows, force=False):
     dump_json(rows, path)
 
 
+def save_rows(path, rows, loaded_mtime):
+    """Write rows back to the rows.json they were loaded from — refusing if the
+    file changed since (another tool wrote it: a handcheck --ingest landing while
+    verify was still running once lost one of the two writes). Pass the
+    os.path.getmtime(path) taken right after loading; None skips the check (a
+    different output path)."""
+    if loaded_mtime is not None and os.path.exists(path) and os.path.getmtime(path) != loaded_mtime:
+        raise RuntimeError(f"{path}: rows.json changed since it was loaded; re-run")
+    dump_json(rows, path)
+
+
 # ---- reference gates: stamps a check writes onto the row it checked ----------
 # A table is GATED (the gates can fail it) once any row carries a verify stamp, or
 # was built (`built_at`, stamped by every row emitter: merge_lanes.py, the rows

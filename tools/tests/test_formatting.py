@@ -2861,6 +2861,80 @@ finally:
     sys.argv = _argv
 check("--repair on a gated table does not stamp canonical_at", "canonical_at" in common.load_json(_i9rp)[0], False)
 
+# ---- final fixes I10: concurrent rows.json writers (2026-09-25) --------------
+def _i10_touch(path):
+    st = os.stat(path)
+    os.utime(path, (st.st_atime, st.st_mtime + 5))
+
+
+_i10d = _tmpf.mkdtemp()
+_i10rp = os.path.join(_i10d, "rows.json")
+common.dump_json([{"ref": "A"}], _i10rp)
+_i10m = os.path.getmtime(_i10rp)
+common.save_rows(_i10rp, [{"ref": "A", "x": 1}], _i10m)
+check("save_rows writes when the file is unchanged since load", common.load_json(_i10rp), [{"ref": "A", "x": 1}])
+_i10m = os.path.getmtime(_i10rp)
+_i10_touch(_i10rp)
+check_true("save_rows refuses a file that changed since load",
+           _raises(lambda: common.save_rows(_i10rp, [{"ref": "A", "x": 2}], _i10m)))
+check("...and leaves it as the other writer left it", common.load_json(_i10rp), [{"ref": "A", "x": 1}])
+
+
+def _i10_run(mod, argv, **patches):
+    """Run mod.main() with `patches`; returns the exception it raised (None if it exited or returned)."""
+    old = sys.argv
+    sys.argv = argv
+    try:
+        with _patched(mod, **patches), _sleeps(), _ctx.redirect_stdout(io.StringIO()), \
+                _ctx.redirect_stderr(io.StringIO()):
+            mod.main()
+    except SystemExit:
+        return None
+    except RuntimeError as e:
+        return e
+    finally:
+        sys.argv = old
+    return None
+
+
+def _i10_rows(rows):
+    common.dump_json(rows, _i10rp)
+    return _i10rp
+
+
+_i10row = {"ref": "V1", "doi": "10.1/v1", "search_title": "T", "search_author": "Smith", "search_year": 2020}
+
+
+def _i10_verify_all(cits, sleep=0.4, retry_wait=60.0):
+    _i10_touch(_i10rp)          # another writer lands while verify runs
+    return [{"label": c["label"], "verdict": "OK", "found": None, "source": "doi", "issues": []} for c in cits]
+
+
+_e = _i10_run(verify, ["verify.py", "--rows", _i10_rows([_i10row]), "--email", "t@example.org"],
+              verify_all=_i10_verify_all)
+check_true("verify refuses to stamp a rows.json that changed while it ran",
+           isinstance(_e, RuntimeError) and "changed since it was loaded" in str(_e), repr(_e))
+_i10res = os.path.join(_i10d, "hc.json")
+common.dump_json([{"ref": "B1", "verdict": "confirmed", "source_checked": "LoC"}], _i10res)
+_e = _i10_run(handcheck, ["handcheck.py", "--rows", _i10_rows([{"ref": "B1", "apa": "Doe, J. (1970). M. L."}]),
+                          "--ingest", _i10res],
+              ingest=lambda rows, keyf, results, asof: (_i10_touch(_i10rp), (0, []))[1])
+check_true("handcheck --ingest refuses a rows.json that changed", isinstance(_e, RuntimeError), repr(_e))
+common.dump_json({"refs": [], "sha": {}, "no_abstract": []}, os.path.join(_i10d, "manifest.json"))
+_e = _i10_run(summary_audit, ["summary_audit.py", "--rows", _i10_rows([{"ref": "S", "summary": "s"}]),
+                              "--ingest", "--dir", _i10d],
+              ingest=lambda *a: (_i10_touch(_i10rp), (0, []))[1])
+check_true("summary_audit --ingest refuses a rows.json that changed", isinstance(_e, RuntimeError), repr(_e))
+_e = _i10_run(references, ["references.py", "--rows", _i10_rows([{"ref": "R", "apa": "A, B. (2001). T?. V."}]),
+                           "--repair", "--email", "t@example.org"],
+              repair=lambda apa: (_i10_touch(_i10rp), (apa, []))[1])
+check_true("references --repair refuses a rows.json that changed", isinstance(_e, RuntimeError), repr(_e))
+_i10lane = os.path.join(_i10d, "lane.json")
+common.dump_json(_lane("X", [_p("X-01", doi="10.1/x")]), _i10lane)
+_e = _i10_run(merge_lanes, ["merge_lanes.py", "--append", _i10lane, "--into", _i10_rows([_grow()])],
+              append=lambda rows, keyf, lane: (_i10_touch(_i10rp), ([], [], []))[1])
+check_true("merge_lanes --append refuses a rows.json that changed", isinstance(_e, RuntimeError), repr(_e))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

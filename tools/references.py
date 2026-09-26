@@ -600,6 +600,7 @@ def main():
     common.set_user_agent(args.email)
 
     rows = common.load_json(args.rows)
+    loaded = os.path.getmtime(args.rows)         # the write-back refuses a file changed since
     keyf = common.key_field(rows, args.key)
     only = {x.strip() for x in args.only.split(",") if x.strip()} if args.only else None
     if only is not None:
@@ -625,7 +626,9 @@ def main():
             if stamp:
                 r.setdefault("canonical_at", args.asof)   # keep an existing date: repair is not canon
     if not args.audit and not args.list_acks:
-        common.dump_json(rows, args.out or args.rows)
+        out = args.out or args.rows
+        same = os.path.abspath(out) == os.path.abspath(args.rows)
+        common.save_rows(out, rows, loaded if same else None)
 
     acks_path = args.acks or os.path.join(os.path.dirname(os.path.abspath(args.rows)), "audit_acks.json")
     ledger_path = (args.candidates

@@ -86,7 +86,8 @@ skip it.</small>
     deferral: send it to one recovery lane, add its file, and re-merge.
  3. verify.py --rows rows.json --out verify_report.json — fix or drop each
     MISMATCH/NOT-FOUND, or override with a reason. In parallel: handcheck.py
-    --prepare / the hand-check agent / --ingest, for the DOI-less rows.
+    --prepare / the hand-check agent, for the DOI-less rows; run --ingest
+    after verify finishes (both write rows.json).
  4. Pitch the proposed families to the user.
  5. In parallel: references.py (canon; refuses an unverified row),
     citations.py, xref.py (Semantic Scholar for arXiv reference lists),

@@ -158,6 +158,7 @@ def main():
     here = os.path.dirname(os.path.abspath(args.rows))
     d = args.dir or os.path.join(here, "summary_audit")
     rows = common.load_json(args.rows)
+    loaded = os.path.getmtime(args.rows)         # --ingest refuses a file changed since
     keyf = common.key_field(rows, args.key)
     ab_path = args.abstracts or os.path.join(here, "abstracts.json")
     ab = common.load_optional_json(ab_path, {})
@@ -182,7 +183,7 @@ def main():
     for p in sorted(glob.glob(os.path.join(d, "result_*.json"))):
         results += common.load_json(p)
     n, errors = ingest(rows, keyf, results, ab, manifest, args.asof)
-    common.dump_json(rows, args.rows)
+    common.save_rows(args.rows, rows, loaded)
     flagged = [r.get(keyf) for r in rows if (r.get("summary_check") or {}).get("verdict") == "unsupported"]
     print(f"recorded {n} summary check(s); {len(flagged)} flagged")
     for e in errors:

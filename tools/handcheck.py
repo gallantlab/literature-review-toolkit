@@ -188,6 +188,7 @@ def main():
     if sum(bool(x) for x in (args.prepare, args.adopt_dois, args.ingest)) != 1:
         ap.error("give exactly one of --prepare, --adopt-dois, --ingest")
     rows = common.load_json(args.rows)
+    loaded = os.path.getmtime(args.rows)         # writes refuse a file changed since
     keyf = common.key_field(rows, args.key)
     here = os.path.dirname(os.path.abspath(args.rows))
     if args.prepare:
@@ -204,13 +205,13 @@ def main():
         return
     if args.adopt_dois:
         adopted, ambiguous = adopt(rows, keyf, common.load_json(args.adopt_dois))
-        common.dump_json(rows, args.rows)
+        common.save_rows(args.rows, rows, loaded)
         print(f"adopted {len(adopted)} DOI(s); run verify.py --rows on them: {', '.join(adopted)}")
         for k in ambiguous:
             print(f"  ⚠ {k}: several candidate DOIs; keep one in the file and re-run")
         return
     n, errors = ingest(rows, keyf, common.load_json(args.ingest), args.asof)
-    common.dump_json(rows, args.rows)
+    common.save_rows(args.rows, rows, loaded)
     not_found = [r.get(keyf) for r in rows if (r.get("hand_verified") or {}).get("verdict") == "not-found"]
     print(f"recorded {n} hand check(s)")
     for e in errors:
