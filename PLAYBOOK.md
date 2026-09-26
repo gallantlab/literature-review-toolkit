@@ -275,7 +275,10 @@ python3 tools/merge_lanes.py --append recovery.json --into rows.json
 
 A schema-1 lane file (a bare array, from an old prompt) is refused with the
 schema it expects, unless `--allow-v1` — in which case that lane's deferrals
-cannot be checked and the merge says so.
+cannot be checked and the merge says so. `--append` refuses an empty `--into`
+table (it would key the new rows by `label` instead of `ref`, silently diverging
+from a fresh merge) — use `--raw`/`--out` for a first merge, `--append` only to
+grow one.
 
 ### Phase 3 — Verify EVERY citation (CRITICAL)
 
@@ -313,8 +316,19 @@ five more wrote `make_verify_input.py` because the `apa`-only path verified noth
 
 What a verdict checks: the first-author surname (fuzzy containment), the year
 (±1, since a preprint and its version of record differ), and the **title**
-(similarity ≥ 0.5, which on 2,473 past OK verdicts flagged exactly one: a preprint
-retitled on publication). A row with **both** an arXiv id and a journal DOI has
+(agreement ≥ 0.5). Title agreement requires the two titles to actually match, not
+merely one to be *contained in* the other — a short claim such as "Deep learning"
+used to pass against an unrelated longer record ("Deep learning in neural
+networks: An overview") on containment alone. It still tolerates an agent dropping
+a subtitle: one title counting as the other's main title (the text before its
+first `:`, ` - ` or `?`) scores 1.0, but only when that main title has at least 3
+content words — a 1-2-word main title is too easily a coincidence to trust on its
+own. Otherwise it falls back to two-way containment (each title's words found in
+the other) alongside plain character similarity. On 2,473 past OK verdicts, 2 now
+fall below 0.5: a preprint retitled on publication, and a genuinely dropped
+subtitle whose main title is only 2 content words — accepted as a false alarm
+rather than risk another false pass on a short, coincidental main title. A row
+with **both** an arXiv id and a journal DOI has
 both checked, because canon cites the journal DOI: a wrong DOI beside a right
 arXiv id is a MISMATCH. The same holds for PubMed and PMC ids: **a journal DOI is
 verified only by its own CrossRef record** — or, on a clean CrossRef 404, its
@@ -341,6 +355,16 @@ what was checked and against which ids without re-reading `verify_report.json`
 retitled on publication, say — is recorded with `verify.py --rows rows.json --override
 REF --reason "..."`; it is refused without an existing stamp, without a reason, or if
 the row's DOI/arXiv id changed since it was verified.
+
+**Re-verifying a canonical row keeps an earlier independent stamp.** Once a row is
+canonicalized, its `apa` is built from the very DOI verify would be checking, so a
+re-run that finds nothing else to check against produces only a circular
+`claim_basis: "canonical-apa"` OK. If the row already carried an independent OK
+(a search claim, or an apa from before canon) for the SAME ids, that earlier stamp
+is kept rather than overwritten — a re-verify must not downgrade a real
+verification into a self-check — and `reverified_at` records that the re-run
+happened. The stamp still lapses normally the moment the row's DOI/arXiv id
+changes.
 
 **Start verifying before the last lane lands.** Lanes finish minutes apart; run
 verify on each lane's rows as they arrive (`--only`), and dispatch the DOI-less
@@ -374,15 +398,24 @@ essay cannot be machine-verified, so a gated table needs a recorded hand check
 instead — the audit fails a DOI-less row without one. `tools/handcheck.py --prepare`
 searches CrossRef and OpenAlex for a DOI the row turns out to have (the same title
 by `common.title_match`, not merely contained in a longer one, and the same year)
-and writes the rest as a hand-check input plus a brief;
+and writes the rest as a hand-check input plus a brief, each hand-check-input entry
+carrying `apa_sha` — a hash of the row's `apa` as it stood at `--prepare`;
 `--adopt-dois` gives a row with exactly one candidate DOI that DOI, so it goes
 through `verify.py` like any other reference (a row with several candidates is left
-alone and named); `--ingest` records each checked row as `hand_verified` —
-`confirmed`, `corrected` (with the corrected APA), or `not-found` — with the source
-actually checked (a library catalog, the publisher's page, the post itself; never
-another paper's citation of it) and a hash of the `apa` it confirmed (`apa_sha`):
-editing that `apa` afterward lapses the hand check, and the audit fails the row as
-`hand-check-missing` until it is re-checked. Dispatch this as soon as a lane's DOI-less rows
+alone and named; one no longer in the table, because it was renamed or removed
+since `--prepare`, is reported on stderr rather than silently skipped); `--ingest`
+records each checked row as `hand_verified` — `confirmed`, `corrected` (with the
+corrected APA), or `not-found` — with the source actually checked (a library
+catalog, the publisher's page, the post itself; never another paper's citation of
+it) and a hash of the `apa` it confirmed (`apa_sha`): editing that `apa` afterward
+lapses the hand check, and the audit fails the row as `hand-check-missing` until it
+is re-checked. `--ingest` is also bound to what `--prepare` recorded (`--input FILE`,
+default `handcheck_input.json` beside `--rows`): a result is refused if the row's
+`apa` has changed since `--prepare` wrote that entry's `apa_sha` (the reference
+changed while the agent was checking it), if the ref never went through
+`--prepare` at all, or if the `--input` file predates `apa_sha` altogether —
+re-run `--prepare` in each case, rather than trust a hand check against an `apa`
+the agent never actually saw. Dispatch this as soon as a lane's DOI-less rows
 exist, alongside verify (see "Start verifying before the last lane lands" above), but
 run `--ingest` only once verify has finished: every tool that writes `rows.json`
 (verify, handcheck, summary_audit --ingest, references, merge_lanes --append)
@@ -462,8 +495,9 @@ lists — it exits nonzero when a warning is unacknowledged, never on a defect;
 applies) is reported, not failed; delete it. The reference gates add their own: `no-abstract`; `kept-existing-apa:<hash>` (a
 verified row canon could not rebuild, keyed to its `apa`, so editing the `apa`
 lapses the acknowledgment); `identity-not-reestablished` (a canonical row verified
-only against its own `apa`); and, under `*`, `no-candidate-ledger`, `no-xref-run`
-and `no-forward-run`.
+only against its own `apa`); and, under `*`, `no-candidate-ledger`, `no-xref-run`,
+`no-forward-run`, and `incomplete-xref-run` / `incomplete-forward-run` (the last
+recorded run of that pass did not finish — some fetches failed).
 
 **arXiv is read in batches.** Canon prefetches every arXiv-routed id 50 per request,
 3 s apart (`common.arxiv_batch`, shared with verify). Until 2026-09-25 it sent one
@@ -670,13 +704,18 @@ from a genuine no-abstract miss and written to `abstracts_failed.json`;
 `summary_audit.py --prepare` splits the rows needing a check into batches of 40 (`--batch`) with each summary and its abstract, plus a brief; dispatch
 one checking agent per batch, with no web access — it judges only whether the
 abstract supports the summary, "supported" or "unsupported" with the unsupported
-clause quoted exactly. `--ingest` records the verdict as `summary_check`, with the
-row's ids and a hash of the abstract it was checked against, keyed to a hash of the
-summary text (a check recorded for other ids counts as unchecked), so a summary edited after `--prepare` is refused, and an
-edited summary is re-flagged as unchecked rather than trusted on its old check. A row
-with no abstract is recorded as `no-abstract` — a warning the audit makes you
-acknowledge (see the acknowledgments note under Phase 3f). A flagged summary is a
-defect: fix it and run `--prepare` again.
+clause quoted exactly. The manifest `--prepare` writes records, per ref, the row's
+ids and a hash of the abstract it was checked against — exactly what the checking
+agent saw — and `--ingest` binds every result to that manifest, not to whatever
+`rows.json` or `abstracts.json` now say: a check is refused if the summary was
+edited (keyed to a hash of the summary text), if the row's ids changed since
+`--prepare`, or if the abstract text itself changed since `--prepare`, in each case
+telling you to re-run `--prepare`. A manifest written before this binding existed
+(no ids/abstract-hash maps at all) refuses every ref in it the same way, rather
+than silently treating each one as unchanged. A row with no abstract is recorded as
+`no-abstract` — a warning the audit makes you acknowledge (see the acknowledgments
+note under Phase 3f). A flagged summary is a defect: fix it and run `--prepare`
+again.
 
 ### Phase 6 — Cross-citation analysis (second pass)
 
@@ -697,7 +736,9 @@ reference lists for 16 of 20 sampled arXiv papers this way (OpenAlex had 4 of
 39). A paper whose references could not be fetched makes the run **incomplete**
 and xref exits 1, same as a genuine fetch failure — pass `--allow-incomplete`
 to accept a partial table (it says so in its output) rather than re-running
-immediately.
+immediately. Either way, xref writes `<out>.run.json` (`{complete, incomplete,
+at}`) beside its output, so `candidates.py --add` can tell a partial run from a
+full one without re-reading the run's own stderr.
 
 ```bash
 python3 tools/xref.py --rows rows.json --out xref_<topic>.json --min-cites 4 \
@@ -723,7 +764,8 @@ count, very recent papers are under-represented — the output says so. A
 corpus row with no DOI (or whose OpenAlex id lookup failed) cannot be excluded
 from the candidates, so it may reappear as its own "candidate"; check by hand.
 A landmark whose pull failed makes `forward.py` exit 1 (its citing papers are
-missing from the candidates); re-run it, or pass `--allow-incomplete`.
+missing from the candidates); re-run it, or pass `--allow-incomplete`. It too
+writes the `<out>.run.json` sidecar `xref.py` does.
 
 ```bash
 python3 tools/forward.py --rows rows.json --out forward_candidates.json
@@ -748,10 +790,16 @@ discarded — they stay in `candidates.json` with their reason, and
 `spreadsheet.py` lists them on a "Considered and excluded" sheet, so a paper
 missing from the review is visibly one that was considered. The audit gate
 fails while any candidate is pending, or while an `include`d candidate is not
-actually in the table. Each `--add` also records the run in the ledger
-(`_runs`: source, date, count), and on a gated table the audit warns
-`no-xref-run` / `no-forward-run` under `*` until both passes have been added —
-acknowledge one only if this review genuinely skipped that pass.
+actually in the table. Each `--add` also records the run in the ledger (`_runs`:
+source, date, count, and `complete` — read from the `<out>.run.json` sidecar
+beside the file it's adding; a missing or incomplete sidecar records
+`complete: false`), and on a gated table the audit warns `no-xref-run` /
+`no-forward-run` under `*` until both passes have been added, and
+`incomplete-xref-run` / `incomplete-forward-run` if the last recorded run of a
+pass did not finish — acknowledge one only if this review genuinely skipped that
+pass, or genuinely proceeds without full coverage. A hand-edited or truncated
+`candidates.json` is refused by name (which entry, and why) rather than crashing
+partway through the audit or the spreadsheet.
 
 **6f. Repeat Phases 3, 3f and 5b** for the new batch: `merge_lanes.py --append
 xref_lane.json --into rows.json` adds the exported rows without touching any

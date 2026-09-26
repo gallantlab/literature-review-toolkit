@@ -301,7 +301,8 @@ then re-merge. A failed merge writes `merge_report.json` but not `rows.json`.
 A lane that returned under 60% of its target, or exhausted its search budget, is printed as thin — resume it, don't re-spawn it. Later
 additions (a recovery lane, or the cross-citation pass in
 [§5.6](#56-phase-6-cross-citation-pass)) use `--append FILE --into rows.json`
-instead, which never touches an existing row.
+instead, which never touches an existing row — except on an empty `rows.json`,
+which it refuses (a first merge is `--raw`/`--out`, not `--append`).
 
 ### 4.2 Lab mode
 
@@ -386,6 +387,13 @@ say — is recorded with `--override REF --reason "..."`; it is refused without 
 existing stamp, without a reason, or if the row's DOI/arXiv id changed since it was
 verified.
 
+Re-verifying a canonical row does not downgrade it: once a row is canonicalized,
+its `apa` comes from the very DOI verify would check, so a re-run that finds
+nothing else to check against yields only a circular self-check. If the row
+already carried an independent OK (a search claim, or a pre-canon `apa`) for the
+same ids, that earlier stamp is kept and `reverified_at` records that the re-run
+happened; the stamp still lapses the moment the row's ids actually change.
+
 ### 5.1b Hand-checking references with no DOI or arXiv id
 
 A book, report, thesis or web essay cannot be machine-verified, so a gated table
@@ -400,13 +408,21 @@ python3 ../tools/handcheck.py --rows rows.json --ingest handcheck_result.json
 `--prepare` searches CrossRef and OpenAlex for a DOI the row turns out to have
 (the same title, not merely contained in a longer one, and the same year) and
 writes the candidates it found plus a hand-check input and brief for everything
-else. `--adopt-dois` gives a row with exactly
+else — each hand-check-input entry carrying `apa_sha`, a hash of the row's `apa`
+as it stood at `--prepare`. `--adopt-dois` gives a row with exactly
 one candidate that DOI, so it goes through `verify.py` like any other reference; a
-row with several candidates is left alone and named. `--ingest` records each
+row with several candidates is left alone and named, and one no longer in the
+table (renamed or removed since `--prepare`) is reported rather than silently
+dropped. `--ingest` records each
 checked row as `hand_verified` — `confirmed`, `corrected` (with the corrected APA),
 or `not-found` — with the source actually checked: a library catalog, the
 publisher's page, the post itself, never another paper's citation of it — and a
-hash of the `apa` it confirmed, so editing that `apa` later lapses the check. A
+hash of the `apa` it confirmed, so editing that `apa` later lapses the check.
+`--ingest` is also bound to `--input` (the hand-check input `--prepare` wrote,
+default `handcheck_input.json`): a result is refused if the row's `apa` changed
+since `--prepare` recorded that entry's `apa_sha`, if its ref never went through
+`--prepare`, or if the `--input` file predates `apa_sha` altogether — in each
+case, re-run `--prepare`. A
 `not-found` result exits nonzero: remove the row, or check it again.
 
 ### 5.2 Phase 3f: canonicalize every reference
@@ -462,8 +478,9 @@ delete it.
 The reference gates add their own: `no-abstract`; `kept-existing-apa:<hash>` (a
 verified row canon could not rebuild, keyed to its `apa`, so editing the `apa`
 lapses the acknowledgment); `identity-not-reestablished` (a canonical row verified
-only against its own `apa`); and, under `*`, `no-candidate-ledger`, `no-xref-run`
-and `no-forward-run`.
+only against its own `apa`); and, under `*`, `no-candidate-ledger`, `no-xref-run`,
+`no-forward-run`, and `incomplete-xref-run` / `incomplete-forward-run` (the last
+recorded run of that pass did not finish).
 
 !!! warning "Non-English titles are skipped by default"
     Sentence case would lowercase German nouns, so `sentence_case.py` detects and
@@ -550,13 +567,18 @@ landing-page entry. `summary_audit.py --prepare` splits the rows needing a
 check into batches (`--batch`, default 40) with each summary and its abstract, plus
 a brief; dispatch one checking agent per batch, with no web access — it judges only
 whether the abstract supports the summary, "supported" or "unsupported" with the
-unsupported clause quoted exactly. `--ingest` records the verdict as
-`summary_check`, with the row's ids and the abstract's hash, keyed to a hash of the
-summary text (a check recorded for other ids counts as unchecked), so a summary edited after
-`--prepare` is refused, and one edited afterward is re-flagged as unchecked rather
-than trusted on its old check. A row with no abstract is recorded as `no-abstract`
-— a warning the audit makes you acknowledge ([§5.2b](#52b-acknowledging-warnings)).
-A flagged summary is a defect: fix it and run `--prepare` again.
+unsupported clause quoted exactly. The manifest `--prepare` writes records, per
+ref, the row's ids and the abstract's hash — exactly what the checking agent saw
+— and `--ingest` binds every result to that manifest, not to whatever `rows.json`
+or `abstracts.json` say now: `--ingest` records the verdict as `summary_check`,
+keyed to a hash of the summary text (a summary edited after `--prepare` is
+refused), and also refuses a result whose row's ids or whose abstract text
+changed since `--prepare` — in either case, re-run `--prepare`. A manifest
+written before this binding existed refuses every ref in it, rather than
+silently treating each one as unchanged. A row with no abstract is recorded as
+`no-abstract` — a warning the audit makes you acknowledge
+([§5.2b](#52b-acknowledging-warnings)). A flagged summary is a defect: fix it and
+run `--prepare` again.
 
 ### 5.6 Phase 6: cross-citation pass
 
@@ -578,7 +600,9 @@ whose CrossRef record has no reference list, it asks **Semantic Scholar**
 instead — set `S2_API_KEY` — normalizing a cited arXiv id to
 `10.48550/arxiv.<id>` so it matches a corpus DOI. A paper whose references could
 not be fetched makes the run incomplete, and xref exits 1 unless
-`--allow-incomplete`. It usually finds 25–35 candidates per topic.
+`--allow-incomplete`. It usually finds 25–35 candidates per topic. Either way, it
+writes `<out>.run.json` (`{complete, incomplete, at}`) beside its output, so
+`candidates.py --add` can tell a partial run from a full one.
 
 - Four or more citations across about 40 papers is a strong signal; three is
   borderline.
@@ -594,7 +618,8 @@ then citation count), asks OpenAlex for the most-cited papers citing each one
 it also cites; one citing at least `--min-shared` becomes a candidate. Because
 each pull is citation-ordered, very recent papers are under-represented — the
 output says so. A corpus row with no DOI cannot be excluded from the candidates.
-A failed landmark pull exits 1 unless `--allow-incomplete`.
+A failed landmark pull exits 1 unless `--allow-incomplete`. It writes the same
+`<out>.run.json` sidecar `xref.py` does.
 
 ```bash
 python3 ../tools/candidates.py --rows rows.json --add xref_my_topic.json --source xref
@@ -613,9 +638,13 @@ schema-2 lane file of the `include`d papers not yet in the corpus, ready for
 5b. Excluded candidates are not discarded: `spreadsheet.py` lists them, with
 their reason, on a "Considered and excluded" sheet, so a paper missing from the
 review is visibly one that was looked at. Each `--add` also records the run
-(`_runs` in the ledger); on a gated table the audit warns `no-xref-run` /
-`no-forward-run` under `*` until both passes are in, or the warning is
-acknowledged.
+(`_runs` in the ledger, including `complete` — read from the added file's
+`<out>.run.json` sidecar); on a gated table the audit warns `no-xref-run` /
+`no-forward-run` under `*` until both passes are in, and
+`incomplete-xref-run` / `incomplete-forward-run` if the last recorded run of a
+pass did not finish, until the warning is acknowledged. A hand-edited or
+truncated `candidates.json` is refused by name rather than crashing the audit or
+the spreadsheet.
 
 !!! warning "Keep ids unique across merges"
     Assert `len(refs) == len(set(refs))` after merging, and attach citation counts
