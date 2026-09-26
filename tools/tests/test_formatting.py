@@ -4858,6 +4858,35 @@ check_true("R5.4: ...and not 'Jones K'", _mA("Smith J and Jones K", "Jones K") !
 check("R5.4: a group name with 'and' in it stays whole",
       verify.claim_surname("Committee on Science and Technology"), "Committee on Science and Technology")
 
+# ---- author fix final R1: a DataCite first creator is trusted only when deposited structured (2026-09-26) ----
+for _f1c, _f1n in (("Richard", "Richard NGO"), ("Wei J", "Wei LI"), ("Hao J", "CHEN Hao"), ("Andrew", "Andrew NG")):
+    _f1r = _r51_dc(_f1c, [{"name": _f1n, "nameType": "Personal"}])
+    check_true(f"F.R1: a guessed split of {_f1n!r} fails closed against {_f1c!r}",
+               len(_f1r) == 1 and "confirm by hand" in _f1r[0], str(_f1r))
+check_true("F.R1: {'name': 'Chen, Hao', 'givenName': 'Hao'} is Chen, H.: 'Hao J' is a plain mismatch",
+           _r51_dc("Hao J", [{"name": "Chen, Hao", "givenName": "Hao"}]) == [
+               "first-author mismatch: expected 'Hao J', got 'Chen H'"])
+check("F.R1: ...and 'Chen H' matches it", _r51_dc("Chen H", [{"name": "Chen, Hao", "givenName": "Hao"}]), [])
+_f1r = _r51_dc("Hao J", [{"name": "Hao Chen", "givenName": "Hao"}])
+check_true("F.R1: a givenName with no familyName and no comma fails closed", len(_f1r) == 1 and "confirm by hand" in _f1r[0],
+           str(_f1r))
+check_true("F.R1: ...and is listed unsplit, so canon warns",
+           bool(common.datacite_record(_dc_attrs(creators=[{"name": "Hao Chen", "givenName": "Hao"}]))["unsplit"]))
+_f1r = _r51_dc("Hao J", [{"name": "Hao CHEN", "nameType": "Organizational"}])
+check_true("F.R1: an Organizational name that is no group fails closed", len(_f1r) == 1 and "confirm by hand" in _f1r[0],
+           str(_f1r))
+check("F.R1: 'The pandas development team' (Organizational) still matches itself",
+      _r51_dc("The pandas development team", [{"name": "The pandas development team", "nameType": "Organizational"}]), [])
+check("F.R1: a familyName + givenName record is unchanged",
+      (_r51_dc("Smith J", [{"familyName": "Smith", "givenName": "Jane"}]),
+       common.datacite_record(_dc_attrs(creators=[{"familyName": "Smith", "givenName": "Jane"}])).get("first_author_unsplit")),
+      ([], False))
+check("F.R1: a 'Family, Given' name is trusted",
+      common.datacite_record(_dc_attrs(creators=[{"name": "Doe, John"}])).get("first_author_unsplit"), False)
+check("F.R1: a familyName with no givenName is a derived split, so flagged",
+      common.datacite_record(_dc_attrs(creators=[{"name": "Jagroop Singh Doad", "familyName": "Doad"}]))
+      .get("first_author_unsplit"), True)
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

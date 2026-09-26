@@ -1024,7 +1024,15 @@ def _datacite_creator(c):
     given = (c.get("givenName") or "").strip()
     name = (c.get("name") or "").strip()
     if given:
-        return (c.get("familyName") or name).strip(), given, False
+        if (c.get("familyName") or "").strip():
+            return c["familyName"].strip(), given, False
+        if ", " in name:
+            fam, _ = name.split(", ", 1)
+            return fam.strip(), given, False   # "Chen, Hao" + givenName "Hao": Chen, H.
+        # a givenName but no familyName or comma: the family is a guess, so flag it
+        m = re.search(r"(?i)(?<![\w-])" + re.escape(given) + r"(?![\w-])", name)
+        rest = " ".join((name[:m.start()] + " " + name[m.end():]).split()) if m else ""
+        return rest or name, given, True
     kind = (c.get("nameType") or "").strip()
     family = (c.get("familyName") or "").strip()
     whole = family or name
@@ -1056,6 +1064,21 @@ def _datacite_creator(c):
     return name, "", bool(name)
 
 
+def _datacite_trusted(c):
+    """True when a DataCite creator's split was deposited, not guessed: both
+    familyName and givenName, a "Family, Given" name (the comma split is
+    trusted), or a declared Organizational name that is a group (is_group).
+    Anything else -- a split on the last word or before trailing initials, a
+    familyName-anchored split, a name kept whole -- is a guess."""
+    name = (c.get("name") or "").strip()
+    kind = (c.get("nameType") or "").strip()
+    if (c.get("familyName") or "").strip() and (c.get("givenName") or "").strip():
+        return True
+    if ", " in name:
+        return True
+    return kind == "Organizational" and is_group(name)
+
+
 def datacite_record(attrs, fallback_venue=""):
     """Normalize a DataCite `data.attributes` dict to the SAME shape
     crossref_record() returns, plus `version` and `resource_type`
@@ -1070,15 +1093,13 @@ def datacite_record(attrs, fallback_venue=""):
     matching the field crossref_record() uses for the venue.
     """
     authors, unsplit, first_unsplit = [], [], False
-    for c in attrs.get("creators") or []:
-        if not isinstance(c, dict):
-            continue
-        fam, given, whole = _datacite_creator(c)
+    for i, c in enumerate(attrs.get("creators") or []):
+        fam, given, whole = _datacite_creator(c) if isinstance(c, dict) else ("", "", False)
+        if i == 0:
+            # the first author is trusted only when DataCite deposited it structured;
+            # a guessed split, or a first creator with no family at all, is flagged
+            first_unsplit = not fam or not _datacite_trusted(c)
         if fam:
-            if not authors:
-                # no separate given name (kept whole, or never given one), and not a
-                # declared organization: first_author is the whole name
-                first_unsplit = not given and (c.get("nameType") or "").strip() != "Organizational"
             authors.append((fam, given))
             if whole:
                 unsplit.append(fam)
