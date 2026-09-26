@@ -66,12 +66,14 @@ DOI CrossRef does not hold (Zenodo, figshare, OSF, Dryad software/data-set
 deposits) is checked against DataCite next, on a CrossRef 404 only; resolving
 there counts the same as resolving in CrossRef, and a 404 from both registries is
 "does not resolve" even when the DataCite fetch fell back to curl. The
-first-author check compares surnames: it takes the surname out of both the claim
-and the record ("Smith J", "J. Smith", "Smith, J." and an arXiv "John Smith" all
-give Smith; initials of any script, "Ł" or "И", count as initials, while a
-capitalized word such as "CHEN" or "WANG" is a surname, not initials; a list
-"Smith J; Jones K" gives its first name), ignores
-initials and given names, and needs the claim's surname to match a whole word of
+first-author check compares surnames. A record is read by its source's "Family
+INITIALS" contract ("Collins AGE" is Collins; an arXiv "John Smith" becomes "Smith
+J"); a claim is read once in whatever shape it was reported ("Smith J", "J. Smith"
+and "Smith, J." all give Smith; initials of any script, "Ł" or "И", count as
+initials; a list "Smith J; Jones K" gives its first name), and an ambiguous claim
+such as "Hao CHEN" or "Collins AGE" is an issue to confirm by hand. The check
+ignores initials, needs a given-first claim's given names ("John Smith") to start
+with one of the record's initials, and needs the claim's surname to match a whole word of
 the record's ("Tang" matches "Tang J", "Heuvel" matches "van den Heuvel M", "Hanna"
 matches "Andrews-Hanna J"; "Van Essen" does not match "Van Dijk", nor "Min"
 "Seung-Min Park", nor "Lambon Ralph" "Ralph J"). A group author ("ATLAS
@@ -124,7 +126,8 @@ published paper is cited by its version of record.
   version omitted when DataCite has none. A creator with no given name is split
   when safe ("Jagroop Singh Doad" or "Doad J S" → "Doad, J. S."; "Kim J-H" →
   "Kim, J.-H."; a `familyName` is the surname when `name` contains it as a whole
-  word), never on trailing initials or into a one-letter surname; one kept whole is flagged
+  word), never on trailing initials, into a one-letter surname or from a 3-4
+  letter capitalized word ("Collins AGE", "Hao CHEN"); one kept whole is flagged
   `datacite-unsplit-author:<name>`, and a record that is not software or a data
   set is flagged `datacite-deposit`. Both are stored as the row's
   `canon_warnings` and must be acknowledged in the audit.

@@ -315,14 +315,22 @@ record as well. Do not write a per-project
 converter script: fourteen projects did, each with its own first-author regex, and
 five more wrote `make_verify_input.py` because the `apa`-only path verified nothing.
 
-What a verdict checks: the first-author **surname**, surname against surname. The
-surname is taken out of both the claim and the record the same way ("Smith J",
-"Smith JL", "J. Smith", "Smith, J.", "LI J", "Van Essen DC", "Hagler DJ Jr",
-"Kowalski Ł"; an arXiv author "Aaron van den Oord" is read as "van den Oord"), and
-the claim is parsed once (a search agent's `search_author` as reported; on a
-canonical row, also the apa's lead surname as it stands). So initials and given
-names never take part: "J. Smith" cannot match "Jones J", "Ma" cannot match "Smith
-MA", "Min" cannot match "Seung-Min Park", "Nowak Ł" cannot match "Kowalski Ł". The
+What a verdict checks: the first-author **surname**, surname against surname. A
+record's first author is read by its source's contract: every source gives "Family
+INITIALS" (CrossRef, DataCite and PubMed; an arXiv author "Aaron van den Oord" is
+first turned into "van den Oord A"), so its trailing initials, and in a mixed-case
+record any trailing capitals of up to 4 letters, are dropped ("Collins AGE" is
+Collins). A claim is read once, in whatever shape a search agent reported it
+("Smith J", "Smith JL", "J. Smith", "Smith, J.", "Lambon Ralph, Matthew A.", "LI
+J", "Van Essen DC", "Hagler DJ Jr", "Kowalski Ł", "CHEN Hao"; on a canonical row,
+also the apa's lead surname as it stands). A claim that cannot be read safely,
+a mixed-case word before a 3-4 letter capitalized word ("Hao CHEN" is given name +
+surname, "Collins AGE" is surname + initials), is reported as an ambiguous
+first-author form to confirm by hand. So initials never decide a match: "J. Smith"
+cannot match "Jones J", "Ma" cannot match "Smith MA", "Min" cannot match
+"Seung-Min Park", "Nowak Ł" cannot match "Kowalski Ł". A claim of given-first
+words ("John Smith") keys on its last word, and each other word must be a word of
+the record's surname or start with one of its initials. The
 claim's first surname word that is not a particle must be a whole word of the
 record's surname, or one part of a hyphenated one ("Heuvel" / "van den Heuvel",
 "Hanna" / "Andrews-Hanna"; not "Han", and "Van Essen" does not match "Van Dijk"),
@@ -332,10 +340,11 @@ surname, "Quian Quiroga" to "Quiroga", is a mismatch to confirm by hand). A grou
 author (a name with Collaboration, Consortium, Institute, Laboratory, University,
 Company, Research, Staff, Team, ... in it, or opening with "The") is compared
 whole, so "CMS Collaboration" does not match "ATLAS Collaboration"; "An" is a
-surname, not an article. Initials are 1-2 capitals, or 3-4 that are not a word
-("JLK", "CYC"), so "Hao CHEN" is read as Chen and "Cavanaugh JR" keeps JR as
-initials; a list "Smith J; Jones K" gives its first name. An unknown name on
-either side ("?", "anon", "unknown", or no readable word) fails the check.
+surname, not an article. Initials are 1-2 capitals, or 3-4 that could not be a
+word ("JLK", "EJM", "CYC"); "Cavanaugh JR" keeps JR as initials, while "jr", "Jr."
+and "Sr" are suffixes; a list "Smith J; Jones K" gives its first name. An unknown
+name on either side ("?", "anon", "Anonymous, A.", "[No authors listed]", or no
+readable word) fails the check.
 merge_lanes.py uses the same comparison for its duplicate and deferral checks:
 an unknown author never merges two rows or confirms a deferral. Then the year
 (±1, since a preprint and its version of record differ), and the **title**
@@ -497,9 +506,10 @@ name is split when that is safe ("Doe, John" on its comma; a Personal name such 
 family-first with trailing initials is split before them, "Doad J S" giving "Doad,
 J. S." and "Kim J-H" "Kim, J.-H."; a `familyName`, when DataCite gives one, is the
 surname if `name` contains it as a whole word, and "Doad" is not a word of "Anna
-Doad-Smith"). A split never takes initials or a single letter as the surname; a
-name that cannot be split safely ("The pandas development team", "J S") is kept
-whole and flagged
+Doad-Smith"). A split never takes initials, a single letter or a 3-4 letter
+capitalized word as the surname; a name that cannot be split safely ("The pandas
+development team", "J S", "Collins AGE", "Hao CHEN", "John Smith JR") is kept whole
+and flagged
 `datacite-unsplit-author:<name>`, and a DataCite record that is not software or a
 data set (or whose publisher is "Unpublished") is flagged `datacite-deposit`: a
 repository copy of a paper, which should cite the version of record's DOI if one

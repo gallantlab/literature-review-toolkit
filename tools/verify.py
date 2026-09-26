@@ -554,9 +554,11 @@ def _author_issue(c, rec, where=""):
     # readable word), or an ambiguous claim ("Hao CHEN"), is an issue: it can
     # confirm nothing.
     # Calibrated on the same OK verdicts as the title check, with each claim
-    # rebuilt as rows_to_citations now builds it: 4 of 2,471 are flagged, all a
-    # compound surname the record shortened ("Quian Quiroga" / "Quiroga R"), which
-    # a human confirms; 3 of 3,042 search-agent claims against their rows' apa.
+    # rebuilt as rows_to_citations now builds it: 9 of 2,471 are flagged (5 were
+    # already, a group author against a person or a mangled name; 4 are a compound
+    # surname the record shortened, "Quian Quiroga" / "Quiroga R", which a human
+    # confirms). Of 103,760 random claim x record pairs, none that an earlier
+    # version rejected passes.
     is_surname = bool(str(c.get("expect_surname") or "").strip())
     claim = c.get("expect_surname") if is_surname else c.get("expect_first_author")
     got = str(rec.get("first_author") or "")

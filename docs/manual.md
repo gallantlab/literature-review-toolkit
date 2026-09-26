@@ -364,20 +364,25 @@ there counts the same as resolving in CrossRef. Only a CrossRef 404 sends a DOI
 to DataCite; any other CrossRef error is an `ERROR` to re-run. A DOI that does
 not resolve in EITHER registry is a `MISMATCH`, even when a PubMed or title
 search finds the claimed paper, and a DataCite 404 stays a 404 even when the
-fetch has to fall back to curl. The first-author check compares surnames: it
-takes the surname out of both the claim and the record the same way ("Smith J",
-"J. Smith" and "Smith, J." all give Smith; an arXiv "Aaron van den Oord" gives
-"van den Oord"), so initials and given names are ignored and "J. Smith" cannot
-match "Jones J", nor "Min" "Seung-Min Park". The claim's surname must be a whole
+fetch has to fall back to curl. The first-author check compares surnames. A
+record is read by its source's "Family INITIALS" contract ("Collins AGE" is Collins;
+an arXiv "Aaron van den Oord" becomes "van den Oord A"); a claim is read once in
+whatever shape it was reported ("Smith J", "J. Smith" and "Smith, J." all give
+Smith; "Lambon Ralph, Matthew A." gives Lambon Ralph). Initials never decide a
+match, so "J. Smith" cannot match "Jones J", nor "Min" "Seung-Min Park". A claim
+such as "Hao CHEN" or "Collins AGE", where a capitalized word may be the surname or
+initials, is reported as ambiguous, to confirm by hand; a claim of given-first
+words ("John Smith") needs each given name to start with one of the record's
+initials. The claim's surname must be a whole
 word of the record's, or one part of a hyphenated one ("Heuvel" / "van den Heuvel",
 "Hanna" / "Andrews-Hanna", but not "Han"), and a particle alone is not enough, so
 "Van Essen" does not match "Van Dijk". Every word of a compound claim surname must
 appear in the record's name, so "Lambon Ralph" does not match "Ralph J". Initials
-of any script count as initials ("Nowak Ł" does not match "Kowalski Ł"), but a
-capitalized word does not ("Hao CHEN" is Chen), and a list "Smith J; Jones K" gives
-its first name. A group author ("ATLAS Collaboration", "Stanford University",
+of any script count as initials ("Nowak Ł" does not match "Kowalski Ł"), and a
+list "Smith J; Jones K" gives its first name. A group author ("ATLAS Collaboration", "Stanford University",
 "The pandas development team") is compared whole, and "An" stays a surname. An
-unknown name on either side ("?", "anon", no readable word) fails the check.
+unknown name on either side ("?", "anon", "Anonymous, A.", "[No authors listed]",
+no readable word) fails the check.
 merge_lanes.py uses the same comparison for its duplicate and deferral checks, and
 never merges on or confirms a deferral by an unknown author.
 
@@ -469,7 +474,8 @@ and `(Version …)` omitted when DataCite has none. The title is DataCite's main
 title plus its subtitle. A creator with no given name is split when that is safe
 ("Doe, John"; a personal name such as "Jagroop Singh Doad" or "Doad J S" becomes
 "Doad, J. S."; a `familyName`, when given, is the surname if `name` contains it as
-a whole word), never on trailing initials or into a one-letter surname; one that is not ("The pandas development team") is kept whole
+a whole word), never on trailing initials or into a one-letter surname; one that
+is not ("The pandas development team", "Collins AGE", "Hao CHEN") is kept whole
 and flagged
 `datacite-unsplit-author:<name>`, and a DataCite record that is not software or a
 data set is flagged `datacite-deposit` (a repository copy: cite the version of

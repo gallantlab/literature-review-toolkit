@@ -68,10 +68,11 @@ in `tools/README.md` and `PLAYBOOK.md`.
   (±1) and the title to agree — two-way, not merely one title's words found
   inside the other, though one title equaling the other's main title (before a
   subtitle break) still agrees when that main title has at least 3 content
-  words; the first author is compared surname to surname (the surname is
-  taken out of the claim and the record alike, so initials and given names are
-  ignored; either part of a hyphenated surname counts, and a group author
-  compares whole). A journal DOI is verified only by its own CrossRef record, or
+  words; the first author is compared surname to surname (the record read by
+  its source's "Family INITIALS" contract, the claim once in whatever shape it
+  was reported, initials never deciding; an ambiguous claim such as "Hao CHEN"
+  is an issue to confirm by hand; either part of a hyphenated surname counts,
+  and a group author compares whole). A journal DOI is verified only by its own CrossRef record, or
   DataCite on a CrossRef 404 (any other CrossRef error is an ERROR), so a DOI
   that resolves in neither is a MISMATCH even when a PubMed or title search
   finds the claimed paper; a DataCite 404 stays a 404 when its fetch falls back
