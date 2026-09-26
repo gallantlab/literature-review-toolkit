@@ -4372,6 +4372,20 @@ check("A3: an ordinary author list raises no one-letter-surname note",
       [n for n in references.audit("Doad, J. S., & Smith, J. (2020). T. V.", True)[1]
        if "single-letter" in n], [])
 
+# ---- author fix 4: a family-first claim is checked on its surname (2026-09-26) ----
+# claim_surname("Smith J") returned "J", and the author check then matched any
+# record whose first author had the initial J.
+for _a4in, _a4out in (("Smith J", "Smith"), ("Smith JL", "Smith"), ("Smith J.", "Smith"),
+                      ("Smith J. L.", "Smith"), ("J. Smith", "Smith"), ("J Smith", "Smith"),
+                      ("Smith, J.", "Smith"), ("Smith", "Smith")):
+    check(f"A4: claim_surname({_a4in!r})", verify.claim_surname(_a4in), _a4out)
+check_true("A4: 'J. Smith' no longer matches 'Jones J' on the initial", _m8("J. Smith", "Jones J") != [])
+check_true("A4: ...nor the other way round", _m8("Jones J", "J. Smith") != [])
+check("A4: 'Smith J' matches the record 'Smith J'", _m8("Smith J", "Smith J"), [])
+check("A4: 'J. Smith' matches the record 'Smith J'", _m8("J. Smith", "Smith J"), [])
+check("A4: a one-letter surname still compares (nothing else is left on that side)", _m8("O", "O K"), [])
+check_true("A4: ...and still mismatches another one-letter surname", _m8("O", "Q K") != [])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

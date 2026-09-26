@@ -188,15 +188,24 @@ def lookup_arxiv_batch(aids, chunk=50, sleep=3.0):
     return results, errored
 
 
+_INITIALS = re.compile(r"^(?:[A-ZÀ-Ý]\.?){1,2}$")   # "J", "JL", "J.", "J.L."
+
+
 def claim_surname(name):
     """Surname out of whatever shape a search agent reported a first author in:
-    'Gilbert, C. D.' / 'C. D. Gilbert' / 'Gilbert' -> 'Gilbert'. A comma means
-    family-first (APA); otherwise the last token that is not an initial."""
+    'Gilbert, C. D.' / 'C. D. Gilbert' / 'Gilbert CD' / 'Gilbert' -> 'Gilbert'.
+    A comma means family-first (APA); so does a word followed only by initials
+    ('Smith J', 'Smith JL', 'Smith J. L.', PubMed style); otherwise the last
+    token that is not an initial."""
     name = re.sub(r"\s*(?:,?\s*et al\.?|&.*)$", "", (name or "").strip())
     if not name:
         return ""
     if "," in name:
         return name.split(",")[0].strip()
+    toks = name.split()
+    if (len(toks) > 1 and len(toks[0]) >= 2 and not _INITIALS.match(toks[0])
+            and all(_INITIALS.match(t) for t in toks[1:])):
+        return toks[0]
     parts = [p for p in name.split() if not (len(p.rstrip(".")) == 1 and p.endswith("."))]
     return parts[-1] if parts else name
 
@@ -345,13 +354,20 @@ def _surname_agrees(a, b):
                                           and (t.startswith(a[0]) or a[0].startswith(t))) for t in b)
 
 
+def _drop_initials(toks):
+    """Tokens without single letters (initials), unless nothing else is left: a
+    one-letter surname ("O") must still be compared."""
+    return [t for t in toks if len(t) > 1] or toks
+
+
 def _author_issue(c, rec, where=""):
     # Whole-token surname match ("Tang" vs "Tang J"), either way round, with a
-    # leading article ignored. Substring containment once let a group creator
+    # leading article ignored and initials dropped from both sides (so "J. Smith"
+    # cannot match "Jones J" on the "j"). Substring containment once let a group creator
     # "The pandas development team" match "Matthews" (it contains "the"), and
     # "Lee" match "Leeson".
-    expect_t = _name_tokens(c.get("expect_first_author"))
-    actual_t = _name_tokens(rec.get("first_author"))
+    expect_t = _drop_initials(_name_tokens(c.get("expect_first_author")))
+    actual_t = _drop_initials(_name_tokens(rec.get("first_author")))
     if (expect_t and actual_t and not _surname_agrees(expect_t, actual_t)
             and not _surname_agrees(actual_t, expect_t)):
         return [f"{where}first-author mismatch: expected '{c.get('expect_first_author')}', "
