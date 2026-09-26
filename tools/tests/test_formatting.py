@@ -2027,24 +2027,39 @@ check("reconstruct rebuilds an OpenAlex inverted index",
       abstracts.reconstruct({"works": [1], "It": [0], "well.": [2]}), "It works well.")
 _R = [{"ref": "X", "arxiv": "2301.00001", "summary": "s"}, {"ref": "J", "doi": "10.1/J", "summary": "s"},
       {"ref": "K", "doi": "10.1/k", "summary": "s"}, {"ref": "P", "pmid": "123", "summary": "s"},
-      {"ref": "H", "doi": "10.1/h", "summary": "s"}, {"ref": "N", "summary": "s"}]
+      {"ref": "H", "doi": "10.1/h", "summary": "s"}, {"ref": "N", "summary": "s"},
+      {"ref": "F", "arxiv": "2301.00002", "summary": "s"}, {"ref": "U", "doi": "10.1/U", "summary": "s"}]
 _asked = {}
+# 2301.00002 (row F) never resolves at any source, so its arXiv batch failure must
+# survive to `failed`. 10.1/U (row U) has an uppercase DOI that only S2 answers,
+# keyed lowercase -- proves both the OpenAlex and S2 lookup keys are lowercased.
+answer_keys = {"arxiv": {"2301.00001"}, "openalex": {"10.1/j"}, "s2": {"DOI:10.1/k", "DOI:10.1/u"},
+               "pubmed": {"123"}}
+fail_keys = {"arxiv": {"2301.00002"}}
 
 
 def _fx(name, answer):
     def f(ids):
         _asked[name] = list(ids)
-        return {i: answer for i in ids if i in answer_keys[name]}
+        got = {i: answer for i in ids if i in answer_keys[name]}
+        failed = set(ids) & fail_keys.get(name, set())
+        return got, failed
     return f
 
 
-answer_keys = {"arxiv": {"2301.00001"}, "openalex": {"10.1/j"}, "s2": {"DOI:10.1/k"}, "pubmed": {"123"}}
-_ab, _missing = abstracts.collect(_R, "ref", {"H": {"text": "hand-added", "source": "landing-page", "url": "u"}},
-                                  {n: _fx(n, "text-" + n) for n in answer_keys})
+_ab, _missing, _failed = abstracts.collect(
+    _R, "ref", {"H": {"text": "hand-added", "source": "landing-page", "url": "u"}},
+    {n: _fx(n, "text-" + n) for n in answer_keys})
 check("collect takes each source in order", {k: v["source"] for k, v in _ab.items()},
-      {"X": "arxiv", "J": "openalex", "K": "s2", "P": "pubmed", "H": "landing-page"})
+      {"X": "arxiv", "J": "openalex", "K": "s2", "P": "pubmed", "H": "landing-page", "U": "s2"})
 check("collect never re-fetches an existing entry", "10.1/h" in _asked["openalex"], False)
 check("collect reports rows with a summary and no abstract", _missing, ["N"])
+check("a fetch failure is reported separately from a clean no-abstract", _failed, ["F"])
+check("a failed ref is not silently counted as having no abstract", "F" in _missing, False)
+check("a failed ref never gets an abstract entry", "F" in _ab, False)
+check("openalex looks up a DOI lowercased", "10.1/u" in _asked["openalex"], True)
+check("s2 looks up a DOI lowercased", "DOI:10.1/u" in _asked["s2"], True)
+check("an uppercase-DOI row resolved only by S2 gets its abstract", _ab.get("U", {}).get("source"), "s2")
 
 
 # ---- report ---------------------------------------------------------------
