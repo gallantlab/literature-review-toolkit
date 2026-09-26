@@ -948,13 +948,13 @@ def is_initials(tok):
     return len(letters) <= 2 or not _wordlike(letters)
 
 
-_SUFFIX = re.compile(r"^(?:Jr|Sr)\.?$|^[2-9](?:nd|rd|th)\.?$")   # "JR"/"SR" in capitals are initials
+_SUFFIX = re.compile(r"^(?:[Jj]r|[Ss]r)\.?$|^[2-9](?:nd|rd|th)\.?$")   # "JR"/"SR" in capitals are initials
 _ROMAN_SUFFIX = {"II", "III", "IV"}
 
 
 def strip_suffixes(toks):
-    """Name tokens without a trailing generational suffix: "Jr", "Jr.", "Sr",
-    "Sr.", "2nd".."9th" ("Smith J Jr", "Smith EL 3rd"), and "II"/"III"/"IV" when
+    """Name tokens without a trailing generational suffix: "Jr", "jr", "Jr.",
+    "Sr", "sr", "Sr.", "2nd".."9th" ("Smith J Jr", "Smith EL 3rd"), and "II"/"III"/"IV" when
     they follow an initial or a given name ("Smith J III", "John Smith III").
     All-caps "JR"/"SR" are initials ("Cavanaugh JR"), and a numeral right after a
     lone surname may be too ("Smith IV")."""
@@ -1037,6 +1037,9 @@ def _datacite_creator(c):
             return name, "", True
         if is_initials(toks[-1]):
             split = words_then_initials(toks)
+            if split and toks[-1] in ("JR", "SR") and \
+                    len([w for w in split[0].split() if w.lower() not in PARTICLES]) > 1:
+                return name, "", True   # "John Smith JR": a suffix or initials? never "John Smith, J. R."
             return (split[0], split[1], False) if split else (name, "", True)
         fam, given = split_name(" ".join(toks))
         if len(fam.strip(".")) > 1:

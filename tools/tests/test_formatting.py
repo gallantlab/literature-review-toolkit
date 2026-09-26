@@ -4752,6 +4752,22 @@ with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict
 check("R4.C: ...and canon warns datacite-unsplit-author for it", _r4c_res.get("warn"),
       ["datacite-unsplit-author:Collins AGE"])
 
+# ---- author fix round 4, D: lowercase jr/sr are suffixes; only JR/SR are initials (2026-09-26) ----
+check("R4.D: 'Smith J jr' matches 'Smith J'", _mA("Smith J jr", "Smith J"), [])
+check_true("R4.D: 'Jones K jr' mismatches arXiv 'John Smith jr'", _mA("Jones K jr", "John Smith jr", True) != [])
+check("R4.D: arXiv 'John Smith jr' -> 'Smith J'",
+      verify._found_record({"title": "", "year": "", "first_author": "John Smith jr"})["first_author"], "Smith J")
+check("R4.D: strip_suffixes drops jr/sr, keeps JR/SR",
+      [common.strip_suffixes(t.split()) for t in ("Smith J jr", "Smith J sr.", "Smith JR", "Smith SR")],
+      [["Smith", "J"], ["Smith", "J"], ["Smith", "JR"], ["Smith", "SR"]])
+check("R4.D: DataCite 'Smith JR' -> 'Smith, J. R.'",
+      _c1_people([{"name": "Smith JR", "nameType": "Personal"}]), (["Smith, J. R."], []))
+check("R4.D: DataCite given-first 'John Smith JR' is kept whole and flagged, never 'John Smith, J. R.'",
+      _c1_people([{"name": "John Smith JR", "nameType": "Personal"}]), (["John Smith JR"], ["John Smith JR"]))
+check("R4.D: ...while 'Van Essen DC' and 'Thomas Yeo BT' still split",
+      _c1_people([{"name": "Van Essen DC", "nameType": "Personal"}, {"name": "Thomas Yeo BT", "nameType": "Personal"}]),
+      (["Van Essen, D. C.", "Thomas Yeo, B. T."], []))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
