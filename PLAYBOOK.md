@@ -453,7 +453,11 @@ fine"}}`); `references.py --list-acks` prints every unacknowledged warning as
 `REF<TAB>WARNING_ID<TAB>TEXT` so you can build the file from it. `--list-acks` only
 lists — it exits nonzero when a warning is unacknowledged, never on a defect;
 `--audit` is the actual gate. A stale acknowledgment (the warning it named no longer
-applies) is reported, not failed; delete it.
+applies) is reported, not failed; delete it. The reference gates add their own: `no-abstract`; `kept-existing-apa:<hash>` (a
+verified row canon could not rebuild, keyed to its `apa`, so editing the `apa`
+lapses the acknowledgment); `identity-not-reestablished` (a canonical row verified
+only against its own `apa`); and, under `*`, `no-candidate-ledger`, `no-xref-run`
+and `no-forward-run`.
 
 **arXiv is read in batches.** Canon prefetches every arXiv-routed id 50 per request,
 3 s apart (`common.arxiv_batch`, shared with verify). Until 2026-09-25 it sent one

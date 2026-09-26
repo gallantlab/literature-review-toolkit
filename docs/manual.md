@@ -451,6 +451,12 @@ unacknowledged, never on a defect — `--audit` is the actual gate. A stale
 acknowledgment (the warning it named no longer applies) is reported, not failed;
 delete it.
 
+The reference gates add their own: `no-abstract`; `kept-existing-apa:<hash>` (a
+verified row canon could not rebuild, keyed to its `apa`, so editing the `apa`
+lapses the acknowledgment); `identity-not-reestablished` (a canonical row verified
+only against its own `apa`); and, under `*`, `no-candidate-ledger`, `no-xref-run`
+and `no-forward-run`.
+
 !!! warning "Non-English titles are skipped by default"
     Sentence case would lowercase German nouns, so `sentence_case.py` detects and
     skips non-English titles and lists them; `--include-foreign` overrides.

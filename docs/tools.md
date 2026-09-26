@@ -80,8 +80,10 @@ in `tools/README.md` and `PLAYBOOK.md`.
   `apa` — all need a human verdict. `--repair` fixes string damage (markup,
   Unicode hyphens, `?.`) offline, without re-fetching or undoing hand fixes. Canon
   stamps rows with `canonical_at`, which `common.write_rows` refuses to overwrite;
-  `--repair` stamps it only on a legacy (ungated) table.
-  A row whose fetch fails twice is named and the run exits 1; `--only` rebuilds
+  `--repair` stamps it only on a legacy (ungated) table. On a gated table the
+  audit also fails a doi.org `link` that disagrees with the row's DOI
+  (`link-doi-mismatch`), and a DOI CrossRef does not have is reported as "DOI
+  does not exist". A row whose fetch fails twice is named and the run exits 1; `--only` rebuilds
   just the named rows. `--list-acks` prints every unacknowledged warning as
   `REF<TAB>WARNING_ID<TAB>TEXT` and exits nonzero only on those — never on a
   defect; `--audit` is the actual gate.
