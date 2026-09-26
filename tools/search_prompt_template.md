@@ -76,7 +76,8 @@ Write it incrementally if you are worried about time, so no work is lost.
     "first_author": "Family, I. I.", "year": 2022, "title": "Title as on the landing page",
     "apa": "", "summary": "3-5 sentences from the actual abstract; do not invert findings.",
     "tag": "classic", "topic": "{TOPIC_NAME}", "source": "search", "note": "", "lane_fit": ""}],
- "deferred": [{"title": "...", "doi": "", "reason": "fits lane X better", "to_lane": "X"}],
+ "deferred": [{"title": "...", "doi": "", "first_author": "", "year": "", "reason": "fits lane X better",
+              "to_lane": "X"}],
  "could_not_confirm": [{"title": "...", "reason": "no such paper under any similar title"}]}
 ```
 
@@ -89,6 +90,8 @@ Write it incrementally if you are worried about time, so no work is lost.
 - **Never drop an on-topic paper because another search might own it.** Include it
   and set `lane_fit` to the better-fitting area; duplicates are removed later.
 - List in `deferred` every paper you found and left out on purpose, with the reason.
+  Give `first_author` and `year` when you have them; the merge step relies on them
+  to confirm a deferred paper by title alone.
 - Set `status.returned` to the number of papers, and `websearch_exhausted` to true if
   your web search stopped working; say in `notes` how you continued.
 

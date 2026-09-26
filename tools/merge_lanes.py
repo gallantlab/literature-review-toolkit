@@ -27,7 +27,7 @@ import verify
 PHASE = "2c"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 THIN = 0.6
-DEFERRAL_MATCH = 0.85
+DEFERRAL_TITLE_MATCH = 0.9   # a title-only deferral match needs a closer score than a DOI/arXiv one
 PAIR_MATCH = 0.9
 
 
@@ -87,7 +87,8 @@ def _keys(row):
 
 
 def index_rows(rows):
-    """{(kind, value): row} over DOI, arXiv id and title+year."""
+    """{(kind, value): row} over DOI, arXiv id and title+year. Also used by
+    --append (Task 13) to check a late lane's papers against the existing table."""
     idx = {}
     for r in rows:
         for k in _keys(r):
@@ -106,10 +107,36 @@ def _conflict(a, b):
     return ""
 
 
+def _is_journal_doi(doi):
+    """True for a real (non-arXiv) DOI: a paper's arXiv DOI and its journal DOI
+    are the same paper, so only two DIFFERENT journal DOIs are a real conflict."""
+    return bool(doi) and not common.ARXIV_DOI.match(doi)
+
+
+def _defer_agrees(d, row):
+    """True unless a deferred entry's OPTIONAL first_author/year contradicts the
+    claim on `row`, a candidate it might match by title alone. Absent fields
+    impose no constraint; a given field must agree (surname containment either
+    way for the author, within a year for the year) or the match is refused —
+    a title-only hit is too weak to accept over a claim mismatch."""
+    fa = d.get("first_author")
+    if fa:
+        sa = verify.claim_surname(fa).lower()
+        sb = verify.claim_surname(row.get("search_author")).lower()
+        if not (sa and sb and (sa in sb or sb in sa)):
+            return False
+    dy = d.get("year")
+    if dy not in (None, ""):
+        ry = str(row.get("search_year") or "")
+        if not (str(dy).isdigit() and ry.isdigit() and abs(int(dy) - int(ry)) <= 1):
+            return False
+    return True
+
+
 def merge(lanes):
     rows, idx, refs = [], {}, set()
     rep = {"lanes": [], "duplicates": [], "conflicts": [], "possible_pairs": [], "rejected": [],
-           "deferrals_matched": [], "lost": [], "thin": [], "no_deferral_check": []}
+           "deferrals_matched": [], "matched_by_title": [], "lost": [], "thin": [], "no_deferral_check": []}
     for lane in lanes:
         name = lane["lane"]
         for p in lane["papers"]:
@@ -123,12 +150,30 @@ def merge(lanes):
                                                   "verified nor hand-checked"})
                 continue
             ks = _keys(row)
-            hit = next((idx[k] for k in ks if k in idx), None)
+            hit, hit_kind = None, None
+            for k in ks:
+                if k in idx:
+                    hit, hit_kind = idx[k], k[0]
+                    break
+            if hit is not None:
+                why = _conflict(hit, row)
+                if hit_kind == "title":
+                    # A DOI or arXiv key hit IS the same paper; a title+year key
+                    # hit alone is only a strong hint — a conflicting claimed
+                    # author, or two different journal DOIs (an arXiv preprint's
+                    # DOI + its own journal DOI is not a conflict), means these
+                    # are two distinct papers that happen to share a title+year,
+                    # not a duplicate. Keep both and flag the pair instead.
+                    diff_dois = _is_journal_doi(hit.get("doi")) and _is_journal_doi(row.get("doi")) \
+                        and hit["doi"].lower() != row["doi"].lower()
+                    if why or diff_dois:
+                        reason = f"same title and year, {why or 'different DOIs'}"
+                        rep["possible_pairs"].append({"a": hit["ref"], "b": row["ref"], "why": reason})
+                        hit = None
             if hit is not None:
                 if name != hit["lane"] and name not in hit.setdefault("also_lanes", []):
                     hit["also_lanes"].append(name)
                 rep["duplicates"].append({"ref": row["ref"], "same_as": hit["ref"]})
-                why = _conflict(hit, row)
                 if why:
                     rep["conflicts"].append({"ref": row["ref"], "same_as": hit["ref"], "why": why})
                 continue
@@ -153,14 +198,19 @@ def merge(lanes):
             continue
         for d in lane["deferred"]:
             doi = _bare(d.get("doi") or "").lower()
-            match = idx.get(("doi", doi)) if doi else None
+            match, score = (idx.get(("doi", doi)) if doi else None), None
             if match is None:
-                match = next((r for r in rows
-                              if (common.title_score(d.get("title"), r.get("search_title")) or 0)
-                              >= DEFERRAL_MATCH), None)
+                for r in rows:
+                    s = common.title_score(d.get("title"), r.get("search_title")) or 0
+                    if s >= DEFERRAL_TITLE_MATCH and _defer_agrees(d, r):
+                        match, score = r, s
+                        break
             entry = dict(d, from_lane=lane["lane"])
             (rep["deferrals_matched"] if match is not None else rep["lost"]).append(
                 dict(entry, found_as=match["ref"]) if match is not None else entry)
+            if match is not None and score is not None:
+                rep["matched_by_title"].append({"title": d.get("title"), "from_lane": lane["lane"],
+                                                "found_as": match["ref"], "score": round(score, 3)})
     return rows, rep
 
 
@@ -195,6 +245,9 @@ def main():
               "resume it via SendMessage")
     for lane in rep["no_deferral_check"]:
         print(f"  ⚠ lane {lane} is schema 1: its deferrals could not be checked")
+    for m in rep["matched_by_title"]:
+        print(f"  · deferral \"{m['title']}\" ({m['from_lane']}) matched {m['found_as']} by title only "
+              f"({m['score']}) — check it")
     for x in rep["rejected"]:
         print(f"  ✗ {x['ref']} ({x['lane']}): {x['reason']}")
     for d in rep["lost"]:

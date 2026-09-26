@@ -2205,6 +2205,70 @@ check("merge_lanes exits 1 on a lost deferral", _merge_exit(_raw, os.path.join(_
 check_true("and still writes the rows and the report",
            os.path.exists(os.path.join(_d, "rows.json")) and os.path.exists(os.path.join(_d, "merge_report.json")))
 
+# ---- merge_lanes.py fix round 1: title-only dedup guard (2026-09-26) -------
+# Same title+year but two different journal DOIs: NOT the same paper.
+_rows3, _rep3 = merge_lanes.merge([
+    _lane("C", [_p("C-01", doi="10.1/aaa", title="Same title", year=2021, au="Smith, J.")]),
+    _lane("D", [_p("D-01", doi="10.1/bbb", title="Same title", year=2021, au="Smith, J.")])])
+check("title+year dedup does not merge two different journal DOIs",
+      [r["ref"] for r in _rows3], ["C-01", "D-01"])
+check_true("...and flags a possible pair with the DOI reason",
+           any(p.get("why", "").startswith("same title and year") and "different DOIs" in p["why"]
+               for p in _rep3["possible_pairs"]))
+
+# An arXiv DOI + a journal DOI of the same title+year IS the same paper.
+_rows4, _rep4 = merge_lanes.merge([
+    _lane("E", [_p("E-01", doi="10.48550/arXiv.2401.00001", title="Preprint title", year=2022, au="Smith, J.")]),
+    _lane("F", [_p("F-01", doi="10.1/journal-f", title="Preprint title", year=2022, au="Smith, J.")])])
+check("an arXiv DOI + a journal DOI of the same title+year still merges",
+      [r["ref"] for r in _rows4], ["E-01"])
+check("...also_lanes records the journal lane", _rows4[0].get("also_lanes"), ["F"])
+
+# A DOI-less row (APA only) + a journal-DOI row of the same title+year still merges.
+_rows5, _rep5 = merge_lanes.merge([
+    _lane("G", [_p("G-01", title="No-DOI title", year=2022, au="Smith, J.",
+                    apa="Smith, J. (2022). No-DOI title. Pub.")]),
+    _lane("H", [_p("H-01", doi="10.1/journal-h", title="No-DOI title", year=2022, au="Smith, J.")])])
+check("a DOI-less row and a journal-DOI row with the same title+year still merge",
+      [r["ref"] for r in _rows5], ["G-01"])
+
+# Same title+year but a conflicting claimed author: NOT the same paper either.
+_rows6, _rep6 = merge_lanes.merge([
+    _lane("I", [_p("I-01", doi="10.1/kim", title="Disputed title", year=2023, au="Kim, S.")]),
+    _lane("J", [_p("J-01", doi="10.1/zhao", title="Disputed title", year=2023, au="Zhao, L.")])])
+check("title+year dedup does not merge a conflicting author claim",
+      [r["ref"] for r in _rows6], ["I-01", "J-01"])
+check_true("...and flags the conflict as a possible pair",
+           any(p.get("why", "").startswith("same title and year") and "Kim" in p["why"] and "Zhao" in p["why"]
+               for p in _rep6["possible_pairs"]))
+
+# ---- merge_lanes.py fix round 1: deferral title-only match needs corroboration ----
+# A title similarity below the new 0.9 bar is still lost, even though it cleared the
+# old 0.85 bar.
+_rep7 = merge_lanes.merge([_lane("K", [_p("K-01", doi="10.1/deepcnn",
+                                          title="Deep convolutional neural networks for vision")],
+                                 deferred=[{"title": "Deep convolutional neural networks for language"}])])[1]
+check("a title match below 0.9 is still lost, not accepted as a match",
+      [d["title"] for d in _rep7["lost"]], ["Deep convolutional neural networks for language"])
+
+# An exact title match with a disagreeing claimed first author is lost, not accepted.
+_rep8 = merge_lanes.merge([_lane("L", [_p("L-01", doi="10.1/kim", title="Exact Title Match", au="Kim, S.")],
+                                 deferred=[{"title": "Exact Title Match", "first_author": "Zhao, L."}])])[1]
+check("a title match with a disagreeing claimed author is lost, not accepted",
+      [d["title"] for d in _rep8["lost"]], ["Exact Title Match"])
+check("...and is not counted as matched by title", _rep8["matched_by_title"], [])
+
+# An exact title match with an agreeing claimed author (and year) IS matched, and
+# is recorded separately so a human can double-check a title-only match.
+_rep9 = merge_lanes.merge([_lane("M", [_p("M-01", doi="10.1/hinton", title="Perfectly Matched Title",
+                                          au="Hinton, G.", year=2021)],
+                                 deferred=[{"title": "Perfectly Matched Title", "first_author": "Hinton, G.",
+                                           "year": 2021}])])[1]
+check("an exact title match with an agreeing claimed author is matched",
+      [d["title"] for d in _rep9["deferrals_matched"]], ["Perfectly Matched Title"])
+check("...and is recorded in matched_by_title",
+      [(m["found_as"], m["from_lane"]) for m in _rep9["matched_by_title"]], [("M-01", "M")])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
