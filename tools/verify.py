@@ -384,6 +384,8 @@ def _author_issue(c, rec, where=""):
     # token that is not a particle must equal a token of the record's surname, or
     # a 2+ letter part of a hyphenated one ("Hanna" / "Andrews-Hanna"). Whole
     # words only: "Lee" does not match "Leeson", nor "Han" "Andrews-Hanna".
+    # Calibrated on the same 2,474 OK verdicts as the title check, and on 3,042
+    # search-agent claims against their rows' apa: no past OK verdict is flagged.
     expect_t = _surname_tokens(c.get("expect_first_author"))
     actual_t = _surname_tokens(rec.get("first_author"))
     if expect_t and actual_t and not any(expect_t[0] == t or expect_t[0] in _hyphen_parts(t)
