@@ -70,13 +70,26 @@ def crossref(doi, fallback_venue=""):
 def datacite(doi, fallback_venue=""):
     """APA for a DataCite-registered deposit (Zenodo/figshare/OSF/Dryad software,
     data set or preprint) -- the same contract as crossref(): None on a record
-    with no usable authors, else {apa, venue, source}."""
+    with no usable authors, else {apa, venue, source}, plus `warn` (warning ids)
+    and `warn_text` ({id: text}) when the apa needs a human look: a creator name
+    DataCite gave no given name for and that could not be split safely
+    (`datacite-unsplit-author:<name>`: a group, or a person printed given-name-
+    first?). canon_rows stores these on the row as `canon_warnings`, and the
+    audit makes each an acknowledgeable warning."""
     r = common.datacite_work(doi, fallback_venue)
     if not r or not r["people"]:
         return None
     apa = common.build_datacite_apa(r["people"], r["year"], r["title"], r["version"],
                                     r["resource_type"], r["publisher"])
-    return {"apa": apa, "venue": r["journal"], "source": "datacite"}
+    out = {"apa": apa, "venue": r["journal"], "source": "datacite"}
+    notes = {}
+    for name in r.get("unsplit") or []:
+        notes[f"datacite-unsplit-author:{name}"] = (
+            f"DataCite gives creator '{name}' no given name and it could not be split: confirm it "
+            "is a group, not a person printed given-name-first (fix the apa by hand if it is)")
+    if notes:
+        out["warn"], out["warn_text"] = list(notes), notes
+    return out
 
 
 def _crossref_or_datacite(doi, fallback_venue=""):
@@ -427,6 +440,12 @@ def row_gate_defects(r, warn):
         elif hv.get("apa_sha") != common.apa_sha(r.get("apa")):
             d.append("hand-check-missing (apa changed since the hand check; re-check it and "
                      "handcheck.py --ingest)")
+    for cw in r.get("canon_warnings") or []:
+        # canon_rows stored these when the source record needed a human look
+        if isinstance(cw, dict) and cw.get("id"):
+            warn(str(cw["id"]), str(cw.get("text") or cw["id"]))
+        else:
+            warn(f"canon-warning:{cw}", f"canon flagged this row: {cw}")
     s = (r.get("summary") or "").strip()
     if s:
         sc = r.get("summary_check")
@@ -586,6 +605,11 @@ def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None):
                 r["apa"] = res["apa"]
                 if res.get("link"):
                     r["link"] = res["link"]
+                texts = res.get("warn_text") or {}
+                if res.get("warn"):
+                    r["canon_warnings"] = [{"id": w, "text": texts.get(w, w)} for w in res["warn"]]
+                else:
+                    r.pop("canon_warnings", None)   # a rebuild with nothing to flag clears old flags
                 stamp_canonical(r, asof)
                 rebuilt += 1
             elif res and res.get("source") == "missing":

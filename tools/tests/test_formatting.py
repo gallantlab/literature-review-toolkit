@@ -2796,8 +2796,10 @@ _dc_row2 = _dc_row("DC2")
 with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_dc_rec)), _sleeps():
     _dcrows_res = references.canon_rows([_dc_row2], "ref", "2026-09-26", sleep=0, retry_wait=0)
 check("canon_rows: a DataCite-only DOI is rebuilt", _dcrows_res["rebuilt"], 1)
-_dc_audit = references.audit_rows([_dc_row2], "ref")
-check("canon_rows: the rebuilt apa passes references.audit_rows (no defects, gate passes)",
+# (C1 review: the group creator now raises an ack-able datacite-unsplit-author warning)
+_dc_audit = references.audit_rows([_dc_row2], "ref", acks={"DC2": {
+    "datacite-unsplit-author:The pandas development team": "a development team"}})
+check("canon_rows: the rebuilt apa passes references.audit_rows (no defects, gate passes once acked)",
       (_dc_audit["defects"], _dc_audit["failed"]), ({}, False))
 
 # ---- Task 5 addendum (Task 1 review): DataCite regression tests (2026-09-26) ----
@@ -3805,6 +3807,79 @@ verify.stamp_rows([_i3row2], [{"label": "U4", "verdict": "OK", "source": "doi", 
 check("a changed DOI since the earlier stamp is not kept: it is overwritten with the new claim_basis",
       (_i3row2["verified"]["doi"], _i3row2["verified"].get("claim_basis"), "reverified_at" in _i3row2["verified"]),
       ("10.1/u4", "canonical-apa", False))
+
+# ---- final review C1: DataCite creators with no givenName (2026-09-26) -----
+# DataCite often deposits a person as a bare display name ("Jagroop Singh Doad",
+# nameType Personal, no givenName); kept whole it shipped given-name-first.
+def _c1_people(creators):
+    rec = common.datacite_record(_dc_attrs(creators=creators))
+    return rec["people"], rec["unsplit"]
+
+
+check("C1: a Personal display name with no givenName is split on its last token",
+      _c1_people([{"name": "Jagroop Singh Doad", "nameType": "Personal"}]), (["Doad, J. S."], []))
+check("C1: a 'Family, Given' name with no givenName is split on the first ', '",
+      _c1_people([{"name": "Doe, John"}]), (["Doe, J."], []))
+check("C1: 'Family, Given' also splits for a Personal name",
+      _c1_people([{"name": "Doe, John", "nameType": "Personal"}]), (["Doe, J."], []))
+check("C1: a Personal display name keeps its nobiliary particle with the surname",
+      _c1_people([{"name": "Ludwig van Beethoven", "nameType": "Personal"}]),
+      (["van Beethoven, L."], []))
+check("C1: a Personal name starting with 'The' is a group: kept whole and recorded unsplit",
+      _c1_people([{"name": "The pandas development team", "nameType": "Personal",
+                   "familyName": "The pandas development team"}]),
+      (["The pandas development team"], ["The pandas development team"]))
+check("C1: an Organizational name is kept whole (it is declared a group, so not flagged)",
+      _c1_people([{"name": "Allen Institute for Brain Science, Seattle", "nameType": "Organizational"}]),
+      (["Allen Institute for Brain Science, Seattle"], []))
+check("C1: a multi-token name with no nameType is kept whole and recorded unsplit",
+      _c1_people([{"name": "Jagroop Singh Doad"}]), (["Jagroop Singh Doad"], ["Jagroop Singh Doad"]))
+check("C1: a givenName still wins (unchanged)",
+      _c1_people([{"name": "Doad, Jagroop Singh", "familyName": "Doad", "givenName": "Jagroop Singh",
+                   "nameType": "Personal"}]), (["Doad, J. S."], []))
+
+_c1_doad = dict(common.datacite_record(_dc_attrs(creators=[{"name": "Jagroop Singh Doad",
+                                                              "nameType": "Personal"}])))
+with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_c1_doad)):
+    _c1_res = references.canonical(_dc_row("C1D"))
+check("C1: canonical apa of a split display name",
+      _c1_res["apa"], "Doad, J. S. (2020). pandas-dev/pandas: Pandas (Version v1.0.0) "
+      "[Computer software]. Zenodo.")
+check("C1: the split name's canonical apa passes references.audit", references.audit(_c1_res["apa"], True)[0], [])
+check_true("C1: a fully split record carries no warn list", not _c1_res.get("warn"), str(_c1_res))
+
+with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_dc_rec)):
+    _c1_dc = references.datacite("10.5281/zenodo.3509134")
+    _c1_grp = references.canonical(_dc_row("C1G"))
+check("C1: references.datacite still returns the apa of an unsplit group",
+      _c1_dc["apa"], "The pandas development team (2020). pandas-dev/pandas: Pandas (Version v1.0.0) "
+      "[Computer software]. Zenodo.")
+check("C1: ...and marks it warn datacite-unsplit-author:<name>",
+      _c1_dc["warn"], ["datacite-unsplit-author:The pandas development team"])
+check("C1: canonical passes the warn list through", _c1_grp.get("warn"), _c1_dc["warn"])
+check("C1: the group's canonical apa passes references.audit", references.audit(_c1_grp["apa"], True)[0], [])
+
+_c1_row = _dc_row("C1R")
+with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_dc_rec)), _sleeps():
+    references.canon_rows([_c1_row], "ref", "2026-09-26", sleep=0, retry_wait=0)
+check("C1: canon_rows stores the warning on the row as canon_warnings",
+      [w["id"] for w in _c1_row.get("canon_warnings", [])],
+      ["datacite-unsplit-author:The pandas development team"])
+_c1_aud = references.audit_rows([_c1_row], "ref")
+check("C1: the audit emits it as an unacknowledged warning that fails the gate",
+      ([w for w, _ in _c1_aud["unacked"].get("C1R", [])], _c1_aud["failed"], _c1_aud["defects"]),
+      (["datacite-unsplit-author:The pandas development team"], True, {}))
+_c1_ack = references.audit_rows([_c1_row], "ref", acks={"C1R": {
+    "datacite-unsplit-author:The pandas development team": "a development team, not a person"}})
+check("C1: an acknowledgment clears it", (_c1_ack["unacked"], _c1_ack["failed"]), ({}, False))
+_c1_ungated = {k: v for k, v in _c1_row.items() if k not in ("verified", "canonical_at")}
+check_true("C1: an ungated table does not emit canon warnings",
+           not any(w.startswith("datacite-") for w, _ in
+                   references.audit_rows([_c1_ungated], "ref")["warnings"].get("C1R", [])))
+with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_c1_doad)), _sleeps():
+    references.canon_rows([_c1_row], "ref", "2026-09-27", sleep=0, retry_wait=0)
+check_true("C1: a later rebuild with no warnings clears canon_warnings", "canon_warnings" not in _c1_row,
+           str(_c1_row))
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

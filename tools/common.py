@@ -839,6 +839,37 @@ def crossref_work(doi, fallback_venue=""):
     return crossref_record(msg, fallback_venue)
 
 
+def _datacite_creator(c):
+    """One DataCite creator -> (family, given, kept_whole).
+
+    With a `givenName`, the deposit already split the name. Without one, the bare
+    `name` is often a PERSON's display name ("Jagroop Singh Doad", nameType
+    Personal); kept whole it shipped given-name-first as if it were a surname. So:
+    "Family, Given" splits on its first ", "; a Personal name of 2+ tokens that does
+    not open with an article ("The pandas development team") splits on its last
+    token (split_name, which keeps particles). Anything else stays whole:
+    `kept_whole` is True for it unless DataCite declares it Organizational -- the
+    one case where a whole name is known to be a group rather than a guess.
+    """
+    given = (c.get("givenName") or "").strip()
+    name = (c.get("name") or "").strip()
+    if given:
+        return (c.get("familyName") or name).strip(), given, False
+    kind = (c.get("nameType") or "").strip()
+    whole = (c.get("familyName") or name).strip()
+    if kind == "Organizational":
+        return name or whole, "", False
+    name = name or whole
+    if ", " in name:
+        fam, given = name.split(", ", 1)
+        return fam.strip(), given.strip(), False
+    toks = name.split()
+    if kind == "Personal" and len(toks) >= 2 and toks[0].lower() not in ("the", "a", "an"):
+        fam, given = split_name(name)
+        return fam, given, False
+    return name, "", bool(name)
+
+
 def datacite_record(attrs, fallback_venue=""):
     """Normalize a DataCite `data.attributes` dict to the SAME shape
     crossref_record() returns, plus `version` and `resource_type`
@@ -846,21 +877,21 @@ def datacite_record(attrs, fallback_venue=""):
 
     DataCite is the registry behind Zenodo/figshare/OSF/Dryad DOIs — software and
     data-set deposits CrossRef does not hold. A creator's `familyName`/`givenName`
-    are used when a given name is present; a creator with NO given name (a group,
-    such as "The pandas development team", even when DataCite's nameType says
-    "Personal") is kept whole as its family name and formatted with no initials
-    (common.person() already does this when `given` is empty). `publisher` may be
-    a bare string or `{"name": ...}`; `journal` mirrors it, matching the field
-    crossref_record() uses for the venue.
+    are used when a given name is present. A creator with NO given name is split
+    by _datacite_creator(); a name it cannot split safely is kept whole (formatted
+    with no initials) and listed in the record's `unsplit`, for canon to flag.
+    `publisher` may be a bare string or `{"name": ...}`; `journal` mirrors it,
+    matching the field crossref_record() uses for the venue.
     """
-    authors = []
+    authors, unsplit = [], []
     for c in attrs.get("creators") or []:
         if not isinstance(c, dict):
             continue
-        given = (c.get("givenName") or "").strip()
-        fam = (c.get("familyName") or c.get("name") or "").strip()
+        fam, given, whole = _datacite_creator(c)
         if fam:
             authors.append((fam, given))
+            if whole:
+                unsplit.append(fam)
     fam, giv = authors[0] if authors else ("", "")
     publisher = attrs.get("publisher")
     if isinstance(publisher, dict):
@@ -875,7 +906,8 @@ def datacite_record(attrs, fallback_venue=""):
             "volume": attrs.get("volume"), "issue": attrs.get("issue"),
             "pages": attrs.get("page"), "book": "", "publisher": publisher,
             "version": attrs.get("version") or "",
-            "resource_type": (attrs.get("types") or {}).get("resourceTypeGeneral", "")}
+            "resource_type": (attrs.get("types") or {}).get("resourceTypeGeneral", ""),
+            "unsplit": unsplit}
 
 
 def datacite_work(doi, fallback_venue=""):
