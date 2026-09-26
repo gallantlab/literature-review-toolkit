@@ -2071,16 +2071,18 @@ check("adopt moves a row with one found DOI into the verify path",
 check("adopt skips an ambiguous row", handcheck.adopt([dict(_book)], "ref",
                                                       {"B1": [{"doi": "a"}, {"doi": "b"}]}), ([], ["B1"]))
 _rows = [dict(_book), {"ref": "B2", "apa": "Doe, J. (1970). Memo. Lab."}, {"ref": "D1", "doi": "10.1/d"}]
+_hc_in = [{"ref": "B1", "apa_sha": common.apa_sha(_book["apa"])},
+          {"ref": "B2", "apa_sha": common.apa_sha("Doe, J. (1970). Memo. Lab.")}]
 _n, _err = handcheck.ingest(_rows, "ref", [
     {"ref": "B1", "verdict": "confirmed", "source_checked": "LoC record 62019621"},
     {"ref": "B2", "verdict": "corrected", "apa": "Doe, J. (1971). Memo. Lab.", "source_checked": "scan"},
     {"ref": "D1", "verdict": "confirmed", "source_checked": "x"},
-    {"ref": "B9", "verdict": "confirmed", "source_checked": "x"}], "2026-09-26")
+    {"ref": "B9", "verdict": "confirmed", "source_checked": "x"}], _hc_in, "2026-09-26")
 check("ingest records valid results", (_n, _rows[0]["hand_verified"]["verdict"], _rows[1]["apa"]),
       (2, "confirmed", "Doe, J. (1971). Memo. Lab."))
 check("ingest refuses a DOI'd row and an unknown ref", len(_err), 2)
 _n, _err = handcheck.ingest([dict(_book)], "ref", [{"ref": "B1", "verdict": "confirmed", "source_checked": ""}],
-                            "2026-09-26")
+                            [{"ref": "B1", "apa_sha": common.apa_sha(_book["apa"])}], "2026-09-26")
 check("ingest refuses a confirmation that names no source", (_n, len(_err)), (0, 1))
 check_true("a handcheck-ingested row passes the audit's hand-check gate",
            "hand-check-missing" not in " ".join(references.audit_rows(
@@ -2962,7 +2964,7 @@ check("apa_sha ignores case and whitespace", common.apa_sha(" Kuhn,  T. (1962). 
 _i9rows = [{"ref": "B1", "apa": "Kuhn, T. S. (1962). The structure of scientific revolutions. U Chicago Press.",
             "summary": "", "canonical_at": common.GATES_SINCE}]
 handcheck.ingest(_i9rows, "ref", [{"ref": "B1", "verdict": "confirmed", "source_checked": "LoC record"}],
-                 "2026-09-25")
+                 [{"ref": "B1", "apa_sha": common.apa_sha(_i9rows[0]["apa"])}], "2026-09-25")
 check("handcheck records the apa_sha it confirmed", _i9rows[0]["hand_verified"].get("apa_sha"),
       common.apa_sha(_i9rows[0]["apa"]))
 check("a hand-checked row passes", _codes(references.audit_rows([_grow(), _i9rows[0]], "ref"), "B1"), [])
@@ -3046,7 +3048,7 @@ _i10res = os.path.join(_i10d, "hc.json")
 common.dump_json([{"ref": "B1", "verdict": "confirmed", "source_checked": "LoC"}], _i10res)
 _e = _i10_run(handcheck, ["handcheck.py", "--rows", _i10_rows([{"ref": "B1", "apa": "Doe, J. (1970). M. L."}]),
                           "--ingest", _i10res],
-              ingest=lambda rows, keyf, results, asof: (_i10_touch(_i10rp), (0, []))[1])
+              ingest=lambda rows, keyf, results, hc_input, asof: (_i10_touch(_i10rp), (0, []))[1])
 check_true("handcheck --ingest refuses a rows.json that changed", isinstance(_e, RuntimeError), repr(_e))
 common.dump_json({"refs": [], "sha": {}, "no_abstract": []}, os.path.join(_i10d, "manifest.json"))
 _e = _i10_run(summary_audit, ["summary_audit.py", "--rows", _i10_rows([{"ref": "S", "summary": "s"}]),
@@ -3175,6 +3177,107 @@ with _patched(common, s2_request=_i6f), _ctx.redirect_stderr(io.StringIO()):
         [{"ref": "P", "doi": "10.1/p", "summary": "s"}], "ref", {}, _i6fetchers)
 check("abstracts.collect: an always-403 S2 fetch leaves the ref failed, not missing",
       (_i6missing, list(_i6failedrefs)), ([], ["P"]))
+
+# ---- Task 2: bind summary and hand checks at --prepare (2026-09-26) --------
+# summary_audit: the manifest binds a check to the paper's ids and its abstract's
+# text, not just to the summary -- so a DOI arriving, or the abstract being
+# refetched to different text, between --prepare and --ingest is caught instead
+# of being silently stamped as if the checking agent had seen it.
+_t2S = [{"ref": "T1", "summary": "It found X."}]
+_t2AB = {"T1": {"text": "We found X.", "source": "openalex"}}
+_b, _na, _t2man = summary_audit.prepare(_t2S, "ref", _t2AB)
+check("summary_audit prepare records ids and abstract_sha in the manifest",
+      (_t2man["ids"].get("T1"), _t2man["abstract_sha"].get("T1")),
+      (list(common.ids_of(_t2S[0])), common.summary_sha("We found X.")))
+
+_t2S_doi = [dict(_t2S[0], doi="10.1/t1")]        # the paper gained a DOI since --prepare
+_n, _err = summary_audit.ingest(_t2S_doi, "ref", [{"ref": "T1", "verdict": "supported"}], _t2AB, _t2man,
+                                "2026-09-26")
+check("ingest refuses a ref whose ids changed since --prepare, and stamps nothing",
+      (_n, _err, "summary_check" in _t2S_doi[0]),
+      (0, ["T1: the paper or its abstract changed since --prepare; re-run --prepare"], False))
+
+_t2S2 = [dict(_t2S[0])]                          # the abstract was refetched to different text
+_t2AB2 = {"T1": {"text": "We found Z, not X.", "source": "openalex"}}
+_n, _err = summary_audit.ingest(_t2S2, "ref", [{"ref": "T1", "verdict": "supported"}], _t2AB2, _t2man,
+                                "2026-09-26")
+check("ingest refuses a ref whose abstract text changed since --prepare, and stamps nothing",
+      (_n, _err, "summary_check" in _t2S2[0]),
+      (0, ["T1: the paper or its abstract changed since --prepare; re-run --prepare"], False))
+
+_t2S3 = [dict(_t2S[0])]                          # unchanged: the happy path
+_n, _err = summary_audit.ingest(_t2S3, "ref", [{"ref": "T1", "verdict": "supported"}], _t2AB, _t2man,
+                                "2026-09-26")
+check("ingest stamps the unchanged happy path with the manifest's ids/abstract_sha",
+      (_n, _err, _t2S3[0]["summary_check"]["doi"], _t2S3[0]["summary_check"]["abstract_sha"]),
+      (1, [], "", common.summary_sha("We found X.")))
+
+# the same drift check guards the no-abstract path: a DOI arriving must block
+# the no-abstract stamp too, not just an abstract arriving.
+_t2N = [{"ref": "T2", "summary": "No abstract for this one."}]
+_b, _na, _t2manN = summary_audit.prepare(_t2N, "ref", {})
+_t2N_doi = [dict(_t2N[0], doi="10.1/t2")]
+_n, _err = summary_audit.ingest(_t2N_doi, "ref", [], {}, _t2manN, "2026-09-26")
+check("ingest refuses a no-abstract ref whose ids changed since --prepare",
+      (_n, _err, "summary_check" in _t2N_doi[0]),
+      (0, ["T2: the paper or its abstract changed since --prepare; re-run --prepare"], False))
+
+# handcheck: the hand-check input recorded at --prepare binds a result to the apa
+# it was checked against, so an edit landing between --prepare and --ingest is
+# caught -- rather than silently accepted, or (for "corrected") silently overwritten.
+_t2book = {"ref": "H1", "apa": "Kuhn, T. S. (1962). The structure of scientific revolutions. U Chicago Press.",
+           "summary": ""}
+_t2cands, _t2todo = handcheck.prepare([_t2book], "ref", (_far,))
+check("handcheck prepare records apa_sha in the hand-check input",
+      _t2todo[0].get("apa_sha"), common.apa_sha(_t2book["apa"]))
+
+_t2rows_edited = [dict(_t2book, apa=_t2book["apa"] + " (2nd printing)")]   # apa edited since --prepare
+_n, _err = handcheck.ingest(_t2rows_edited, "ref",
+                            [{"ref": "H1", "verdict": "confirmed", "source_checked": "LoC record"}],
+                            _t2todo, "2026-09-26")
+check("ingest refuses a result whose apa changed since --prepare, and stamps nothing",
+      (_n, _err, "hand_verified" in _t2rows_edited[0]),
+      (0, ["H1: the reference changed since --prepare; re-check it"], False))
+
+_n, _err = handcheck.ingest(_t2rows_edited, "ref",
+                            [{"ref": "H1", "verdict": "corrected", "apa": "Something else entirely.",
+                              "source_checked": "LoC record"}],
+                            _t2todo, "2026-09-26")
+check("a corrected verdict is refused the same way, checked against the pre-correction apa",
+      (_n, _err, _t2rows_edited[0]["apa"]),
+      (0, ["H1: the reference changed since --prepare; re-check it"], _t2book["apa"] + " (2nd printing)"))
+
+_t2rows_unlisted = [dict(_t2book, ref="H2")]     # never went through --prepare
+_n, _err = handcheck.ingest(_t2rows_unlisted, "ref",
+                            [{"ref": "H2", "verdict": "confirmed", "source_checked": "LoC record"}],
+                            _t2todo, "2026-09-26")
+check("a result for a ref absent from the hand-check input is refused",
+      (_n, _err), (0, ["H2: not in this hand check"]))
+
+_t2rows_ok = [dict(_t2book)]                     # unchanged: the happy path
+_n, _err = handcheck.ingest(_t2rows_ok, "ref",
+                            [{"ref": "H1", "verdict": "confirmed", "source_checked": "LoC record"}],
+                            _t2todo, "2026-09-26")
+check("ingest records the unchanged happy path", (_n, _err), (1, []))
+
+# --input defaults to handcheck_input.json beside --rows
+_hcd = _tmpf.mkdtemp()
+_hcrp = os.path.join(_hcd, "rows.json")
+common.dump_json([dict(_t2book)], _hcrp)
+common.dump_json(_t2todo, os.path.join(_hcd, "handcheck_input.json"))
+common.dump_json([{"ref": "H1", "verdict": "confirmed", "source_checked": "LoC record"}],
+                 os.path.join(_hcd, "handcheck_result.json"))
+_argv = sys.argv
+sys.argv = ["handcheck.py", "--rows", _hcrp, "--ingest", os.path.join(_hcd, "handcheck_result.json")]
+try:
+    with _ctx.redirect_stdout(io.StringIO()):
+        handcheck.main()
+except SystemExit:
+    pass
+finally:
+    sys.argv = _argv
+check("handcheck --ingest reads handcheck_input.json beside --rows by default",
+      common.load_json(_hcrp)[0]["hand_verified"]["verdict"], "confirmed")
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

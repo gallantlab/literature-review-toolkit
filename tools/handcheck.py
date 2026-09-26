@@ -6,10 +6,15 @@ hand check, and the audit fails any DOI-less row without its record:
 
   --prepare           search CrossRef and OpenAlex for a DOI the row is missing
                       (the same title, by common.title_match, and the same year), and write the
-                      hand-check input and brief for the rest
+                      hand-check input and brief for the rest -- each hand-check-input
+                      entry carries `apa_sha`, the row's apa as it stood at --prepare
   --adopt-dois FILE   give each row with exactly one found DOI that DOI, so it
                       goes through verify.py instead
-  --ingest FILE       record each result on its row as `hand_verified`
+  --ingest FILE       record each result on its row as `hand_verified`, refusing one
+                      whose row's current apa sha differs from --input's `apa_sha`
+                      (the reference changed while it was being checked)
+  --input FILE        the hand-check input recorded at --prepare, used by --ingest to
+                      detect that drift (default: handcheck_input.json beside --rows)
 
     python3 tools/handcheck.py --rows rows.json --prepare --email you@inst.edu
     python3 tools/handcheck.py --rows rows.json --adopt-dois handcheck_doi_candidates.json
@@ -119,7 +124,7 @@ def prepare(rows, keyf, searchers=(search_crossref, search_openalex)):
         else:
             todo.append({"ref": r.get(keyf), "apa": r.get("apa") or r.get("search_apa") or "",
                          "link": r.get("link", ""), "note": r.get("note", ""),
-                         "summary": r.get("summary", "")})
+                         "summary": r.get("summary", ""), "apa_sha": common.apa_sha(r.get("apa"))})
     return doi_cands, todo
 
 
@@ -141,8 +146,13 @@ def adopt(rows, keyf, doi_cands):
     return adopted, ambiguous
 
 
-def ingest(rows, keyf, results, asof):
+def ingest(rows, keyf, results, hc_input, asof):
+    """hc_input is the hand-check input recorded at --prepare (a JSON list of
+    {"ref", "apa_sha", ...}): a result is refused if its row's current apa sha
+    differs from what --prepare recorded (the reference changed while it was
+    being checked), or if its ref never went through --prepare at all."""
     by = {r.get(keyf): r for r in rows}
+    input_map = {e.get("ref"): e for e in hc_input}
     n, errors = 0, []
     for res in results:
         k, v = res.get("ref"), res.get("verdict")
@@ -153,6 +163,14 @@ def ingest(rows, keyf, results, asof):
             continue
         if common.doi_of(row) or row.get("arxiv"):
             errors.append(f"{k}: has a DOI/arXiv id; it is verified by verify.py, not by hand")
+            continue
+        if k not in input_map:
+            errors.append(f"{k}: not in this hand check")
+            continue
+        if common.apa_sha(row.get("apa")) != input_map[k].get("apa_sha"):
+            # checked against the PRE-correction apa: a "corrected" verdict has not
+            # yet been applied to row["apa"] at this point in the function
+            errors.append(f"{k}: the reference changed since --prepare; re-check it")
             continue
         if v not in VERDICTS:
             errors.append(f"{k}: verdict {v!r} is not one of {', '.join(VERDICTS)}")
@@ -182,6 +200,9 @@ def main():
                     help="search for missing DOIs; write the hand-check input")
     ap.add_argument("--adopt-dois", metavar="FILE", help="apply handcheck_doi_candidates.json")
     ap.add_argument("--ingest", metavar="FILE", help="record hand-check results as hand_verified")
+    ap.add_argument("--input", metavar="FILE",
+                    help="hand-check input recorded at --prepare, used to detect an apa changed "
+                         "since (default: handcheck_input.json beside --rows)")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"))
     ap.add_argument("--asof", default=datetime.date.today().isoformat())
     args = ap.parse_args()
@@ -210,7 +231,9 @@ def main():
         for k in ambiguous:
             print(f"  ⚠ {k}: several candidate DOIs; keep one in the file and re-run")
         return
-    n, errors = ingest(rows, keyf, common.load_json(args.ingest), args.asof)
+    input_path = args.input or os.path.join(here, "handcheck_input.json")
+    n, errors = ingest(rows, keyf, common.load_json(args.ingest), common.load_optional_json(input_path, []),
+                       args.asof)
     common.save_rows(args.rows, rows, loaded)
     not_found = [r.get(keyf) for r in rows if (r.get("hand_verified") or {}).get("verdict") == "not-found"]
     print(f"recorded {n} hand check(s)")

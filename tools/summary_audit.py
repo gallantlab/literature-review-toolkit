@@ -9,7 +9,10 @@
 A row with no abstract is recorded as `no-abstract` (a warning the audit makes
 you acknowledge). A row whose abstract fetch FAILED (abstracts_failed.json) or
 whose abstract entry was recorded for other ids is refused at --prepare, which
-then exits 1. A summary edited after --prepare is refused at --ingest.
+then exits 1. A summary edited after --prepare is refused at --ingest, and so is
+a ref whose paper (its DOI/arXiv id) or whose abstract text changed since
+--prepare -- the manifest records both, so --ingest is checking against exactly
+what the checking agents saw.
 
     python3 tools/summary_audit.py --rows rows.json --prepare
     python3 tools/summary_audit.py --rows rows.json --ingest
@@ -58,9 +61,14 @@ def prepare(rows, keyf, abstracts, batch=40, recheck=False, failed=None):
     """-> (batches, no_abs, manifest). manifest["refused"] maps each ref that
     cannot be checked yet to why: its abstract entry records other ids than the
     row has (it is not this paper's abstract), or its abstract fetch failed
-    (`failed`, from abstracts_failed.json) — a failed fetch is not "no abstract"."""
+    (`failed`, from abstracts_failed.json) — a failed fetch is not "no abstract".
+
+    manifest also records, per ref in `refs` and `no_abstract`, `ids` (the row's
+    common.ids_of at --prepare) and `abstract_sha` (summary_sha of the abstract
+    text it was checked against; "" for no_abstract) — what --ingest binds the
+    stamp to, so a paper or abstract that changed since --prepare is caught."""
     failed = failed or {}
-    todo, no_abs, sha, refused = [], [], {}, {}
+    todo, no_abs, sha, refused, ids, abstract_sha = [], [], {}, {}, {}, {}
     for r in rows:
         k, s = r.get(keyf), (r.get("summary") or "").strip()
         if not s or (not recheck and _checked(r, abstracts, k)):
@@ -75,28 +83,53 @@ def prepare(rows, keyf, abstracts, batch=40, recheck=False, failed=None):
                           "re-run abstracts.py or add a landing-page entry")
             continue
         sha[k] = common.summary_sha(s)
+        ids[k] = list(common.ids_of(r))
         if not (a.get("text") or "").strip():
             no_abs.append(k)
+            abstract_sha[k] = ""
             continue
+        abstract_sha[k] = common.summary_sha(a["text"])
         todo.append({"ref": k, "summary": s, "abstract": a["text"], "abstract_source": a.get("source")})
     batches = [todo[i:i + batch] for i in range(0, len(todo), batch)]
-    manifest = {"refs": [x["ref"] for x in todo], "sha": sha, "no_abstract": no_abs, "refused": refused}
+    manifest = {"refs": [x["ref"] for x in todo], "sha": sha, "no_abstract": no_abs, "refused": refused,
+                "ids": ids, "abstract_sha": abstract_sha}
     return batches, no_abs, manifest
 
 
 def ingest(rows, keyf, results, abstracts, manifest, asof):
     by = {r.get(keyf): r for r in rows}
     n, errors, seen = 0, [], set()
+    m_ids, m_abs_sha = manifest.get("ids", {}), manifest.get("abstract_sha", {})
+
+    def ids_drifted(k, row):
+        """True when the row's current ids differ from what --prepare recorded
+        (a manifest with no `ids` -- an old-style manifest -- skips this check)."""
+        stored = m_ids.get(k)
+        return stored is not None and list(common.ids_of(row)) != list(stored)
+
+    def abstract_drifted(k):
+        """True when the abstract passed to --ingest differs from what --prepare
+        recorded (a manifest with no `abstract_sha` skips this check)."""
+        stored = m_abs_sha.get(k)
+        if stored is None:
+            return False
+        text = ((abstracts.get(k) or {}).get("text") or "").strip()
+        return (common.summary_sha(text) if text else "") != stored
 
     def stamp(row, k, verdict, note):
-        # bound to the paper (its ids) and to the exact abstract text it was checked against
-        doi, aid = common.ids_of(row)
-        text = (abstracts.get(k) or {}).get("text") or ""
+        # bound to the manifest's recorded ids and abstract hash -- what the checking
+        # agent actually saw at --prepare, not whatever the row/abstracts say now
+        stored_ids = m_ids.get(k)
+        doi, aid = tuple(stored_ids) if stored_ids is not None else common.ids_of(row)
+        stored_sha = m_abs_sha.get(k)
+        if stored_sha is None:
+            text = (abstracts.get(k) or {}).get("text") or ""
+            stored_sha = common.summary_sha(text) if text.strip() else ""
         row["summary_check"] = {"verdict": verdict, "note": note,
                                 "abstract_source": (abstracts.get(k) or {}).get("source"),
                                 "summary_sha": common.summary_sha(row.get("summary")),
                                 "doi": doi, "arxiv": aid,
-                                "abstract_sha": common.summary_sha(text) if text.strip() else "", "at": asof}
+                                "abstract_sha": stored_sha, "at": asof}
 
     counts = {}
     for res in results:
@@ -117,6 +150,9 @@ def ingest(rows, keyf, results, abstracts, manifest, asof):
         if common.summary_sha(row.get("summary")) != manifest["sha"].get(k):
             errors.append(f"{k}: summary changed since --prepare; re-run --prepare")
             continue
+        if ids_drifted(k, row) or abstract_drifted(k):
+            errors.append(f"{k}: the paper or its abstract changed since --prepare; re-run --prepare")
+            continue
         if v not in ("supported", "unsupported"):
             errors.append(f"{k}: verdict {v!r} is not supported/unsupported")
             continue
@@ -132,6 +168,9 @@ def ingest(rows, keyf, results, abstracts, manifest, asof):
     for k in manifest["no_abstract"]:
         row = by.get(k)
         if row is None or common.summary_sha(row.get("summary")) != manifest["sha"].get(k):
+            continue
+        if ids_drifted(k, row):
+            errors.append(f"{k}: the paper or its abstract changed since --prepare; re-run --prepare")
             continue
         if ((abstracts.get(k) or {}).get("text") or "").strip():
             errors.append(f"{k}: an abstract is now available; re-run --prepare")
