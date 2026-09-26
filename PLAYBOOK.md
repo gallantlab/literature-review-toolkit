@@ -633,15 +633,20 @@ python3 tools/summary_audit.py --rows rows.json --ingest
 
 `abstracts.py` fetches every row's abstract once, from the most authoritative source
 that has it — the arXiv API for arXiv papers, then OpenAlex, then Semantic Scholar,
-then PubMed — into `abstracts.json`. A hand-added entry (`"source": "landing-page"`)
-is never overwritten, and a fetch failure is reported separately from a genuine
+then PubMed — into `abstracts.json`. Each entry records the `doi` and `arxiv` it was
+fetched for, so an abstract stays bound to its paper: when a row's ids change, its
+fetched entry is fetched again, and `summary_audit.py --prepare` refuses any entry
+recorded for other ids. A hand-added entry (`"source": "landing-page"`, which must
+carry the row's `doi`/`arxiv`) is never overwritten; if its ids no longer match the
+row it is reported as stale for you to fix. A fetch failure is reported separately from a genuine
 no-abstract miss (re-run it; do not acknowledge a fetch failure as if it were
 "no abstract"). `summary_audit.py --prepare` splits the rows needing a check into
 batches of 40 (`--batch`) with each summary and its abstract, plus a brief; dispatch
 one checking agent per batch, with no web access — it judges only whether the
 abstract supports the summary, "supported" or "unsupported" with the unsupported
-clause quoted exactly. `--ingest` records the verdict as `summary_check`, keyed to a
-hash of the summary text, so a summary edited after `--prepare` is refused, and an
+clause quoted exactly. `--ingest` records the verdict as `summary_check`, with the
+row's ids and a hash of the abstract it was checked against, keyed to a hash of the
+summary text (a check recorded for other ids counts as unchecked), so a summary edited after `--prepare` is refused, and an
 edited summary is re-flagged as unchecked rather than trusted on its old check. A row
 with no abstract is recorded as `no-abstract` — a warning the audit makes you
 acknowledge (see the acknowledgments note under Phase 3f). A flagged summary is a

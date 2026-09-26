@@ -1834,7 +1834,8 @@ def _grow(ref="G1", doi="10.1/g1", summary="Tests whether a thing happens."):
     r = {"ref": ref, "doi": doi, "link": f"https://doi.org/{doi}", "summary": summary,
          "apa": "Smith, J. (2020). A real paper. J Neurosci, 1, 1-2.", "canonical_at": common.GATES_SINCE}
     _stamp(r)
-    r["summary_check"] = {"verdict": "supported", "summary_sha": common.summary_sha(summary)}
+    d, a = common.ids_of(r)
+    r["summary_check"] = {"verdict": "supported", "summary_sha": common.summary_sha(summary), "doi": d, "arxiv": a}
     return r
 
 
@@ -1865,7 +1866,8 @@ check("an ack tied to a stale year pair does not cover a new mismatch on the sam
 _rep = references.audit_rows([_grow()], "ref")
 check("a fully checked gated row passes", (_rep["gated"], _rep["failed"], _rep["defects"]), (True, False, {}))
 _rep = references.audit_rows([_grow(), dict(_grow("G2", "10.1/g2"), doi="10.1/changed")], "ref")
-check("a DOI edited after verify fails the audit", _codes(_rep, "G2"), ["unverified"])
+check("a DOI edited after verify fails the audit (verify and summary check both lapse)", _codes(_rep, "G2"),
+      ["unverified", "summary-unchecked"])
 _nd = {"ref": "B1", "apa": "Kuhn, T. S. (1962). The structure of scientific revolutions. U Chicago Press.",
        "summary": "", "canonical_at": common.GATES_SINCE}
 check("a DOI-less row without a hand check fails", _codes(references.audit_rows([_grow(), _nd], "ref"), "B1"),
@@ -2110,7 +2112,7 @@ def _fx(name, answer):
     return f
 
 
-_ab, _missing, _failed = abstracts.collect(
+_ab, _missing, _failed, _ = abstracts.collect(
     _R, "ref", {"H": {"text": "hand-added", "source": "landing-page", "url": "u"}},
     {n: _fx(n, "text-" + n) for n in answer_keys})
 check("collect takes each source in order", {k: v["source"] for k, v in _ab.items()},
@@ -2579,6 +2581,43 @@ check("the audit warns identity-not-reestablished for a canonical-apa basis",
 check("...and an acknowledgment clears it",
       references.audit_rows([_i2g], "ref", {"U2": {"identity-not-reestablished": "DOI checked by hand"}})["failed"],
       False)
+
+# ---- final fixes I3: abstracts and summary checks bound to the paper (2026-09-25) ----
+_i3R = [{"ref": "J", "doi": "10.1/J", "summary": "s"}, {"ref": "O", "doi": "10.1/new-o", "summary": "s"},
+        {"ref": "L", "doi": "10.1/new-l", "summary": "s"}]
+_i3old = {"O": {"text": "old paper's abstract", "source": "openalex", "url": "", "doi": "10.1/old-o", "arxiv": ""},
+          "L": {"text": "hand-added", "source": "landing-page", "url": "u", "doi": "10.1/old-l", "arxiv": ""}}
+answer_keys = {"arxiv": set(), "openalex": {"10.1/j", "10.1/new-o", "10.1/new-l"}, "s2": set(), "pubmed": set()}
+fail_keys = {}
+_asked.clear()
+_i3ab, _i3miss, _i3fail, _i3stale = abstracts.collect(_i3R, "ref", dict(_i3old),
+                                                      {n: _fx(n, "text-" + n) for n in answer_keys})
+check("a fetched abstract records the ids it was fetched for", (_i3ab["J"]["doi"], _i3ab["J"]["arxiv"]),
+      ("10.1/j", ""))
+check("an entry fetched for other ids is refetched", (_i3ab["O"]["text"], _i3ab["O"]["doi"]),
+      ("text-openalex", "10.1/new-o"))
+check("a landing-page entry for other ids is reported stale", _i3stale, ["L"])
+check("...and neither overwritten nor refetched", (_i3ab["L"], "10.1/new-l" in _asked["openalex"]),
+      (_i3old["L"], False))
+_i3S = [dict(_grow("S1", "10.1/s1"), summary="It found X.")]
+_i3S[0].pop("summary_check")
+_i3AB = {"S1": {"text": "We found X.", "source": "openalex", "doi": "10.1/s1", "arxiv": ""}}
+_b, _na, _man = summary_audit.prepare(_i3S, "ref", _i3AB)
+summary_audit.ingest(_i3S, "ref", [{"ref": "S1", "verdict": "supported"}], _i3AB, _man, "2026-09-25")
+_i3sc = _i3S[0]["summary_check"]
+check("summary_check records the ids and the abstract's hash",
+      (_i3sc.get("doi"), _i3sc.get("arxiv"), _i3sc.get("abstract_sha")),
+      ("10.1/s1", "", common.summary_sha("We found X.")))
+check("a summary check passes the audit for the same ids", _codes(references.audit_rows(_i3S, "ref"), "S1"), [])
+_i3moved = dict(_i3S[0], summary_check=dict(_i3sc, doi="10.1/other"))
+check("a summary check for other ids is summary-unchecked",
+      _codes(references.audit_rows([_i3moved], "ref"), "S1"), ["summary-unchecked"])
+_b, _na, _man = summary_audit.prepare([_i3moved], "ref", _i3AB)
+check("prepare re-queues a summary checked under other ids", _man["refs"], ["S1"])
+
+_b, _na, _man = summary_audit.prepare([_i3moved], "ref", {"S1": dict(_i3AB["S1"], doi="10.1/elsewhere")})
+check("prepare refuses an abstract recorded for other ids (not batched, not no-abstract)",
+      (_man["refs"], _na, list(_man["refused"])), ([], [], ["S1"]))
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

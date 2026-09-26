@@ -100,11 +100,13 @@ in `tools/README.md` and `PLAYBOOK.md`.
 - **`citations.py`** uses OpenAlex, corrects its undercounts against Semantic
   Scholar, and never queries Google Scholar (no API).
 - **`abstracts.py`** fetches each row's abstract once, from the most authoritative
-  source that has it (arXiv, then OpenAlex, then Semantic Scholar, then PubMed); a
-  hand-added entry is never overwritten, and a fetch failure is reported separately
-  from a genuine no-abstract miss.
+  source that has it (arXiv, then OpenAlex, then Semantic Scholar, then PubMed),
+  recording the ids it was fetched for; an entry for other ids is fetched again,
+  except a hand-added entry, which is never overwritten and is reported stale. A
+  fetch failure is reported separately from a genuine no-abstract miss.
 - **`summary_audit.py`** checks every summary against its abstract, by an agent with
-  no web access. `--ingest` records `summary_check` keyed to a hash of the summary,
+  no web access. `--ingest` records `summary_check` with the row's ids and the
+  abstract's hash, keyed to a hash of the summary (a check for other ids lapses),
   so an edited summary is refused (or re-flagged unchecked) rather than trusted on
   its old verdict. A row with no abstract is `no-abstract`, a warning to
   acknowledge; a flagged (`unsupported`) summary is a defect.

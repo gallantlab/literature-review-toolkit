@@ -396,6 +396,8 @@ def row_gate_defects(r, warn):
         sc = r.get("summary_check")
         if not isinstance(sc, dict) or sc.get("summary_sha") != common.summary_sha(s):
             d.append("summary-unchecked (run summary_audit.py)")
+        elif common.stamp_ids(sc) != common.ids_of(r):
+            d.append("summary-unchecked (checked for a different DOI/arXiv id; run summary_audit.py)")
         elif sc.get("verdict") == "unsupported":
             d.append(f"summary-flagged: {sc.get('note') or 'claims something its abstract does not'}")
         elif sc.get("verdict") == "no-abstract":

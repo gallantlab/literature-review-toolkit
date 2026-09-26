@@ -4,8 +4,10 @@
 Summaries are checked against these (summary_audit.py), so each row's abstract
 comes from the most authoritative source that has it: the arXiv API for arXiv
 papers, then OpenAlex (50 DOIs per request), then Semantic Scholar (500 per
-request), then PubMed for rows with a PMID. An existing entry is never
-overwritten, so an abstract added by hand ("source": "landing-page") stays.
+request), then PubMed for rows with a PMID. Each entry records the `doi` and
+`arxiv` it was fetched for; an entry whose ids no longer match its row is
+refetched, except one added by hand ("source": "landing-page"), which is never
+overwritten and is reported as stale instead (fix it, with the row's ids).
 
     python3 tools/abstracts.py --rows rows.json --email you@inst.edu
 """
@@ -100,16 +102,26 @@ def _s2_id(row):
 
 
 def collect(rows, keyf, existing, fetchers):
-    """-> ({ref: {text, source, url}}, missing, failed).
+    """-> ({ref: {text, source, url, doi, arxiv}}, missing, failed, stale).
 
     `missing` is every ref with a summary whose lookup completed at every
     source and found no abstract. `failed` is every ref whose lookup could not
     complete at some source (a batch that raised) and that no later source
     filled — reported separately because a failed fetch is not "no abstract"
-    and must not be silently folded into `missing`.
+    and must not be silently folded into `missing`. `stale` is every ref whose
+    hand-added (landing-page) entry records other ids than the row now has: it
+    is kept as it is, but it is not this paper's abstract any more.
     """
-    ab = dict(existing)
+    ab, stale = dict(existing), []
+    for r in rows:
+        k, e = r.get(keyf), ab.get(r.get(keyf))
+        if isinstance(e, dict) and common.stamp_ids(e) != common.ids_of(r):
+            if e.get("source") == "landing-page":
+                stale.append(k)
+            else:
+                del ab[k]            # fetched for other ids: fetch it again for these
     todo = [r for r in rows if r.get(keyf) not in ab]
+    by = {r.get(keyf): r for r in rows}
     failed_refs = set()
 
     def take(source, key_of, fetch):
@@ -120,7 +132,8 @@ def collect(rows, keyf, existing, fetchers):
         got, failed_keys = fetch(sorted(set(want.values())))
         for ref, k in want.items():
             if got.get(k):
-                ab[ref] = {"text": got[k], "source": source, "url": ""}
+                d, a = common.ids_of(by[ref])
+                ab[ref] = {"text": got[k], "source": source, "url": "", "doi": d, "arxiv": a}
             elif k in failed_keys:
                 failed_refs.add(ref)
         todo = [r for r in todo if r.get(keyf) not in ab]
@@ -133,7 +146,7 @@ def collect(rows, keyf, existing, fetchers):
     failed = [r.get(keyf) for r in rows if r.get(keyf) in failed_refs]
     missing = [r.get(keyf) for r in rows if (r.get("summary") or "").strip()
                and r.get(keyf) not in ab and r.get(keyf) not in failed_refs]
-    return ab, missing, failed
+    return ab, missing, failed, stale
 
 
 def main():
@@ -152,7 +165,7 @@ def main():
     existing = common.load_optional_json(out, {})
     fetchers = {"arxiv": fetch_arxiv, "openalex": make_fetch_openalex(re.sub(r"\s", "", args.email)),
                 "s2": fetch_s2, "pubmed": fetch_pubmed}
-    ab, missing, failed = collect(rows, keyf, existing, fetchers)
+    ab, missing, failed, stale = collect(rows, keyf, existing, fetchers)
     common.dump_json(ab, out)
     by = {}
     for v in ab.values():
@@ -161,9 +174,13 @@ def main():
     if missing:
         print(f"  {len(missing)} row(s) with a summary and no abstract (add a landing-page entry, "
               f"or acknowledge no-abstract later): {', '.join(missing)}")
+    for k in stale:
+        print(f"  ✗ {k}: its landing-page abstract records other ids than the row now has; check it is "
+              "this paper's, then set its doi/arxiv to the row's (or delete it and re-run)", file=sys.stderr)
     if failed:
         print(f"  {len(failed)} row(s) fetch failed — re-run abstracts.py; this is not 'no abstract': "
               f"{', '.join(failed)}", file=sys.stderr)
+    if failed or stale:
         sys.exit(1)
 
 

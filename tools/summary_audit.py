@@ -45,26 +45,34 @@ with one entry for every row in the batch. Do not delegate to subagents.
 def _checked(row, abstracts, key):
     s = (row.get("summary") or "").strip()
     sc = row.get("summary_check")
-    if not isinstance(sc, dict) or sc.get("summary_sha") != common.summary_sha(s):
+    if (not isinstance(sc, dict) or sc.get("summary_sha") != common.summary_sha(s)
+            or common.stamp_ids(sc) != common.ids_of(row)):
         return False
     has_abs = bool(((abstracts.get(key) or {}).get("text") or "").strip())
     return sc.get("verdict") == "supported" or (sc.get("verdict") == "no-abstract" and not has_abs)
 
 
 def prepare(rows, keyf, abstracts, batch=40, recheck=False):
-    todo, no_abs, sha = [], [], {}
+    """-> (batches, no_abs, manifest). manifest["refused"] maps each ref that
+    cannot be checked yet to why: its abstract entry records other ids than the
+    row has (it is not this paper's abstract)."""
+    todo, no_abs, sha, refused = [], [], {}, {}
     for r in rows:
         k, s = r.get(keyf), (r.get("summary") or "").strip()
         if not s or (not recheck and _checked(r, abstracts, k)):
             continue
-        sha[k] = common.summary_sha(s)
         a = abstracts.get(k) or {}
+        if a and common.stamp_ids(a) != common.ids_of(r):
+            refused[k] = ("its abstracts.json entry was recorded for other ids than the row has; "
+                          "re-run abstracts.py, or fix the landing-page entry")
+            continue
+        sha[k] = common.summary_sha(s)
         if not (a.get("text") or "").strip():
             no_abs.append(k)
             continue
         todo.append({"ref": k, "summary": s, "abstract": a["text"], "abstract_source": a.get("source")})
     batches = [todo[i:i + batch] for i in range(0, len(todo), batch)]
-    manifest = {"refs": [x["ref"] for x in todo], "sha": sha, "no_abstract": no_abs}
+    manifest = {"refs": [x["ref"] for x in todo], "sha": sha, "no_abstract": no_abs, "refused": refused}
     return batches, no_abs, manifest
 
 
@@ -73,9 +81,14 @@ def ingest(rows, keyf, results, abstracts, manifest, asof):
     n, errors, seen = 0, [], set()
 
     def stamp(row, k, verdict, note):
+        # bound to the paper (its ids) and to the exact abstract text it was checked against
+        doi, aid = common.ids_of(row)
+        text = (abstracts.get(k) or {}).get("text") or ""
         row["summary_check"] = {"verdict": verdict, "note": note,
                                 "abstract_source": (abstracts.get(k) or {}).get("source"),
-                                "summary_sha": common.summary_sha(row.get("summary")), "at": asof}
+                                "summary_sha": common.summary_sha(row.get("summary")),
+                                "doi": doi, "arxiv": aid,
+                                "abstract_sha": common.summary_sha(text) if text.strip() else "", "at": asof}
 
     counts = {}
     for res in results:
@@ -150,7 +163,9 @@ def main():
         with open(os.path.join(d, "brief.md"), "w", encoding="utf-8") as f:
             f.write(BRIEF)
         print(f"{len(batches)} batch(es) of up to {args.batch} in {d}; {len(no_abs)} row(s) have no abstract")
-        return
+        for k, why in manifest["refused"].items():
+            print(f"  ✗ {k}: not queued — {why}")
+        sys.exit(1 if manifest["refused"] else 0)
     manifest = common.load_json(os.path.join(d, "manifest.json"))
     results = []
     for p in sorted(glob.glob(os.path.join(d, "result_*.json"))):
