@@ -69,7 +69,8 @@ in `tools/README.md` and `PLAYBOOK.md`.
   inside the other, though one title equaling the other's main title (before a
   subtitle break) still agrees when that main title has at least 3 content
   words; the first author is compared surname to surname (the record read by
-  its source's "Family INITIALS" contract, the claim once in whatever shape it
+  its source's "Family INITIALS" contract, or flagged for a human when it has no
+  separate given name; the claim once in whatever shape it
   was reported, initials never deciding; an ambiguous claim such as "Hao CHEN"
   is an issue to confirm by hand; either part of a hyphenated surname counts,
   and a group author compares whole). A journal DOI is verified only by its own CrossRef record, or

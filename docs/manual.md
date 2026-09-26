@@ -365,8 +365,11 @@ to DataCite; any other CrossRef error is an `ERROR` to re-run. A DOI that does
 not resolve in EITHER registry is a `MISMATCH`, even when a PubMed or title
 search finds the claimed paper, and a DataCite 404 stays a 404 even when the
 fetch has to fall back to curl. The first-author check compares surnames. A
-record is read by its source's "Family INITIALS" contract ("Collins AGE" is Collins;
-an arXiv "Aaron van den Oord" becomes "van den Oord A"); a claim is read once in
+record is read by its source's "Family INITIALS" contract ("Collins AGE" is Collins,
+"Van DAM J" is Van DAM; an arXiv "Aaron van den Oord" becomes "van den Oord A"),
+except a first author with no separate given name (a DataCite creator kept whole or
+without a given name, a CrossRef family-only author, a bare "Hae-Jeong Park"),
+which is flagged for a human rather than read; a claim is read once in
 whatever shape it was reported ("Smith J", "J. Smith" and "Smith, J." all give
 Smith; "Lambon Ralph, Matthew A." gives Lambon Ralph). Initials never decide a
 match, so "J. Smith" cannot match "Jones J", nor "Min" "Seung-Min Park". A claim
@@ -379,7 +382,7 @@ word of the record's, or one part of a hyphenated one ("Heuvel" / "van den Heuve
 "Van Essen" does not match "Van Dijk". Every word of a compound claim surname must
 appear in the record's name, so "Lambon Ralph" does not match "Ralph J". Initials
 of any script count as initials ("Nowak Ł" does not match "Kowalski Ł"), and a
-list "Smith J; Jones K" gives its first name. A group author ("ATLAS Collaboration", "Stanford University",
+list "Smith J; Jones K" or "Smith J and Jones K" gives its first name. A group author ("ATLAS Collaboration", "Stanford University",
 "The pandas development team") is compared whole, and "An" stays a surname. An
 unknown name on either side ("?", "anon", "Anonymous, A.", "[No authors listed]",
 no readable word) fails the check.

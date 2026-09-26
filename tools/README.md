@@ -68,9 +68,11 @@ there counts the same as resolving in CrossRef, and a 404 from both registries i
 "does not resolve" even when the DataCite fetch fell back to curl. The
 first-author check compares surnames. A record is read by its source's "Family
 INITIALS" contract ("Collins AGE" is Collins; an arXiv "John Smith" becomes "Smith
-J"); a claim is read once in whatever shape it was reported ("Smith J", "J. Smith"
+J"), except a first author with no separate given name (DataCite kept whole or
+without a given name, CrossRef family-only, a bare "Hae-Jeong Park"), which is
+flagged for a human to confirm; a claim is read once in whatever shape it was reported ("Smith J", "J. Smith"
 and "Smith, J." all give Smith; initials of any script, "Ł" or "И", count as
-initials; a list "Smith J; Jones K" gives its first name), and an ambiguous claim
+initials; a list "Smith J; Jones K" or "Smith J and Jones K" gives its first name), and an ambiguous claim
 such as "Hao CHEN" or "Collins AGE" is an issue to confirm by hand. The check
 ignores initials, needs a given-first claim's given names ("John Smith") to start
 with one of the record's initials, and needs the claim's surname to match a whole word of

@@ -316,11 +316,16 @@ converter script: fourteen projects did, each with its own first-author regex, a
 five more wrote `make_verify_input.py` because the `apa`-only path verified nothing.
 
 What a verdict checks: the first-author **surname**, surname against surname. A
-record's first author is read by its source's contract: every source gives "Family
-INITIALS" (CrossRef, DataCite and PubMed; an arXiv author "Aaron van den Oord" is
-first turned into "van den Oord A"), so its trailing initials, and in a mixed-case
-record any trailing capitals of up to 4 letters, are dropped ("Collins AGE" is
-Collins). A claim is read once, in whatever shape a search agent reported it
+record's first author is read by its source's contract: CrossRef, DataCite and
+PubMed give "Family INITIALS" (an arXiv author "Aaron van den Oord" is first turned
+into "van den Oord A"), so exactly one trailing token, the initials (in a
+mixed-case record any capitals of up to 4 letters), is dropped ("Collins AGE" is
+Collins, "Van DAM J" is Van DAM). The exception is a first author with no separate
+given name: a DataCite creator kept whole or deposited without one ("Hao CHEN",
+"Richard Ngo"), a CrossRef family-only author, or a bare name of two or more words
+with no initial ("Hae-Jeong Park"). Its first author is the whole name, which could
+put a given name where the surname belongs, so the check reports "the record's
+first author has no separate given name; confirm by hand" instead of guessing. A claim is read once, in whatever shape a search agent reported it
 ("Smith J", "Smith JL", "J. Smith", "Smith, J.", "Lambon Ralph, Matthew A.", "LI
 J", "Van Essen DC", "Hagler DJ Jr", "Kowalski Ł", "CHEN Hao"; on a canonical row,
 also the apa's lead surname as it stands). A claim that cannot be read safely,
@@ -342,7 +347,7 @@ Company, Research, Staff, Team, ... in it, or opening with "The") is compared
 whole, so "CMS Collaboration" does not match "ATLAS Collaboration"; "An" is a
 surname, not an article. Initials are 1-2 capitals, or 3-4 that could not be a
 word ("JLK", "EJM", "CYC"); "Cavanaugh JR" keeps JR as initials, while "jr", "Jr."
-and "Sr" are suffixes; a list "Smith J; Jones K" gives its first name. An unknown
+and "Sr" are suffixes; a list "Smith J; Jones K" or "Smith J and Jones K" gives its first name. An unknown
 name on either side ("?", "anon", "Anonymous, A.", "[No authors listed]", or no
 readable word) fails the check.
 merge_lanes.py uses the same comparison for its duplicate and deferral checks:
