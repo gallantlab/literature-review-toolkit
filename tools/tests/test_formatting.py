@@ -3976,6 +3976,42 @@ check("I2: ...keeping its content", common.load_json(os.path.join(_i2d, _i2stale
       _i2_old_res)
 check_true("I2: ...and says so", "stale" in _i2out.getvalue(), _i2out.getvalue())
 
+# ---- final review I3: a repository copy is flagged, not silently canonical (2026-09-26) ----
+# A journal article re-deposited on Zenodo (DataCite type Text/JournalArticle)
+# verifies and canonicalizes like any DOI; it should cite the version of record.
+def _i3_dc(**over):
+    rec = dict(common.datacite_record(_dc_attrs(
+        creators=[{"familyName": "Smith", "givenName": "Alice", "nameType": "Personal"}], **over)))
+    with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(rec)):
+        return references.datacite("10.5281/zenodo.777")
+
+
+_i3_text = _i3_dc(types={"resourceTypeGeneral": "Text"})
+check("I3: a DataCite Text deposit carries a datacite-deposit warning",
+      (_i3_text.get("warn"), _i3_text.get("warn_text", {}).get("datacite-deposit")),
+      (["datacite-deposit"], "a repository copy (DataCite Text, Zenodo); cite the version of record's "
+                             "DOI if one exists"))
+check("I3: a JournalArticle deposit is flagged too",
+      _i3_dc(types={"resourceTypeGeneral": "JournalArticle"}).get("warn"), ["datacite-deposit"])
+check("I3: a Preprint deposit is flagged too",
+      _i3_dc(types={"resourceTypeGeneral": "Preprint"}).get("warn"), ["datacite-deposit"])
+check("I3: software is not flagged", _i3_dc().get("warn"), None)
+check("I3: a data set is not flagged", _i3_dc(types={"resourceTypeGeneral": "Dataset"}).get("warn"), None)
+check("I3: software with publisher 'Unpublished' is flagged",
+      _i3_dc(publisher="Unpublished").get("warn"), ["datacite-deposit"])
+
+_i3_rec = dict(common.datacite_record(_dc_attrs(
+    creators=[{"familyName": "Smith", "givenName": "Alice", "nameType": "Personal"}],
+    types={"resourceTypeGeneral": "Text"})))
+_i3_row = _dc_row("I3R")
+with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_i3_rec)), _sleeps():
+    references.canon_rows([_i3_row], "ref", "2026-09-26", sleep=0, retry_wait=0)
+_i3_aud = references.audit_rows([_i3_row], "ref")
+check("I3: canon stores it and the gated audit fails on it unacknowledged",
+      ([w for w, _ in _i3_aud["unacked"].get("I3R", [])], _i3_aud["failed"]), (["datacite-deposit"], True))
+_i3_ack = references.audit_rows([_i3_row], "ref", acks={"I3R": {"datacite-deposit": "no version of record"}})
+check("I3: acknowledging it passes the gate", (_i3_ack["unacked"], _i3_ack["failed"]), ({}, False))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

@@ -74,8 +74,11 @@ def datacite(doi, fallback_venue=""):
     and `warn_text` ({id: text}) when the apa needs a human look: a creator name
     DataCite gave no given name for and that could not be split safely
     (`datacite-unsplit-author:<name>`: a group, or a person printed given-name-
-    first?). canon_rows stores these on the row as `canon_warnings`, and the
-    audit makes each an acknowledgeable warning."""
+    first?), and `datacite-deposit` for anything but software or a data set (or
+    a deposit whose publisher is "Unpublished"): a repository copy of a paper,
+    which should cite the version of record's DOI when one exists. canon_rows
+    stores these on the row as `canon_warnings`, and the audit makes each an
+    acknowledgeable warning."""
     r = common.datacite_work(doi, fallback_venue)
     if not r or not r["people"]:
         return None
@@ -87,6 +90,11 @@ def datacite(doi, fallback_venue=""):
         notes[f"datacite-unsplit-author:{name}"] = (
             f"DataCite gives creator '{name}' no given name and it could not be split: confirm it "
             "is a group, not a person printed given-name-first (fix the apa by hand if it is)")
+    kind, pub = r.get("resource_type") or "", (r.get("publisher") or "").strip()
+    if kind not in ("Software", "Dataset") or pub.lower() == "unpublished":
+        notes["datacite-deposit"] = (f"a repository copy (DataCite {kind or 'unknown type'}, "
+                                     f"{pub or 'no publisher'}); cite the version of record's DOI "
+                                     "if one exists")
     if notes:
         out["warn"], out["warn_text"] = list(notes), notes
     return out
