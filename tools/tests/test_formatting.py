@@ -4685,6 +4685,21 @@ for _lin, _lout in (("Smith JL, Jones K", "Smith"), ("Smith J; Jones K", "Smith"
                     ("Lambon Ralph, M. A.", "Lambon Ralph")):
     check(f"R3.4: claim_surname({_lin!r})", verify.claim_surname(_lin), _lout)
 
+# ---- author fix round 3, item 5: all-caps JR/SR are initials, not suffixes (2026-09-26) ----
+check("R3.5: DataCite Personal 'Smith SR' -> 'Smith, S. R.'",
+      _c1_people([{"name": "Smith SR", "nameType": "Personal"}]), (["Smith, S. R."], []))
+check("R3.5: DataCite Personal 'Cavanaugh JR' -> 'Cavanaugh, J. R.'",
+      _c1_people([{"name": "Cavanaugh JR", "nameType": "Personal"}]), (["Cavanaugh, J. R."], []))
+check("R3.5: strip_suffixes keeps all-caps JR/SR and a roman numeral after a lone surname",
+      (common.strip_suffixes(["Cavanaugh", "JR"]), common.strip_suffixes(["Smith", "SR"]),
+       common.strip_suffixes(["Smith", "IV"])), (["Cavanaugh", "JR"], ["Smith", "SR"], ["Smith", "IV"]))
+check("R3.5: ...and drops Jr/Jr./Sr/Sr./3rd, and II/III/IV after an initial or a given name",
+      [common.strip_suffixes(t.split()) for t in ("Smith J Jr", "Smith J Jr.", "Smith J Sr.", "Smith EL 3rd",
+                                                  "Smith J III", "John Smith III")],
+      [["Smith", "J"], ["Smith", "J"], ["Smith", "J"], ["Smith", "EL"], ["Smith", "J"], ["John", "Smith"]])
+for _sin in ("Cavanaugh JR", "Smith J Jr", "Smith J III"):
+    check(f"R3.5: claim_surname({_sin!r})", verify.claim_surname(_sin), _sin.split()[0])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
