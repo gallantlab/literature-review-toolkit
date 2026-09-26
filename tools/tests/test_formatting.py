@@ -3343,6 +3343,44 @@ check("verify._title_issue: a dropped subtitle raises no issue",
       verify._title_issue({"title": "The free-energy principle"},
                            {"title": "The free-energy principle: A unified brain theory?"}), [])
 
+# ---- Task 3 fix round 1: the main-title shortcut needs >=3 content words
+# (2026-09-25) ------------------------------------------------------------
+# Review found: the shortcut returned 1.0 for a short claim against an
+# UNRELATED record whose title starts with the same words before a subtitle
+# break -- "Deep learning" wholly matches the main title of "Deep learning -
+# a survey of unrelated gardening techniques" even though the two papers have
+# nothing to do with each other. A main title of only 1-2 content words is too
+# easily coincidental, so the shortcut now requires >= 3 content words
+# (_TITLE_STOP words excluded) in the main title that triggers it; anything
+# shorter falls back to the two-way score.
+check_true("title_agrees: a short main title before ' - ' does not shortcut an unrelated record",
+           common.title_agrees("Deep learning",
+                                "Deep learning - a survey of unrelated gardening techniques") < 0.5)
+check_true("title_agrees: a short main title before ':' does not shortcut an unrelated record",
+           common.title_agrees("Neural networks",
+                                "Neural networks: a completely unrelated history of jazz music") < 0.5)
+check_true("title_agrees: a short main title before a standalone '?' does not shortcut either",
+           common.title_agrees("Deep learning",
+                                "Deep learning? A completely unrelated survey of gardening "
+                                "techniques") < 0.5)
+check_true("title_agrees: a long-enough main title before a standalone '?' still shortcuts "
+           "(a dropped subtitle, not a coincidence)",
+           common.title_agrees("Is deep learning working",
+                                "Is deep learning working? A survey of failure modes in "
+                                "modern AI") == 1.0)
+check_true("title_agrees: a long-enough main title before ' - ' still shortcuts",
+           common.title_agrees("Attention is all you need",
+                                "Attention is all you need - a walkthrough of the "
+                                "transformer architecture") == 1.0)
+# "free-energy" tokenizes as two content words ("free", "energy"), not one --
+# _title_words turns the hyphen into a space like any other non-alnum
+# character -- so "The free-energy principle" still has 3 content words
+# (free, energy, principle) after "the" is dropped as a stop word, and the
+# dropped-subtitle case from the first Task 3 section keeps agreeing.
+check_true("title_agrees: a hyphenated main title still counts each half as its own content word",
+           common.title_agrees("The free-energy principle",
+                                "The free-energy principle: A unified brain theory?") == 1.0)
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

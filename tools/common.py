@@ -407,6 +407,14 @@ def _main_title(t):
     return _title_words(t[:idx])
 
 
+MIN_MAIN_TITLE_WORDS = 3
+
+
+def _content_words(words):
+    """`words` (already space-joined and normalized) with _TITLE_STOP words dropped."""
+    return [w for w in words.split() if w not in _TITLE_STOP]
+
+
 def title_agrees(claim, record):
     """Similarity of a claimed title and a found record's title, in [0, 1], or
     None if either is missing.
@@ -416,29 +424,42 @@ def title_agrees(claim, record):
     containment let "Deep learning" match "Deep learning in neural networks:
     An overview" (a different paper), because it only checked the short
     title's words against the long one. title_agrees instead returns:
-    - 1.0 when one title equals the other's main title (see _main_title) —
-      exactly the case of an agent dropping a subtitle, which is what the
-      one-way check was built to tolerate;
+    - 1.0 when one title equals the other's main title (see _main_title) AND
+      that main title has at least MIN_MAIN_TITLE_WORDS content words
+      (_TITLE_STOP words excluded) — exactly the case of an agent dropping a
+      subtitle, which is what the one-way check was built to tolerate. The
+      word-count floor exists because a main title of only 1-2 content words
+      is too easily a coincidence: "Deep learning" is wholly the main title of
+      "Deep learning - a survey of unrelated gardening techniques", an
+      unrelated paper, but "The free-energy principle" (3 content words:
+      free, energy, principle — a hyphen splits into two words like any other
+      non-alnum character, so "free-energy" counts as two) is specific enough
+      to trust;
     - otherwise max(character-similarity ratio, two-way containment), where
       two-way containment is the MIN of each title's content words found in
       the other, so a short title inside a longer, unrelated one no longer
       passes on one direction alone.
 
-    Calibrated on 2,473 OK verdicts from five corpora (2026-09-26): at
-    threshold 0.5, exactly one past OK verdict newly falls below it (a claim
-    that paraphrased a title rather than quoting it), while the "Deep
-    learning" containment case above scores 0.46 — correctly below 0.5. See
+    Calibrated on 2,473 OK verdicts from five corpora: at threshold 0.5, 2
+    past OK verdicts fall below it (2026-09-26). One is a claim that
+    paraphrased a title rather than quoting it (already below 0.5 before this
+    function existed). The other is a genuinely dropped subtitle whose main
+    title is only 2 content words -- collateral from the >=3-word floor added
+    2026-09-25 to close the "Deep learning" vs. an unrelated "Deep learning -
+    ..." false pass; the owner's ruling was to accept that false alarm rather
+    than risk another false pass on a short, coincidental main title. See
     verify.TITLE_MIN.
     """
     import difflib
     a, b = _title_words(claim), _title_words(record)
     if not a or not b:
         return None
+    ta, tb = _content_words(a), _content_words(b)
     ma, mb = _main_title(claim), _main_title(record)
-    if (ma and ma == b) or (mb and mb == a):
+    if ma and ma == b and len(_content_words(ma)) >= MIN_MAIN_TITLE_WORDS:
         return 1.0
-    ta = [w for w in a.split() if w not in _TITLE_STOP]
-    tb = [w for w in b.split() if w not in _TITLE_STOP]
+    if mb and mb == a and len(_content_words(mb)) >= MIN_MAIN_TITLE_WORDS:
+        return 1.0
     contained = (min(sum(w in set(tb) for w in ta) / len(ta),
                       sum(w in set(ta) for w in tb) / len(tb))
                  if ta and tb else 0.0)

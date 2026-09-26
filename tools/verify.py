@@ -297,8 +297,8 @@ def override(rows, keyf, ref, reason, asof):
 # Title agreement lives in common (title_agrees requires two-way agreement,
 # unlike title_score's one-way containment, which merge_lanes and handcheck
 # still use for their own deferral/candidate matching). Calibrated on 2,473 OK
-# verdicts from five corpora: at 0.5, exactly one past OK verdict newly falls
-# below it. See common.title_agrees for the full calibration note.
+# verdicts from five corpora: at 0.5, 2 past OK verdicts fall below it. See
+# common.title_agrees for the full calibration note.
 title_agrees = common.title_agrees
 
 
