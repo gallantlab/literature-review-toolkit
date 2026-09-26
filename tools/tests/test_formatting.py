@@ -2101,6 +2101,16 @@ check("ingest refuses a DOI'd row and an unknown ref", len(_err), 2)
 _n, _err = handcheck.ingest([dict(_book)], "ref", [{"ref": "B1", "verdict": "confirmed", "source_checked": ""}],
                             [{"ref": "B1", "apa_sha": common.apa_sha(_book["apa"])}], "2026-09-26")
 check("ingest refuses a confirmation that names no source", (_n, len(_err)), (0, 1))
+_n, _err = handcheck.ingest([dict(_book)], "ref",
+                           [{"ref": "B1", "verdict": "maybe", "source_checked": "x"}],
+                           [{"ref": "B1", "apa_sha": common.apa_sha(_book["apa"])}], "2026-09-26")
+check("ingest refuses a verdict that is not confirmed/corrected/not-found", (_n, _err),
+      (0, ["B1: verdict 'maybe' is not one of confirmed, corrected, not-found"]))
+_n, _err = handcheck.ingest([dict(_book)], "ref",
+                           [{"ref": "B1", "verdict": "corrected", "source_checked": "x"}],
+                           [{"ref": "B1", "apa_sha": common.apa_sha(_book["apa"])}], "2026-09-26")
+check("ingest refuses 'corrected' without the corrected apa", (_n, _err),
+      (0, ["B1: corrected without the corrected apa"]))
 check_true("a handcheck-ingested row passes the audit's hand-check gate",
            "hand-check-missing" not in " ".join(references.audit_rows(
                [_grow(), dict(_rows[0], canonical_at=common.GATES_SINCE, summary="")], "ref")["defects"].get("B1", [])))
