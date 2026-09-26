@@ -656,7 +656,8 @@ def _author_issue(c, rec, where=""):
     # surname the record shortened, "Quian Quiroga" / "Quiroga R", which a human
     # confirms). Of 103,760 random claim x record pairs, and of 353,564 probe
     # pairs and claim agreements, none that an earlier version rejected passes,
-    # except where a ruling requires the match (see the round-5 fix report).
+    # except where a ruling requires the match or an accepted residual remains
+    # (see the final-round fix report).
     is_surname = bool(str(c.get("expect_surname") or "").strip())
     claim = c.get("expect_surname") if is_surname else c.get("expect_first_author")
     got = str(rec.get("first_author") or "")
