@@ -94,23 +94,23 @@ S2_BATCH = 500   # the /paper/batch endpoint's documented cap on ids per request
 def fetch_s2(items):
     """items: list of (key, doi). Returns {key: (count, influential)}. Best-effort.
 
-    One POST per <=500 ids. Requests go through common.s2_request, which paces
-    them and backs off after a 429; any other error stops S2 for the run."""
+    One POST per <=500 ids, through common.s2_batch: an id S2 rejects (400) is
+    isolated and named, and a chunk that fails after the backoff is named and
+    skipped; either way the OpenAlex counts stand for those papers."""
     out = {}
     pairs = [(key, s2_id(doi)) for key, doi in items]
-    for i in range(0, len(pairs), S2_BATCH):
-        chunk = pairs[i:i + S2_BATCH]
-        try:
-            res = common.s2_request("paper/batch?fields=citationCount,influentialCitationCount",
-                                    {"ids": [sid for _, sid in chunk]})
-        except Exception as e:
-            code = getattr(e, "code", None)
-            print(f"  S2 batch {i}: {f'HTTP {code}' if code else type(e).__name__}; "
-                  "OpenAlex counts stand. Set S2_API_KEY to make S2 reliable.", file=sys.stderr)
-            break
-        for (key, _), e in zip(chunk, res):
-            if e and e.get("citationCount") is not None:
-                out[key] = (e.get("citationCount"), e.get("influentialCitationCount"))
+    res, failed, rejected = common.s2_batch("paper/batch?fields=citationCount,influentialCitationCount",
+                                            [sid for _, sid in pairs], S2_BATCH)
+    for key, sid in pairs:
+        e = res.get(sid)
+        if e and e.get("citationCount") is not None:
+            out[key] = (e.get("citationCount"), e.get("influentialCitationCount"))
+    if rejected:
+        print(f"  S2 rejected {len(rejected)} id(s) as invalid (treated as not in S2): "
+              f"{', '.join(sorted(rejected))}", file=sys.stderr)
+    if failed:
+        print(f"  S2 lookups failed for {len(failed)} id(s) (rate-limit/network); OpenAlex counts stand. "
+              f"Set S2_API_KEY to make S2 reliable: {', '.join(sorted(failed))}", file=sys.stderr)
     return out
 
 

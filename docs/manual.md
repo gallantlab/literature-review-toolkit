@@ -137,7 +137,7 @@ meant to be read and adapted. Run any with `--help`.
 | Variable | Required | Purpose |
 |---|---|---|
 | `LITREVIEW_EMAIL` | yes | Contact email that NCBI and CrossRef require; it buys polite rate limits. Or pass `--email` to each tool. |
-| `S2_API_KEY` | no | Avoids Semantic Scholar rate limits (HTTP 429) on large corpora. Without it, S2 coverage is partial and OpenAlex undercounts go uncaught. `xref.py` also uses it to fetch arXiv papers' reference lists (CrossRef has none); without a fetch it exits 1 unless `--allow-incomplete`. |
+| `S2_API_KEY` | no | Avoids Semantic Scholar rate limits (HTTP 429) on large corpora. An id S2 rejects (HTTP 400) is isolated by bisecting its batch and named, so it no longer fails the other ids. Without it, S2 coverage is partial and OpenAlex undercounts go uncaught. `xref.py` also uses it to fetch arXiv papers' reference lists (CrossRef has none); without a fetch it exits 1 unless `--allow-incomplete`. |
 | `LITREVIEW_LAB_AUTHOR` | no | Comma-separated surnames whose papers the figure stars as home-lab work. Off by default. See [§7.2](#72-the-lineage-figure). |
 
 ```bash

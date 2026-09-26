@@ -793,3 +793,42 @@ def s2_request(path, body=None):
                 time.sleep(S2_BACKOFF[attempt])
                 continue
             raise
+
+
+def s2_batch(path, ids, chunk):
+    """POST `ids` to an S2 batch endpoint (`path`, e.g. "paper/batch?fields=...")
+    in chunks -> (results {id: record or None}, failed set, rejected set).
+
+    S2 answers a whole batch with a 400 when ONE id is malformed, which used to
+    fail up to 500 good ids with it. So a non-transient 4xx on a chunk of more
+    than one id is bisected until the offending ids stand alone: an id that
+    still gets a 4xx on its own is `rejected` (callers treat it as "not in S2"
+    and name it). A chunk that fails transiently after s2_request's backoff
+    marks its ids `failed` (re-run), and the other chunks still go out.
+    A record of None means S2 has no such paper."""
+    results, failed, rejected = {}, set(), set()
+
+    def post(part):
+        try:
+            res = s2_request(path, {"ids": part})
+        except urllib.error.HTTPError as e:
+            if 400 <= e.code < 500 and not is_transient(e):
+                if len(part) > 1:
+                    mid = len(part) // 2
+                    post(part[:mid])
+                    post(part[mid:])
+                else:
+                    rejected.update(part)
+                return
+            failed.update(part)
+            return
+        except Exception:
+            failed.update(part)
+            return
+        for i, rec in zip(part, res or []):
+            results[i] = rec
+
+    uniq = list(dict.fromkeys(ids))
+    for i in range(0, len(uniq), chunk):
+        post(uniq[i:i + chunk])
+    return results, failed, rejected

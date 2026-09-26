@@ -143,30 +143,34 @@ def _s2_all_refs(pid):
 
 def s2_refs(dois, chunk=100):
     """Reference lists from Semantic Scholar -> {doi: [refs] | None}. None = the
-    fetch could not complete; [] = S2 has no such paper or no list (complete)."""
+    fetch could not complete; [] = S2 has no such paper, rejects its id (named
+    on stderr), or has no list (complete). Batched through common.s2_batch."""
     out = {}
-    for i in range(0, len(dois), chunk):
-        part = dois[i:i + chunk]
-        try:
-            res = common.s2_request(f"paper/batch?fields={S2_REF_FIELDS}",
-                                    {"ids": [s2_id_for(d) for d in part]})
-        except Exception as e:
-            print(f"  S2 references batch {i}: {type(e).__name__}: {e}", file=sys.stderr)
-            out.update({d: None for d in part})
+    res, failed, rejected = common.s2_batch(f"paper/batch?fields={S2_REF_FIELDS}",
+                                            [s2_id_for(d) for d in dois], chunk)
+    if rejected:
+        print(f"  S2 rejected {len(rejected)} id(s) as invalid (treated as not in S2, no references): "
+              f"{', '.join(sorted(rejected))}", file=sys.stderr)
+    if failed:
+        print(f"  S2 references failed for {len(failed)} id(s) (rate-limit/network)", file=sys.stderr)
+    for d in dois:
+        sid = s2_id_for(d)
+        if sid in failed:
+            out[d] = None
             continue
-        for d, p in zip(part, res):
-            if not p:
-                out[d] = []
+        p = res.get(sid)
+        if not p:                 # S2 has no such paper, or rejected the id: complete, empty
+            out[d] = []
+            continue
+        refs = p.get("references") or []
+        if (p.get("referenceCount") or 0) > len(refs) and p.get("paperId"):
+            try:
+                refs = _s2_all_refs(p["paperId"])
+            except Exception as e:
+                print(f"  S2 references {d}: {type(e).__name__}: {e}", file=sys.stderr)
+                out[d] = None
                 continue
-            refs = p.get("references") or []
-            if (p.get("referenceCount") or 0) > len(refs) and p.get("paperId"):
-                try:
-                    refs = _s2_all_refs(p["paperId"])
-                except Exception as e:
-                    print(f"  S2 references {d}: {type(e).__name__}: {e}", file=sys.stderr)
-                    out[d] = None
-                    continue
-            out[d] = [_s2_ref(r) for r in refs if r]
+        out[d] = [_s2_ref(r) for r in refs if r]
     return out
 
 

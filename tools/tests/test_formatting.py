@@ -1544,7 +1544,9 @@ def _s2_400(url, retries=5, timeout=30, data=None, headers=None):
 common._S2_LAST[0] = 0.0
 with _patched(common, http_json=_s2_400), _sleeps() as _sl:
     citations.fetch_s2(_items[:10])
-check("s2: a 400 is not retried or slept on", (len(_n400), _sl), (1, []))
+# final fixes I5: a 400 is bisected to find the rejected ids (10 ids -> 19 requests),
+# but never retried as if transient: no 20 s / 40 s backoff sleep.
+check("s2: a 400 is bisected, never backed off", (len(_n400), [x for x in _sl if x >= 20]), (19, []))
 
 # ---- Semantic Scholar pacer (2026-09-26) -----------------------------------
 _s2calls = []
@@ -2669,6 +2671,55 @@ except SystemExit as e:
 finally:
     sys.argv = _argv
 check("summary_audit --prepare exits 1 on a ref whose abstract fetch failed", _i4code, 1)
+
+# ---- final fixes I5: one S2 400 does not fail a whole batch (2026-09-25) ------
+def _i5_stub(bad, make, transient_on=()):
+    calls = []
+
+    def f(path, body=None):
+        ids = body["ids"]
+        calls.append(list(ids))
+        if any(i in transient_on for i in ids):
+            raise urllib.error.HTTPError("u", 429, "slow down", {}, None)
+        if any(i in bad for i in ids):
+            raise urllib.error.HTTPError("u", 400, "bad id", {}, None)
+        return [make(i) for i in ids]
+    return f, calls
+
+
+_i5f, _i5calls = _i5_stub({"DOI:bad"}, lambda i: {"n": i})
+with _patched(common, s2_request=_i5f):
+    _i5res, _i5failed, _i5rej = common.s2_batch("paper/batch?fields=x", ["DOI:a", "DOI:b", "DOI:bad", "DOI:c"], 4)
+check("s2_batch bisects a 400 down to the one rejected id",
+      (sorted(_i5res), _i5failed, _i5rej), (["DOI:a", "DOI:b", "DOI:c"], set(), {"DOI:bad"}))
+check("...and keeps each id's own record", _i5res["DOI:c"], {"n": "DOI:c"})
+_i5f, _ = _i5_stub(set(), lambda i: {"n": i}, transient_on={"DOI:t"})
+with _patched(common, s2_request=_i5f):
+    _i5res, _i5failed, _i5rej = common.s2_batch("p", ["DOI:a", "DOI:t", "DOI:c", "DOI:d"], 2)
+check("s2_batch marks a transiently failed chunk failed, not rejected, and continues",
+      (sorted(_i5res), _i5failed, _i5rej), (["DOI:c", "DOI:d"], {"DOI:a", "DOI:t"}, set()))
+_i5f, _ = _i5_stub({"DOI:10.1/bad"}, lambda i: {"citationCount": 7, "influentialCitationCount": 1})
+with _patched(common, s2_request=_i5f), _ctx.redirect_stderr(io.StringIO()) as _i5err:
+    _i5got = citations.fetch_s2([("A", "10.1/a"), ("B", "10.1/bad"), ("C", "10.1/c")])
+check("citations.fetch_s2 counts every paper but the rejected one", sorted(_i5got), ["A", "C"])
+check_true("...and names the rejected one", "10.1/bad" in _i5err.getvalue(), _i5err.getvalue())
+_i5f, _ = _i5_stub(set(), lambda i: {"citationCount": 7, "influentialCitationCount": 1},
+                   transient_on={"DOI:10.1/a"})
+with _patched(common, s2_request=_i5f), _patched(citations, S2_BATCH=1), _ctx.redirect_stderr(io.StringIO()):
+    _i5got = citations.fetch_s2([("A", "10.1/a"), ("C", "10.1/c")])
+check("citations.fetch_s2 continues past a failed chunk", sorted(_i5got), ["C"])
+_i5f, _ = _i5_stub({"DOI:10.1/bad"}, lambda i: {"abstract": "abs " + i})
+with _patched(common, s2_request=_i5f), _ctx.redirect_stderr(io.StringIO()):
+    _i5out, _i5fail = abstracts.fetch_s2(["DOI:10.1/a", "DOI:10.1/bad"])
+check("abstracts.fetch_s2: a rejected id is 'not in S2', complete, not failed",
+      (sorted(_i5out), _i5fail), (["DOI:10.1/a"], set()))
+_i5f, _ = _i5_stub({"DOI:10.1/bad"}, lambda i: {"paperId": "P", "referenceCount": 1,
+                                                "references": [{"externalIds": {"DOI": "10.1/r"}}]})
+with _patched(common, s2_request=_i5f), _ctx.redirect_stderr(io.StringIO()) as _i5err:
+    _i5x = xref.s2_refs(["10.1/a", "10.1/bad"])
+check("xref.s2_refs: a rejected id is complete and empty; the rest keep their lists",
+      ([r["doi"] for r in _i5x["10.1/a"]], _i5x["10.1/bad"]), (["10.1/r"], []))
+check_true("...and the rejected id is reported by name", "10.1/bad" in _i5err.getvalue(), _i5err.getvalue())
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

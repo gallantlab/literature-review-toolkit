@@ -1651,7 +1651,10 @@ about Content-Encoding degrades to a JSON parse error instead of killing the run
   **spot-check landmark/foundational counts against the S2 column** before
   delivering — a famous old paper showing single-digit OpenAlex is the tell.
 - **Semantic Scholar's free endpoints are flaky**: the `/paper/batch` endpoint
-  429s and sometimes 400s (one malformed id poisons the whole batch); the
+  429s and sometimes 400s (one malformed id poisons the whole batch — the
+  toolkit's `common.s2_batch` bisects such a batch until the rejected id stands
+  alone, names it, and treats it as not in S2, so the other ids still resolve;
+  `citations.py`, `abstracts.py` and `xref.py` all go through it); the
   single `/paper/{id}` endpoint 404s valid papers under load. Set `S2_API_KEY`
   to fix it. Without a key, accept partial S2 coverage — OpenAlex stands alone.
 - Counts are a snapshot; record the `--asof` date. Don't expect the two columns

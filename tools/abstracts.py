@@ -61,19 +61,15 @@ def make_fetch_openalex(email):
 
 
 def fetch_s2(ids):
-    out, failed = {}, set()
-    for i in range(0, len(ids), 500):
-        part = ids[i:i + 500]
-        try:
-            res = common.s2_request("paper/batch?fields=abstract", {"ids": part})
-        except Exception as e:
-            print(f"  S2 batch {i}: {type(e).__name__}: {e}", file=sys.stderr)
-            failed.update(part)
-            continue
-        for sid, p in zip(part, res):
-            if p and p.get("abstract"):
-                out[sid] = p["abstract"]
-    return out, failed
+    """-> ({id: abstract}, failed). An id S2 rejects (400) is 'not in S2' — a
+    complete lookup — and is named; a chunk that fails transiently is failed."""
+    res, failed, rejected = common.s2_batch("paper/batch?fields=abstract", ids, 500)
+    if rejected:
+        print(f"  S2 rejected {len(rejected)} id(s) as invalid (treated as not in S2): "
+              f"{', '.join(sorted(rejected))}", file=sys.stderr)
+    if failed:
+        print(f"  S2 lookups failed for {len(failed)} id(s)", file=sys.stderr)
+    return {sid: p["abstract"] for sid, p in res.items() if p and p.get("abstract")}, failed
 
 
 def fetch_pubmed(pmids):
