@@ -7,14 +7,15 @@ hand check, and the audit fails any DOI-less row without its record:
   --prepare           search CrossRef and OpenAlex for a DOI the row is missing
                       (the same title, by common.title_match, and the same year), and write the
                       hand-check input and brief for the rest -- each hand-check-input
-                      entry carries `apa_sha`, the row's apa as it stood at --prepare;
+                      entry carries `apa_sha`, the hash of the reference it shows
+                      (the apa, else search_apa) as it stood at --prepare;
                       an existing handcheck_result.json is renamed (never deleted) to
                       handcheck_result.stale-<timestamp>.json, since it answers the
                       previous --prepare
   --adopt-dois FILE   give each row with exactly one found DOI that DOI, so it
                       goes through verify.py instead
   --ingest FILE       record each result on its row as `hand_verified`, refusing one
-                      whose row's current apa sha differs from --input's `apa_sha`
+                      whose row's current (shown) apa sha differs from --input's `apa_sha`
                       (the reference changed while it was being checked), whose
                       --input entry predates apa_sha altogether, or whose own `apa_sha`
                       echo is missing or differs from --input's (a result for an older
@@ -75,6 +76,14 @@ def needs_check(row):
     return not (common.doi_of(row) or row.get("arxiv")) and not _valid(row.get("hand_verified"))
 
 
+def shown_apa(row):
+    """The reference text the hand-check agent is shown: the apa, else (before
+    canon or a hand edit fills it) the search agent's search_apa. apa_sha is
+    taken over THIS text at --prepare and at --ingest, so an edit to whichever
+    one the agent saw is caught."""
+    return row.get("apa") or row.get("search_apa") or ""
+
+
 def claim_of(row):
     """(title, year) the row claims: the search agent's, else its apa's."""
     p = common.parse_apa(row.get("apa") or row.get("search_apa") or "")
@@ -132,9 +141,9 @@ def prepare(rows, keyf, searchers=(search_crossref, search_openalex)):
         if hits:
             doi_cands[r.get(keyf)] = hits
         else:
-            todo.append({"ref": r.get(keyf), "apa": r.get("apa") or r.get("search_apa") or "",
+            todo.append({"ref": r.get(keyf), "apa": shown_apa(r),
                          "link": r.get("link", ""), "note": r.get("note", ""),
-                         "summary": r.get("summary", ""), "apa_sha": common.apa_sha(r.get("apa"))})
+                         "summary": r.get("summary", ""), "apa_sha": common.apa_sha(shown_apa(r))})
     return doi_cands, todo
 
 
@@ -191,7 +200,7 @@ def ingest(rows, keyf, results, hc_input, asof):
             # than rely on None != a real sha to (accidentally) do the right thing
             errors.append(f"{k}: hand-check input predates --prepare binding; re-run --prepare")
             continue
-        if common.apa_sha(row.get("apa")) != entry["apa_sha"]:
+        if common.apa_sha(shown_apa(row)) != entry["apa_sha"]:
             # checked against the PRE-correction apa: a "corrected" verdict has not
             # yet been applied to row["apa"] at this point in the function
             errors.append(f"{k}: the reference changed since --prepare; re-check it")

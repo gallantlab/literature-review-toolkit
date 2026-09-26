@@ -4312,6 +4312,21 @@ check("M8: a >= 4-char prefix matches a hyphenated surname", _m8("Andrews", "And
 check_true("M8: a short surname no longer matches a longer one containing it", _m8("Lee", "Leeson K") != [])
 check_true("M8: an unrelated surname still mismatches", _m8("Smith", "Jones A") != [])
 
+# ---- final review M9: handcheck hashes the text it shows the agent (2026-09-26) ----
+# A row with no apa yet is shown its search_apa, but apa_sha hashed the empty
+# apa, so an edit to the search_apa between --prepare and --ingest went unseen.
+_m9row = {"ref": "M9", "apa": "", "search_apa": "Doe, J. (1970). A memo. Lab.", "summary": ""}
+_m9in = handcheck.prepare([dict(_m9row)], "ref", (_far,))[1]
+check("M9: --prepare's apa_sha is the hash of the text it shows (search_apa here)",
+      (_m9in[0]["apa"], _m9in[0]["apa_sha"]), (_m9row["search_apa"], common.apa_sha(_m9row["search_apa"])))
+_m9res = [{"ref": "M9", "verdict": "confirmed", "source_checked": "LoC", "apa_sha": _m9in[0]["apa_sha"]}]
+_m9edit = [dict(_m9row, search_apa="Doe, J. (1971). A different memo. Lab.")]
+_n, _err = handcheck.ingest(_m9edit, "ref", _m9res, _m9in, "2026-09-26")
+check("M9: --ingest refuses a row whose shown search_apa changed since --prepare",
+      (_n, _err), (0, ["M9: the reference changed since --prepare; re-check it"]))
+_n, _err = handcheck.ingest([dict(_m9row)], "ref", _m9res, _m9in, "2026-09-26")
+check("M9: ...and accepts the unchanged row", (_n, _err), (1, []))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
