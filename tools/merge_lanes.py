@@ -16,6 +16,7 @@ Reads every schema-2 lane file (tools/search_prompt_template.md) in --raw and:
     python3 tools/merge_lanes.py --append recovery.json --into rows.json   # late rows
 """
 import argparse
+import datetime
 import glob
 import os
 import re
@@ -69,7 +70,9 @@ def to_row(p, lane):
             "search_author": p.get("first_author") or "", "search_year": p.get("year") or "",
             "search_title": p.get("title") or "", "summary": p.get("summary") or "",
             "tag": p.get("tag") or "", "source": p.get("source") or "search", "note": p.get("note") or "",
-            "lane_fit": p.get("lane_fit") or ""}
+            "lane_fit": p.get("lane_fit") or "",
+            # the build date gates the table (common.is_gated) even if verify is never run
+            "built_at": datetime.date.today().isoformat()}
 
 
 def _keys(row):

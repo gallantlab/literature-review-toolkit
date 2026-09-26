@@ -1031,6 +1031,9 @@ is split across ids**). Output `lab_papers.json`. `--search` prints each
 candidate's ORCID and publication year span and warns on the failure shapes that
 are visible from the listing alone — read those rather than picking by
 institution, which is wrong more often than it is right (see L2).
+Every row carries a `built_at` date, so the table is gated from the start: after
+L2, run `tools/verify.py --rows lab_papers.json` before `tools/references.py`
+(canon refuses unverified rows, and the audit and spreadsheet fail them).
 
 **Phase L1b — enrich abstracts (REQUIRED).** OpenAlex metadata is not enough:
 its abstracts are missing for a sizable minority of papers and its `topics` tags
@@ -1722,8 +1725,9 @@ they're scaffolding to keep the LLM judgment work fast.
 
 Rerunning a search on an existing bibliography brings the WHOLE project up to the
 current standard, or redoes it if that is easier — it is never a lighter pass over
-just the new rows. The first verified row switches the reference gates on for the
-whole table (`common.is_gated`); once that happens, the audit and the spreadsheet
+just the new rows. The first verified row (or any row a current emitter built, which
+carries a `built_at` date) switches the reference gates on for the whole table
+(`common.is_gated`); once that happens, the audit and the spreadsheet
 gate fail every OLD row that lacks the new records, not just the new batch.
 
 Procedure, in order:

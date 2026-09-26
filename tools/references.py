@@ -9,7 +9,7 @@ against a hard quality gate.
 
 Pipeline position:
   topic mode:  search -> verify.py (catch fabrications) -> references.py (canonicalize)
-  lab  mode:   lab_corpus.py (OpenAlex) -> references.py (canonicalize)
+  lab  mode:   lab_corpus.py (OpenAlex) -> verify.py --rows -> references.py (canonicalize)
 
 INPUT: a JSON list of rows. Each row needs a stable key (default "ref" else
 "label") and a DOI (from a `doi` field or a `https://doi.org/...` link) and/or an

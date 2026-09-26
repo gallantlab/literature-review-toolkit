@@ -264,9 +264,12 @@ def write_rows(path, rows, force=False):
 
 
 # ---- reference gates: stamps a check writes onto the row it checked ----------
-# A table is GATED (the gates can fail it) once any row carries a verify stamp or
-# was canonicalized on/after this date; older corpora are legacy and only warned.
-GATES_SINCE = "2026-09-26"
+# A table is GATED (the gates can fail it) once any row carries a verify stamp, or
+# was built (`built_at`, stamped by every row emitter: merge_lanes.py, the rows
+# template, lab_corpus.py) or canonicalized (`canonical_at`) on/after this date.
+# The build stamp is what gates a new table whose verify step was skipped; a row
+# with none of the three is from an older corpus, which is legacy and only warned.
+GATES_SINCE = "2026-09-25"
 
 
 def _bare_doi(d):
@@ -298,7 +301,9 @@ def verified_ok(row):
 
 def is_gated(rows):
     """True for a table built since the reference gates (see GATES_SINCE)."""
-    return any(isinstance(r, dict) and (r.get("verified") or str(r.get("canonical_at") or "") >= GATES_SINCE)
+    return any(isinstance(r, dict) and (r.get("verified")
+                                        or str(r.get("built_at") or "") >= GATES_SINCE
+                                        or str(r.get("canonical_at") or "") >= GATES_SINCE)
                for r in rows)
 
 

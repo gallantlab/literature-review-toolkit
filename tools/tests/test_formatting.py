@@ -2408,6 +2408,44 @@ check_true("pending candidates fail the audit", _rep["failed"] and _rep["corpus"
 _rep = references.audit_rows(_legacy, "ref", ledger=references.LEDGER_MISSING)
 check("a legacy table is not asked for a ledger", "*" in _rep["warnings"], False)
 
+# ---- final fixes C1: every row emitter stamps built_at (2026-09-25) ---------
+import importlib.util as _ilu  # noqa: E402
+
+import lab_corpus  # noqa: E402
+
+check("GATES_SINCE is the day the gates shipped", common.GATES_SINCE, "2026-09-25")
+check_true("a row built since the gates makes the table gated",
+           common.is_gated([{"ref": "B", "built_at": common.GATES_SINCE}]))
+check_true("an old build date stays legacy", not common.is_gated([{"ref": "B", "built_at": "2026-08-01"}]))
+check_true("a table with no built_at/canonical_at/verified stays legacy",
+           not common.is_gated([{"ref": "C1", "apa": "Doe, J. (2001). T. V."}]))
+_c1rows, _c1rep = merge_lanes.merge([_lane("A", [_p("A-01", doi="10.1/c1")])])
+check_true("merge_lanes stamps built_at on every row", all(r.get("built_at") for r in _c1rows))
+check_true("a merge_lanes table where verify never ran is gated", common.is_gated(_c1rows))
+_c1code, _c1d = _sheet_main([dict(_c1rows[0], apa="Smith, J. (2020). Paper A-01. J Neurosci, 1, 1-2.")])
+check("spreadsheet refuses an unverified merge_lanes table",
+      (_c1code, os.path.exists(os.path.join(_c1d, "bib.xlsx"))), (1, False))
+_c1canon = [_grow("G1", "10.1/g1")]
+_c1added, _, _ = merge_lanes.append(_c1canon, "ref", _lane("X", [_p("X-01", doi="10.1/c1x")]))
+check_true("merge_lanes --append stamps built_at", bool(_c1canon[-1].get("built_at")))
+_c1spec = _ilu.spec_from_file_location(
+    "_brt", os.path.join(os.path.dirname(common.__file__), "..", "templates", "build_rows_template.py"))
+_brt = _ilu.module_from_spec(_c1spec)
+_c1spec.loader.exec_module(_brt)
+_brt.PAPERS = [("T", "M1", "10.1/m1", "Huth, A. G.", 2016, "Title", "Sum.", "classic", "search")]
+check_true("the rows template stamps built_at", common.is_gated(_brt.rows()))
+_c1out = os.path.join(_tmpf.mkdtemp(), "lab_papers.json")
+_c1w = {"id": "https://openalex.org/W1", "doi": "https://doi.org/10.1/lab", "title": "Lab paper",
+        "publication_year": 2020, "authorships": [{"author": {"display_name": "Ada Lovelace"}}]}
+_c1argv = sys.argv
+sys.argv = ["lab_corpus.py", "--author", "A1", "--out", _c1out, "--email", "t@example.org"]
+try:
+    with _patched(lab_corpus, fetch_works=lambda *a, **k: [_c1w]):
+        lab_corpus.main()
+finally:
+    sys.argv = _c1argv
+check_true("lab_corpus stamps built_at", common.is_gated(common.load_json(_c1out)))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

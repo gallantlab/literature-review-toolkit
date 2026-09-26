@@ -37,6 +37,7 @@ CLAIMED (first author, year, title) is kept as `search_author` / `search_year` /
 DOI attached to the wrong paper is caught. A row with no claim verifies as
 UNCHECKED, never OK.
 """
+import datetime
 import os
 import sys
 
@@ -68,12 +69,13 @@ PAPERS = [
 
 def rows():
     out = []
+    built_at = datetime.date.today().isoformat()   # gates the table even if verify is skipped
     for topic, ref, doi, author, year, title, summary, tag, source in PAPERS:
         out.append({"topic": topic, "ref": ref, "doi": doi,
                     "link": f"https://doi.org/{doi}" if doi else "",
                     "apa": "",                     # filled by references.py
                     "search_author": author, "search_year": year, "search_title": title,
-                    "summary": summary, "tag": tag, "source": source})
+                    "summary": summary, "tag": tag, "source": source, "built_at": built_at})
     refs = [r["ref"] for r in out]
     assert len(refs) == len(set(refs)), "duplicate ref ids"
     return out

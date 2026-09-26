@@ -26,6 +26,7 @@ simply missing). --search prints the year span and ORCID for exactly this reason
 read its warnings.  See PLAYBOOK "Lab mode".
 """
 import argparse
+import datetime
 import os
 import time
 import urllib.parse
@@ -158,6 +159,7 @@ def main():
         ap.error("--author <OpenAlex id> required (use --search to find it)")
 
     seen, papers = set(), []
+    built_at = datetime.date.today().isoformat()   # gates the table (common.is_gated)
     for aid in args.author:
         for w in fetch_works(aid, args.email, args.from_year, args.to_year):
             if w["id"] in seen:
@@ -180,6 +182,7 @@ def main():
                 "coauthors": [a.get("author", {}).get("display_name", "")
                               for a in (w.get("authorships") or [])],
                 "type": w.get("type", ""),
+                "built_at": built_at,
             })
 
     papers.sort(key=lambda p: (p["year"] or 0))

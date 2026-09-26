@@ -313,7 +313,13 @@ plus key members) to widen coverage.
 **L2: prune (your decision).** Author disambiguation is the main correctness risk
 in lab mode, and it fails in both directions: OpenAlex merges same-name authors
 into one id and splits one person across several. Remove false positives before
-anything is themed.
+anything is themed. Then verify before canonicalizing, as in topic mode: every
+row carries a `built_at` date, so the gates apply from the start.
+
+```bash
+python3 ../tools/verify.py --rows lab_papers.json --out verify_report.json
+python3 ../tools/references.py --rows lab_papers.json --out lab_papers.json
+```
 
 **L3: derive themes.** The agent derives the lab's research themes and how their
 emphasis changed over time. OpenAlex topic metadata is not enough; fetch
