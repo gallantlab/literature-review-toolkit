@@ -107,6 +107,10 @@ def build(rows, out, sheet_name="References", banner=None, excluded=None):
     # verify_note marks a reference needing (or explaining) human attention —
     # a hand-check-pending row must not ship indistinguishable from a verified one.
     has_vnote = any(r.get("verify_note") for r in rows)
+    # summary_audit.py stamps summary_check on every checked row -- surface what
+    # each summary was checked against, so a "no abstract" row is not indistinguishable
+    # from one the audit actually confirmed.
+    has_scheck = any(isinstance(r.get("summary_check"), dict) for r in rows)
 
     # Column plan: (header, key, width, kind). kind in {text, link, num}.
     cols = [
@@ -124,6 +128,8 @@ def build(rows, out, sheet_name="References", banner=None, excluded=None):
                  ("Cite (S2)",       "cite_s2",       12, "num")]
     if has_vnote:
         cols.append(("Verify note", "verify_note", 32, "text"))
+    if has_scheck:
+        cols.append(("Summary checked against", "summary_basis", 18, "text"))
     cols += [("PDF (local)", "pdf", 14, "text"), ("Xref", "xref", 8, "text")]
 
     top = 0
@@ -153,6 +159,12 @@ def build(rows, out, sheet_name="References", banner=None, excluded=None):
             elif key == "xref":
                 x = r.get("xref")
                 ws.write(i, c, "" if x in (None, "") else str(x), cf)
+            elif key == "summary_basis":
+                sc = r.get("summary_check") or {}
+                verdict = sc.get("verdict")
+                basis = ("no abstract" if verdict == "no-abstract"
+                         else f"abstract ({sc.get('abstract_source')})" if verdict == "supported" else "")
+                ws.write(i, c, basis, cf)
             else:
                 ws.write(i, c, r.get(key, ""), cf)
         ws.set_row(i, 110)

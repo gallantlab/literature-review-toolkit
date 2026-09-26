@@ -2062,6 +2062,46 @@ check("s2 looks up a DOI lowercased", "DOI:10.1/u" in _asked["s2"], True)
 check("an uppercase-DOI row resolved only by S2 gets its abstract", _ab.get("U", {}).get("source"), "s2")
 
 
+# ---- summary_audit.py (2026-09-26) -----------------------------------------
+import summary_audit  # noqa: E402
+
+_S = [{"ref": "A", "summary": "It found X."}, {"ref": "B", "summary": "It found Y."},
+      {"ref": "C", "summary": ""}, {"ref": "D", "summary": "No abstract here."},
+      dict(_grow("E", "10.1/e"), summary="Tests whether a thing happens.")]
+_AB = {"A": {"text": "We found X.", "source": "openalex"}, "B": {"text": "We found Y.", "source": "arxiv"},
+       "E": {"text": "abs", "source": "s2"}}
+_b, _na, _man = summary_audit.prepare(_S, "ref", _AB, batch=1)
+check("prepare batches rows with a summary and an abstract, skipping checked ones",
+      ([[x["ref"] for x in b] for b in _b], _na), ([["A"], ["B"]], ["D"]))
+_n, _err = summary_audit.ingest(_S, "ref", [{"ref": "A", "verdict": "supported"},
+                                            {"ref": "B", "verdict": "unsupported", "unsupported_clause": "Y"}],
+                                _AB, _man, "2026-09-26")
+check("ingest records both verdicts and the no-abstract row", (_n, _err, _S[0]["summary_check"]["verdict"],
+                                                              _S[1]["summary_check"]["verdict"],
+                                                              _S[3]["summary_check"]["verdict"]),
+      (3, [], "supported", "unsupported", "no-abstract"))
+check("the check carries the summary hash", _S[0]["summary_check"]["summary_sha"], common.summary_sha("It found X."))
+_S2 = [{"ref": "A", "summary": "It found X."}, {"ref": "B", "summary": "It found Y."}]
+_b, _na, _man = summary_audit.prepare(_S2, "ref", _AB)
+_S2[0]["summary"] = "It found Z."        # edited between prepare and ingest
+_n, _err = summary_audit.ingest(_S2, "ref", [{"ref": "A", "verdict": "supported"}], _AB, _man, "2026-09-26")
+check_true("ingest refuses a summary edited since prepare, and names a missing result",
+           "summary_check" not in _S2[0] and any("changed" in e for e in _err) and any("B" in e for e in _err),
+           str(_err))
+_n, _err = summary_audit.ingest([{"ref": "A", "summary": "It found X."}], "ref",
+                                [{"ref": "A", "verdict": "unsupported"}], _AB,
+                                {"refs": ["A"], "sha": {"A": common.summary_sha("It found X.")}, "no_abstract": []},
+                                "2026-09-26")
+check("an unsupported verdict must quote the clause", (_n, len(_err)), (0, 1))
+_tmpx = os.path.join(_tmpf.mkdtemp(), "s.xlsx")
+spreadsheet.build([{"ref": "A", "apa": "A, B. (2020). T. V.", "source": "search", "summary": "s",
+                    "summary_check": {"verdict": "no-abstract"}},
+                   {"ref": "B", "apa": "A, B. (2021). T. V.", "source": "search", "summary": "s",
+                    "summary_check": {"verdict": "supported", "abstract_source": "openalex"}}], _tmpx)
+check_true("the spreadsheet marks a summary with no abstract",
+           "Summary checked against" in _xlsx_text(_tmpx) and "no abstract" in _xlsx_text(_tmpx))
+
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
