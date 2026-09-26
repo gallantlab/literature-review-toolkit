@@ -2212,8 +2212,9 @@ _AB = {"A": {"text": "We found X.", "source": "openalex"}, "B": {"text": "We fou
 _b, _na, _man = summary_audit.prepare(_S, "ref", _AB, batch=1)
 check("prepare batches rows with a summary and an abstract, skipping checked ones",
       ([[x["ref"] for x in b] for b in _b], _na), ([["A"], ["B"]], ["D"]))
-_n, _err = summary_audit.ingest(_S, "ref", [{"ref": "A", "verdict": "supported"},
-                                            {"ref": "B", "verdict": "unsupported", "unsupported_clause": "Y"}],
+_n, _err = summary_audit.ingest(_S, "ref", [{"ref": "A", "verdict": "supported", "summary_sha": _man["sha"]["A"]},
+                                            {"ref": "B", "verdict": "unsupported", "unsupported_clause": "Y",
+                                             "summary_sha": _man["sha"]["B"]}],
                                 _AB, _man, "2026-09-26")
 check("ingest records both verdicts and the no-abstract row", (_n, _err, _S[0]["summary_check"]["verdict"],
                                                               _S[1]["summary_check"]["verdict"],
@@ -2228,7 +2229,8 @@ check_true("ingest refuses a summary edited since prepare, and names a missing r
            "summary_check" not in _S2[0] and any("changed" in e for e in _err) and any("B" in e for e in _err),
            str(_err))
 _n, _err = summary_audit.ingest([{"ref": "A", "summary": "It found X."}], "ref",
-                                [{"ref": "A", "verdict": "unsupported"}], _AB,
+                                [{"ref": "A", "verdict": "unsupported",
+                                  "summary_sha": common.summary_sha("It found X.")}], _AB,
                                 {"refs": ["A"], "sha": {"A": common.summary_sha("It found X.")}, "no_abstract": [],
                                  "ids": {"A": list(common.ids_of({"ref": "A", "summary": "It found X."}))},
                                  "abstract_sha": {"A": common.summary_sha("We found X.")}},
@@ -2901,7 +2903,8 @@ _i3S = [dict(_grow("S1", "10.1/s1"), summary="It found X.")]
 _i3S[0].pop("summary_check")
 _i3AB = {"S1": {"text": "We found X.", "source": "openalex", "doi": "10.1/s1", "arxiv": ""}}
 _b, _na, _man = summary_audit.prepare(_i3S, "ref", _i3AB)
-summary_audit.ingest(_i3S, "ref", [{"ref": "S1", "verdict": "supported"}], _i3AB, _man, "2026-09-25")
+summary_audit.ingest(_i3S, "ref", [{"ref": "S1", "verdict": "supported", "summary_sha": _man["sha"]["S1"]}],
+                     _i3AB, _man, "2026-09-25")
 _i3sc = _i3S[0]["summary_check"]
 check("summary_check records the ids and the abstract's hash",
       (_i3sc.get("doi"), _i3sc.get("arxiv"), _i3sc.get("abstract_sha")),
@@ -3392,7 +3395,8 @@ check("ingest refuses a ref whose abstract text changed since --prepare, and sta
       (0, ["T1: the paper or its abstract changed since --prepare; re-run --prepare"], False))
 
 _t2S3 = [dict(_t2S[0])]                          # unchanged: the happy path
-_n, _err = summary_audit.ingest(_t2S3, "ref", [{"ref": "T1", "verdict": "supported"}], _t2AB, _t2man,
+_n, _err = summary_audit.ingest(_t2S3, "ref", [{"ref": "T1", "verdict": "supported",
+                                                "summary_sha": _t2man["sha"]["T1"]}], _t2AB, _t2man,
                                 "2026-09-26")
 check("ingest stamps the unchanged happy path with the manifest's ids/abstract_sha",
       (_n, _err, _t2S3[0]["summary_check"]["doi"], _t2S3[0]["summary_check"]["abstract_sha"]),
@@ -4263,6 +4267,31 @@ def _m6_dcbad(d, fv=""):
 with _patched(common, crossref_work=_cr_404, datacite_work=_m6_dcbad):
     check_true("M6: a non-404 DataCite failure after a CrossRef 404 propagates (not a clean miss)",
                _raises(lambda: verify.lookup_crossref("10.5281/zenodo.3509134")))
+
+# ---- final review M7: a summary result echoes its batch entry's summary_sha (2026-09-26) ----
+# Like handcheck's apa_sha (I2): a result must prove which version of the summary
+# it judged, so a result for an older batch cannot stamp the current summary.
+_m7S = [{"ref": "M7", "summary": "It found X."}]
+_m7AB = {"M7": {"text": "We found X.", "source": "openalex"}}
+_m7b, _m7na, _m7man = summary_audit.prepare(_m7S, "ref", _m7AB)
+check("M7: prepare writes summary_sha into each batch entry",
+      _m7b[0][0].get("summary_sha"), common.summary_sha("It found X."))
+check_true("M7: the brief tells the agent to echo summary_sha", "summary_sha" in summary_audit.BRIEF)
+_n, _err = summary_audit.ingest([dict(_m7S[0])], "ref", [{"ref": "M7", "verdict": "supported"}], _m7AB, _m7man,
+                                "2026-09-26")
+check("M7: a result with no summary_sha echo is refused",
+      (_n, _err), (0, ["M7: result does not echo the batch's summary_sha; re-check it"]))
+_n, _err = summary_audit.ingest([dict(_m7S[0])], "ref",
+                                [{"ref": "M7", "verdict": "supported", "summary_sha": common.summary_sha("Old.")}],
+                                _m7AB, _m7man, "2026-09-26")
+check("M7: a result echoing another summary_sha is refused",
+      (_n, _err), (0, ["M7: result was for a different version of the summary; re-check it"]))
+_m7ok = [dict(_m7S[0])]
+_n, _err = summary_audit.ingest(_m7ok, "ref", [{"ref": "M7", "verdict": "supported",
+                                                "summary_sha": _m7b[0][0]["summary_sha"]}],
+                                _m7AB, _m7man, "2026-09-26")
+check("M7: a result echoing the batch's summary_sha is stamped",
+      (_n, _err, _m7ok[0].get("summary_check", {}).get("verdict")), (1, [], "supported"))
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

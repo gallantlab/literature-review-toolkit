@@ -12,7 +12,8 @@ whose abstract entry was recorded for other ids is refused at --prepare, which
 then exits 1. A summary edited after --prepare is refused at --ingest, and so is
 a ref whose paper (its DOI/arXiv id) or whose abstract text changed since
 --prepare -- the manifest records both, so --ingest is checking against exactly
-what the checking agents saw. A manifest written before that binding existed
+what the checking agents saw. Each batch entry carries its `summary_sha`, and a
+result that does not echo it (or echoes another) is refused. A manifest written before that binding existed
 (no `ids`/`abstract_sha` maps at all) refuses every ref in it, rather than
 silently treating each one as unchanged.
 
@@ -31,7 +32,7 @@ PHASE = "5c"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 BRIEF = """# Summary check
 
-Each file summary_audit/batch_NN.json holds rows of {ref, summary, abstract}. For every
+Each file summary_audit/batch_NN.json holds rows of {ref, summary, summary_sha, abstract}. For every
 row, decide whether the SUMMARY is supported by the ABSTRACT. You have no web access
 and need none: judge only against the abstract given.
 
@@ -44,8 +45,11 @@ and need none: judge only against the abstract given.
   Quote the unsupported clause exactly.
 
 Write summary_audit/result_NN.json (same NN) as a JSON list of
-  {"ref": "...", "verdict": "supported" | "unsupported", "unsupported_clause": "..."}
-with one entry for every row in the batch. Do not delegate to subagents.
+  {"ref": "...", "summary_sha": "...", "verdict": "supported" | "unsupported",
+   "unsupported_clause": "..."}
+with one entry for every row in the batch. Copy each row's summary_sha into its result
+unchanged: it proves which version of the summary you judged, and a result without it
+(or with another's) is refused. Do not delegate to subagents.
 """
 
 
@@ -91,7 +95,8 @@ def prepare(rows, keyf, abstracts, batch=40, recheck=False, failed=None):
             abstract_sha[k] = ""
             continue
         abstract_sha[k] = common.summary_sha(a["text"])
-        todo.append({"ref": k, "summary": s, "abstract": a["text"], "abstract_source": a.get("source")})
+        todo.append({"ref": k, "summary": s, "summary_sha": sha[k], "abstract": a["text"],
+                     "abstract_source": a.get("source")})
     batches = [todo[i:i + batch] for i in range(0, len(todo), batch)]
     manifest = {"refs": [x["ref"] for x in todo], "sha": sha, "no_abstract": no_abs, "refused": refused,
                 "ids": ids, "abstract_sha": abstract_sha}
@@ -165,6 +170,13 @@ def ingest(rows, keyf, results, abstracts, manifest, asof):
             continue
         if ids_drifted(k, row) or abstract_drifted(k):
             errors.append(f"{k}: the paper or its abstract changed since --prepare; re-run --prepare")
+            continue
+        if not res.get("summary_sha"):
+            errors.append(f"{k}: result does not echo the batch's summary_sha; re-check it")
+            continue
+        if res["summary_sha"] != manifest["sha"].get(k):
+            # a result for an older batch: it judged a different version of the summary
+            errors.append(f"{k}: result was for a different version of the summary; re-check it")
             continue
         if v not in ("supported", "unsupported"):
             errors.append(f"{k}: verdict {v!r} is not supported/unsupported")
