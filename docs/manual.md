@@ -909,9 +909,14 @@ row that lacks the new records, not just the new batch.
    acknowledge it.
 2. Turn any existing hand checks (`verify_note` text, informal manual-check
    results) into `handcheck.py --ingest` result files; re-check any whose source
-   is not recorded.
+   is not recorded. A `hand_verified` record with no `apa_sha` (written before
+   hand checks were bound to their `apa`) counts as missing: re-ingest it.
 3. `abstracts.py`, then `summary_audit.py --prepare` / dispatch checking agents /
    `--ingest` ([§5.5b](#55b-summaries-checking-them-against-the-abstract)).
+   Older `abstracts.json` entries and `summary_check` stamps record no ids, so
+   they count as unbound: `abstracts.py` refetches the fetched entries, a
+   hand-added landing-page entry needs the row's `doi`/`arxiv` (it is reported
+   stale until then), and every summary is re-checked.
 4. Acknowledge each remaining warning (`references.py --list-acks`, then
    `audit_acks.json`; [§5.2b](#52b-acknowledging-warnings)).
 5. `candidates.py --rows rows.json --add xref.json --source xref` (and

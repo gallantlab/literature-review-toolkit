@@ -1785,9 +1785,13 @@ Procedure, in order:
    acknowledge it.
 2. Turn any existing hand checks (`verify_note` text, informal manual-check results)
    into `handcheck.py --ingest` result files; re-check any whose source is not
-   recorded.
+   recorded. A `hand_verified` record written before the hand check was bound to
+   its `apa` (no `apa_sha`) counts as missing: re-ingest it.
 3. `abstracts.py`, then `summary_audit.py --prepare` / dispatch checking agents /
-   `--ingest` (Phase 5c).
+   `--ingest` (Phase 5c). Older `abstracts.json` entries and `summary_check`
+   stamps record no ids, so they count as unbound: `abstracts.py` refetches the
+   fetched entries, a hand-added landing-page entry needs the row's `doi`/`arxiv`
+   added (it is reported stale until then), and every summary is re-checked.
 4. Acknowledge each remaining warning (`references.py --list-acks`, then
    `audit_acks.json`; Phase 3f).
 5. `candidates.py --rows rows.json --add xref_<topic>.json --source xref` (and
