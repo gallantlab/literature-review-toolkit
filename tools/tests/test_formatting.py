@@ -4776,6 +4776,15 @@ for _un in ("Anonymous et al.", "Anonymous, A.", "Unknown, U.", "[Anonymous]", "
     check(f"R4.E: merge never agrees on {_un!r}", verify.claims_agree(_un, _un), None)
 check("R4.E: 'Smith J' is still readable", verify.is_unknown("Smith J"), False)
 
+# ---- author fix round 4, F: the unconfirmed message names an unreadable first_author (2026-09-26) ----
+_r4f = _r31rep2["unconfirmed"][0]
+check_true("R4.F: an unknown-author deferral's message says its first_author could not be read",
+           "its first_author '?' could not be read" in merge_lanes.unconfirmed_message(_r4f)
+           and "no first_author or year" not in merge_lanes.unconfirmed_message(_r4f), merge_lanes.unconfirmed_message(_r4f))
+check_true("R4.F: a deferral with neither field still says so",
+           "no first_author or year" in merge_lanes.unconfirmed_message(
+               {"title": "T", "from_lane": "A", "found_as": "A-01"}))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

@@ -159,6 +159,19 @@ def _defer_agrees(d, row):
     return True
 
 
+def unconfirmed_message(d):
+    """The ✗ line for an unconfirmed deferral: a title-only match with nothing
+    that could confirm it -- no first_author or year, or a first_author that
+    could not be read ("?", "Anonymous")."""
+    head = (f"  ✗ UNCONFIRMED: {d.get('title')!r} (deferred by {d['from_lane']}) matched {d['found_as']} "
+            "by title only")
+    if verify.is_unknown(d.get("first_author")):
+        return (f"{head}, and its first_author {d.get('first_author')!r} could not be read — give the "
+                "deferral a readable first_author (and year) and re-merge, or send it to a recovery lane")
+    return (f"{head}, with no first_author or year to confirm it — add them to the deferral and "
+            "re-merge, or send it to a recovery lane")
+
+
 def merge(lanes):
     rows, idx, refs = [], {}, set()
     rep = {"lanes": [], "duplicates": [], "conflicts": [], "possible_pairs": [], "rejected": [],
@@ -285,9 +298,7 @@ def main():
     for x in rep["rejected"]:
         print(f"  ✗ {x['ref']} ({x['lane']}): {x['reason']}")
     for d in rep["unconfirmed"]:
-        print(f"  ✗ UNCONFIRMED: {d.get('title')!r} (deferred by {d['from_lane']}) matched {d['found_as']} "
-              "by title only, with no first_author or year to confirm it — add them to the deferral and "
-              "re-merge, or send it to a recovery lane")
+        print(unconfirmed_message(d))
     for d in rep["lost"]:
         print(f"  ✗ LOST: {d.get('title')!r} (deferred by {d['from_lane']}: {d.get('reason', '')}); "
               "no lane kept it — send it to a recovery lane")
