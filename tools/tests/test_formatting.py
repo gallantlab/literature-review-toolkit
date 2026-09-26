@@ -2140,6 +2140,71 @@ for _needle in ('"schema": 2', '"deferred"', '"could_not_confirm"', '"lane_fit"'
 check_true("search template no longer abbreviates author lists", "et al." not in _TPL)
 check_true("search template no longer caps DOI-less items", "at most 4" not in _TPL)
 
+# ---- merge_lanes.py (2026-09-26) -------------------------------------------
+import merge_lanes  # noqa: E402
+
+
+def _lane(key, papers, deferred=(), target=None, exhausted=False):
+    return {"schema": 2, "lane": key, "status": {"target": target or len(papers), "returned": len(papers),
+                                                  "websearch_exhausted": exhausted},
+            "papers": list(papers), "deferred": list(deferred), "could_not_confirm": []}
+
+
+def _p(ref, doi="", arxiv="", title=None, au="Smith, J.", year=2020, apa=""):
+    return {"ref": ref, "doi": doi, "arxiv": arxiv, "first_author": au, "year": year, "title": title or f"Paper {ref}",
+            "apa": apa, "summary": "s", "tag": "classic", "topic": "T"}
+
+
+_rows, _rep = merge_lanes.merge([
+    _lane("A", [_p("A-01", doi="10.1/X"), _p("A-02", arxiv="2301.00001", title="Deep nets"),
+                _p("A-03", title="Old book", au="Kuhn, T.", year=1962, apa="Kuhn, T. (1962). Old book. Pub.")]),
+    _lane("B", [_p("B-01", doi="https://doi.org/10.1/x"),
+                _p("B-02", doi="10.1/deepnets", title="Deep Nets", au="Smith, J.", year=2020),
+                _p("B-03", doi="10.1/y", au="Doe, A."), _p("B-04")],
+          deferred=[{"title": "Deep nets", "reason": "A owns it"}, {"title": "Lost classic", "doi": "10.1/lost"}],
+          target=20)])
+check("merge dedups by DOI (any form) and by title+year", [r["ref"] for r in _rows], ["A-01", "A-02", "A-03", "B-03"])
+check("merge records the other lanes", _rows[0].get("also_lanes"), ["B"])
+check("merge keeps the agent's claim", (_rows[3]["search_author"], _rows[3]["search_year"]), ("Doe, A.", 2020))
+check("a DOI-less paper keeps its APA; a DOI'd one does not", (_rows[2]["apa"] != "", _rows[0]["apa"]), (True, ""))
+check("merge rejects a paper with no DOI, arXiv id or APA", [x["ref"] for x in _rep["rejected"]], ["B-04"])
+check("merge matches a deferral by title and loses one no lane kept",
+      ([d["title"] for d in _rep["deferrals_matched"]], [d["title"] for d in _rep["lost"]]),
+      (["Deep nets"], ["Lost classic"]))
+check("merge flags a thin lane", [t["lane"] for t in _rep["thin"]], ["B"])
+_rows2, _rep2 = merge_lanes.merge([_lane("A", [_p("A-01", doi="10.1/x", au="Smith, J.")]),
+                                   _lane("B", [_p("B-01", doi="10.1/x", au="Jones, K.")])])
+check("merge reports a conflicting claim between duplicates", len(_rep2["conflicts"]), 1)
+check_true("merge refuses a repeated ref", _raises(lambda: merge_lanes.merge(
+    [_lane("A", [_p("A-01", doi="10.1/a")]), _lane("B", [_p("A-01", doi="10.1/b")])])))
+_d = _tmpf.mkdtemp()
+common.dump_json([_p("A-01", doi="10.1/a")], os.path.join(_d, "A.json"))
+check_true("a schema-1 lane file is refused", _raises(lambda: merge_lanes.load_lane(os.path.join(_d, "A.json"))))
+check("with --allow-v1 it loads without a deferral list",
+      merge_lanes.load_lane(os.path.join(_d, "A.json"), allow_v1=True)["deferred"], None)
+
+
+def _merge_exit(raw, out):
+    argv = sys.argv
+    sys.argv = ["merge_lanes.py", "--raw", raw, "--out", out]
+    try:
+        merge_lanes.main()
+        return 0
+    except SystemExit as e:
+        return e.code or 0
+    finally:
+        sys.argv = argv
+
+
+_d = _tmpf.mkdtemp()
+_raw = os.path.join(_d, "search_raw")
+os.makedirs(_raw)
+common.dump_json(_lane("A", [_p("A-01", doi="10.1/a")], deferred=[{"title": "Lost classic"}]),
+                 os.path.join(_raw, "A.json"))
+check("merge_lanes exits 1 on a lost deferral", _merge_exit(_raw, os.path.join(_d, "rows.json")), 1)
+check_true("and still writes the rows and the report",
+           os.path.exists(os.path.join(_d, "rows.json")) and os.path.exists(os.path.join(_d, "merge_report.json")))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
