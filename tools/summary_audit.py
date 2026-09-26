@@ -7,7 +7,9 @@
               each row, with a hash of the summary it checked
 
 A row with no abstract is recorded as `no-abstract` (a warning the audit makes
-you acknowledge). A summary edited after --prepare is refused at --ingest.
+you acknowledge). A row whose abstract fetch FAILED (abstracts_failed.json) or
+whose abstract entry was recorded for other ids is refused at --prepare, which
+then exits 1. A summary edited after --prepare is refused at --ingest.
 
     python3 tools/summary_audit.py --rows rows.json --prepare
     python3 tools/summary_audit.py --rows rows.json --ingest
@@ -52,10 +54,12 @@ def _checked(row, abstracts, key):
     return sc.get("verdict") == "supported" or (sc.get("verdict") == "no-abstract" and not has_abs)
 
 
-def prepare(rows, keyf, abstracts, batch=40, recheck=False):
+def prepare(rows, keyf, abstracts, batch=40, recheck=False, failed=None):
     """-> (batches, no_abs, manifest). manifest["refused"] maps each ref that
     cannot be checked yet to why: its abstract entry records other ids than the
-    row has (it is not this paper's abstract)."""
+    row has (it is not this paper's abstract), or its abstract fetch failed
+    (`failed`, from abstracts_failed.json) — a failed fetch is not "no abstract"."""
+    failed = failed or {}
     todo, no_abs, sha, refused = [], [], {}, {}
     for r in rows:
         k, s = r.get(keyf), (r.get("summary") or "").strip()
@@ -65,6 +69,10 @@ def prepare(rows, keyf, abstracts, batch=40, recheck=False):
         if a and common.stamp_ids(a) != common.ids_of(r):
             refused[k] = ("its abstracts.json entry was recorded for other ids than the row has; "
                           "re-run abstracts.py, or fix the landing-page entry")
+            continue
+        if k in failed and not (a.get("text") or "").strip():
+            refused[k] = (f"its abstract fetch failed ({failed[k]}); "
+                          "re-run abstracts.py or add a landing-page entry")
             continue
         sha[k] = common.summary_sha(s)
         if not (a.get("text") or "").strip():
@@ -151,9 +159,12 @@ def main():
     d = args.dir or os.path.join(here, "summary_audit")
     rows = common.load_json(args.rows)
     keyf = common.key_field(rows, args.key)
-    ab = common.load_optional_json(args.abstracts or os.path.join(here, "abstracts.json"), {})
+    ab_path = args.abstracts or os.path.join(here, "abstracts.json")
+    ab = common.load_optional_json(ab_path, {})
     if args.prepare:
-        batches, no_abs, manifest = prepare(rows, keyf, ab, args.batch, args.recheck)
+        failed = common.load_optional_json(
+            os.path.join(os.path.dirname(os.path.abspath(ab_path)), "abstracts_failed.json"), {})
+        batches, no_abs, manifest = prepare(rows, keyf, ab, args.batch, args.recheck, failed)
         os.makedirs(d, exist_ok=True)
         for old in glob.glob(os.path.join(d, "batch_*.json")) + glob.glob(os.path.join(d, "result_*.json")):
             os.remove(old)

@@ -2119,7 +2119,7 @@ check("collect takes each source in order", {k: v["source"] for k, v in _ab.item
       {"X": "arxiv", "J": "openalex", "K": "s2", "P": "pubmed", "H": "landing-page", "U": "s2"})
 check("collect never re-fetches an existing entry", "10.1/h" in _asked["openalex"], False)
 check("collect reports rows with a summary and no abstract", _missing, ["N"])
-check("a fetch failure is reported separately from a clean no-abstract", _failed, ["F"])
+check("a fetch failure is reported separately from a clean no-abstract", list(_failed), ["F"])
 check("a failed ref is not silently counted as having no abstract", "F" in _missing, False)
 check("a failed ref never gets an abstract entry", "F" in _ab, False)
 check("openalex looks up a DOI lowercased", "10.1/u" in _asked["openalex"], True)
@@ -2618,6 +2618,57 @@ check("prepare re-queues a summary checked under other ids", _man["refs"], ["S1"
 _b, _na, _man = summary_audit.prepare([_i3moved], "ref", {"S1": dict(_i3AB["S1"], doi="10.1/elsewhere")})
 check("prepare refuses an abstract recorded for other ids (not batched, not no-abstract)",
       (_man["refs"], _na, list(_man["refused"])), ([], [], ["S1"]))
+
+# ---- final fixes I4: a failed abstract fetch is not "no-abstract" (2026-09-25) -----
+def _i4_abstracts_main(rows, arxiv_fails):
+    d = _tmpf.mkdtemp()
+    rp = os.path.join(d, "rows.json")
+    common.dump_json(rows, rp)
+    none = lambda ids: ({}, set())  # noqa: E731
+    argv = sys.argv
+    sys.argv = ["abstracts.py", "--rows", rp, "--email", "t@example.org"]
+    try:
+        with _patched(abstracts, fetch_arxiv=lambda ids: ({}, set(ids) & arxiv_fails), fetch_s2=none,
+                      fetch_pubmed=none, make_fetch_openalex=lambda e: none), \
+                _ctx.redirect_stdout(io.StringIO()), _ctx.redirect_stderr(io.StringIO()):
+            abstracts.main()
+    except SystemExit:
+        pass
+    finally:
+        sys.argv = argv
+    return d
+
+
+_i4d = _i4_abstracts_main([{"ref": "F", "arxiv": "2301.00002", "summary": "s"}], {"2301.00002"})
+_i4f = common.load_optional_json(os.path.join(_i4d, "abstracts_failed.json"), None)
+check_true("abstracts.py writes abstracts_failed.json naming the failed ref with a reason",
+           isinstance(_i4f, dict) and list(_i4f) == ["F"] and bool(_i4f["F"]), str(_i4f))
+_i4d0 = _i4_abstracts_main([{"ref": "N", "arxiv": "2301.00003", "summary": "s"}], set())
+check("...and an empty one when nothing failed",
+      common.load_optional_json(os.path.join(_i4d0, "abstracts_failed.json"), None), {})
+_b, _na, _man = summary_audit.prepare([{"ref": "F", "summary": "s"}, {"ref": "N", "summary": "t"}], "ref", {},
+                                      failed={"F": "arxiv batch failed"})
+check("prepare refuses a failed-fetch ref instead of filing it as no-abstract",
+      (_na, list(_man["refused"])), (["N"], ["F"]))
+check_true("...telling you to re-run abstracts.py or add a landing-page entry",
+           "re-run abstracts.py or add a landing-page entry" in _man["refused"]["F"])
+_b, _na, _man = summary_audit.prepare([{"ref": "F", "summary": "s"}], "ref",
+                                      {"F": {"text": "hand abstract", "source": "landing-page"}},
+                                      failed={"F": "arxiv batch failed"})
+check("a landing-page entry added since the failure clears the refusal", (_man["refs"], _man["refused"]),
+      (["F"], {}))
+common.dump_json([{"ref": "F", "arxiv": "2301.00002", "summary": "s"}], os.path.join(_i4d, "rows.json"))
+_argv = sys.argv
+sys.argv = ["summary_audit.py", "--rows", os.path.join(_i4d, "rows.json"), "--prepare"]
+_i4code = 0
+try:
+    with _ctx.redirect_stdout(io.StringIO()):
+        summary_audit.main()
+except SystemExit as e:
+    _i4code = e.code or 0
+finally:
+    sys.argv = _argv
+check("summary_audit --prepare exits 1 on a ref whose abstract fetch failed", _i4code, 1)
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

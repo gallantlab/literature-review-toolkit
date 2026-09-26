@@ -518,9 +518,11 @@ Scholar, then PubMed — into `abstracts.json`. Each entry records the `doi` and
 `arxiv` it was fetched for: when a row's ids change its entry is fetched again, and
 `summary_audit.py --prepare` refuses an entry recorded for other ids. A hand-added
 entry (`"source": "landing-page"`, carrying the row's `doi`/`arxiv`) is never
-overwritten; one whose ids no longer match is reported as stale. A fetch failure is reported separately
-from a genuine no-abstract miss (re-run it; do not acknowledge a fetch failure as
-if it were "no abstract"). `summary_audit.py --prepare` splits the rows needing a
+overwritten; one whose ids no longer match is reported as stale. A fetch failure
+is reported separately from a genuine no-abstract miss and written to
+`abstracts_failed.json`; `summary_audit.py --prepare` refuses those rows (exit 1)
+instead of filing them as "no abstract" — re-run `abstracts.py`, or add a
+landing-page entry. `summary_audit.py --prepare` splits the rows needing a
 check into batches (`--batch`, default 40) with each summary and its abstract, plus
 a brief; dispatch one checking agent per batch, with no web access — it judges only
 whether the abstract supports the summary, "supported" or "unsupported" with the

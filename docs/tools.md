@@ -103,7 +103,8 @@ in `tools/README.md` and `PLAYBOOK.md`.
   source that has it (arXiv, then OpenAlex, then Semantic Scholar, then PubMed),
   recording the ids it was fetched for; an entry for other ids is fetched again,
   except a hand-added entry, which is never overwritten and is reported stale. A
-  fetch failure is reported separately from a genuine no-abstract miss.
+  fetch failure is reported separately from a genuine no-abstract miss, in
+  `abstracts_failed.json`, and `summary_audit.py --prepare` refuses those rows.
 - **`summary_audit.py`** checks every summary against its abstract, by an agent with
   no web access. `--ingest` records `summary_check` with the row's ids and the
   abstract's hash, keyed to a hash of the summary (a check for other ids lapses),

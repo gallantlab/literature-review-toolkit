@@ -8,6 +8,9 @@ request), then PubMed for rows with a PMID. Each entry records the `doi` and
 `arxiv` it was fetched for; an entry whose ids no longer match its row is
 refetched, except one added by hand ("source": "landing-page"), which is never
 overwritten and is reported as stale instead (fix it, with the row's ids).
+abstracts_failed.json, beside abstracts.json, maps each ref whose fetch could
+not complete to why ({} when none); summary_audit.py --prepare refuses those
+refs rather than filing them as having no abstract.
 
     python3 tools/abstracts.py --rows rows.json --email you@inst.edu
 """
@@ -102,7 +105,7 @@ def _s2_id(row):
 
 
 def collect(rows, keyf, existing, fetchers):
-    """-> ({ref: {text, source, url, doi, arxiv}}, missing, failed, stale).
+    """-> ({ref: {text, source, url, doi, arxiv}}, missing, failed {ref: reason}, stale).
 
     `missing` is every ref with a summary whose lookup completed at every
     source and found no abstract. `failed` is every ref whose lookup could not
@@ -122,7 +125,7 @@ def collect(rows, keyf, existing, fetchers):
                 del ab[k]            # fetched for other ids: fetch it again for these
     todo = [r for r in rows if r.get(keyf) not in ab]
     by = {r.get(keyf): r for r in rows}
-    failed_refs = set()
+    failed_refs = {}
 
     def take(source, key_of, fetch):
         nonlocal todo
@@ -135,15 +138,16 @@ def collect(rows, keyf, existing, fetchers):
                 d, a = common.ids_of(by[ref])
                 ab[ref] = {"text": got[k], "source": source, "url": "", "doi": d, "arxiv": a}
             elif k in failed_keys:
-                failed_refs.add(ref)
+                failed_refs.setdefault(ref, []).append(source)
         todo = [r for r in todo if r.get(keyf) not in ab]
 
     take("arxiv", lambda r: common.norm_arxiv(common.arxiv_id_of(r) or ""), fetchers["arxiv"])
     take("openalex", lambda r: common.doi_of(r, lower=True) or "", fetchers["openalex"])
     take("s2", _s2_id, fetchers["s2"])
     take("pubmed", lambda r: str(r.get("pmid") or ""), fetchers["pubmed"])
-    failed_refs -= set(ab)   # a later source may still have found it
-    failed = [r.get(keyf) for r in rows if r.get(keyf) in failed_refs]
+    # a later source may still have found it
+    failed = {r.get(keyf): f"{'/'.join(failed_refs[r.get(keyf)])} lookup could not complete"
+              for r in rows if r.get(keyf) in failed_refs and r.get(keyf) not in ab}
     missing = [r.get(keyf) for r in rows if (r.get("summary") or "").strip()
                and r.get(keyf) not in ab and r.get(keyf) not in failed_refs]
     return ab, missing, failed, stale
@@ -167,6 +171,7 @@ def main():
                 "s2": fetch_s2, "pubmed": fetch_pubmed}
     ab, missing, failed, stale = collect(rows, keyf, existing, fetchers)
     common.dump_json(ab, out)
+    common.dump_json(failed, os.path.join(os.path.dirname(os.path.abspath(out)), "abstracts_failed.json"))
     by = {}
     for v in ab.values():
         by[v["source"]] = by.get(v["source"], 0) + 1
