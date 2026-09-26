@@ -4396,6 +4396,17 @@ check_true("A1: 'The pandas development team' still does not match 'Matthews'",
            _m8("The pandas development team", "Matthews") != [])
 check("A1: 'Tang' still matches 'Tang J'", _m8("Tang", "Tang J"), [])
 
+# ---- author fix 2: a hyphenated surname matches on either part (2026-09-26) ----
+# Only a >= 4-char prefix matched, so a claim naming the second part of a
+# hyphenated surname ("Hanna" for Andrews-Hanna) was a false alarm.
+check("A2: 'Hanna' matches 'Andrews-Hanna J'", _m8("Hanna", "Andrews-Hanna J"), [])
+check("A2: 'Andrews' matches 'Andrews-Hanna J'", _m8("Andrews", "Andrews-Hanna J"), [])
+check("A2: 'Lopez' matches 'Garcia-Lopez J'", _m8("Lopez", "Garcia-Lopez J"), [])
+check("A2: ...either way round ('Garcia-Lopez' claim vs record 'Lopez J')", _m8("Garcia-Lopez", "Lopez J"), [])
+check_true("A2: 'Han' still mismatches 'Andrews-Hanna J' (no partial-word match)",
+           _m8("Han", "Andrews-Hanna J") != [])
+check_true("A2: a one-letter hyphen part does not count ('A' vs 'B-A J')", _m8("A", "B-A J") != [])
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

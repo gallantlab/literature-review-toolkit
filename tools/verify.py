@@ -345,11 +345,16 @@ def _name_tokens(name):
     return toks[1:] if len(toks) > 1 and toks[0] == "the" else toks
 
 
+def _hyphen_parts(tok):
+    """The 2+ letter parts of a hyphenated token ("andrews-hanna" -> andrews, hanna)."""
+    return {p for p in tok.split("-") if len(p) >= 2} if "-" in tok else set()
+
+
 def _surname_agrees(a, b):
-    """True when a's first (surname) token equals a token of b, or one is a
-    prefix of the other of >= 4 chars ("Andrews" / "Andrews-Hanna")."""
-    return bool(a) and any(t == a[0] or (min(len(t), len(a[0])) >= 4
-                                          and (t.startswith(a[0]) or a[0].startswith(t))) for t in b)
+    """True when a's first (surname) token equals a token of b, or equals one
+    part of a hyphenated token of b, or the other way round ("Hanna" /
+    "Andrews-Hanna"). Whole words only: "Han" does not match "Andrews-Hanna"."""
+    return bool(a) and any(t == a[0] or a[0] in _hyphen_parts(t) or t in _hyphen_parts(a[0]) for t in b)
 
 
 def _drop_initials(toks):
