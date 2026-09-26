@@ -220,13 +220,15 @@ def claim_surname(name):
     split = common.words_then_initials(toks)   # particles are words even in capitals
     if split:
         return split[0]
-    if len(toks) > 1 and all(common.INITIALS.match(t) for t in toks):
+    if len(toks) > 1 and all(common.is_initials(t) for t in toks):
         return toks[0]
     if len(toks) > 1 and toks[0].lower() in common.PARTICLES:
         return " ".join(toks)   # opens with a particle: already a surname ("de Lange Dzn")
-    name = " ".join(toks)
-    parts = [p for p in name.split() if not (len(p.rstrip(".")) == 1 and p.endswith("."))]
-    return parts[-1] if parts else name
+    # the last token that is not an initial, and never a single letter while a
+    # longer word exists ("Kowalski ł" -> Kowalski)
+    parts = [p for p in toks if not (len(p.rstrip(".")) == 1 and p.endswith("."))] or toks
+    longer = [p for p in parts if sum(ch.isalpha() for ch in p) >= 2]
+    return (longer or parts)[-1]
 
 
 def rows_to_citations(rows, keyf=None):

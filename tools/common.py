@@ -876,15 +876,20 @@ def crossref_work(doi, fallback_venue=""):
     return crossref_record(msg, fallback_venue)
 
 
-# An initials token: 1-3 capitals, dotted or not, hyphenated or not ("J", "JL",
-# "JLK", "J.L.", "J.-L.", "J-H"). Judged on the raw token, before any casing.
-INITIALS = re.compile(r"^[A-ZÀ-Ý]\.?(?:-?[A-ZÀ-Ý]\.?){0,2}$")
+def is_initials(tok):
+    """True for an initials token: 1-4 uppercase letters of any script, dotted or
+    not, hyphenated or not ("J", "JL", "JLKM", "J.L.", "J.-L.", "J-H", "Ł", "ĐT",
+    "И"). Judged on the raw token, before any casing."""
+    parts = (tok or "").replace(".", "").split("-")
+    letters = "".join(parts)
+    return (all(parts) and 1 <= len(letters) <= 4
+            and all(ch.isalpha() and ch.isupper() for ch in letters))
 
 
 def _spaced_initials(toks):
     """Given-name tokens -> one string; initials-only tokens are spaced out
     ("JS" -> "J S", "J-H" -> "J-H") so initials() keeps every letter."""
-    if toks and all(INITIALS.match(t) for t in toks):
+    if toks and all(is_initials(t) for t in toks):
         return " ".join("-".join(" ".join(g) for g in t.replace(".", "").split("-")) for t in toks)
     return " ".join(toks)
 
@@ -894,9 +899,9 @@ def words_then_initials(toks):
     even in capitals) followed only by initials, the PubMed family-first shape.
     None when the tokens are not that shape."""
     k = len(toks)
-    while k > 1 and INITIALS.match(toks[k - 1]):
+    while k > 1 and is_initials(toks[k - 1]):
         k -= 1
-    if k < len(toks) and all(len(t) >= 2 and (not INITIALS.match(t) or t.lower() in PARTICLES)
+    if k < len(toks) and all(len(t) >= 2 and (not is_initials(t) or t.lower() in PARTICLES)
                              for t in toks[:k]):
         return " ".join(toks[:k]), _spaced_initials(toks[k:])
     return None
@@ -940,7 +945,7 @@ def _datacite_creator(c):
         return fam.strip(), given.strip(), False
     toks = name.split()
     if kind == "Personal" and len(toks) >= 2 and toks[0].lower() != "the":
-        if INITIALS.match(toks[-1]):
+        if is_initials(toks[-1]):
             split = words_then_initials(toks)
             return (split[0], split[1], False) if split else (name, "", True)
         fam, given = split_name(name)

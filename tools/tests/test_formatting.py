@@ -4497,6 +4497,24 @@ check_true("D: verify uses common's initials regex", not hasattr(verify, "_INITI
 check("C: a Personal 'An Nguyen' is a person, not a group", _c1_people([{"name": "An Nguyen", "nameType": "Personal"}]),
       (["Nguyen, A."], []))
 
+# ---- author fix round 2, item 1: initials of any script (2026-09-26) ----
+# INITIALS knew only [A-ZÀ-Ý]; "Ł" was no initial, so both "Nowak Ł" and
+# "Kowalski Ł" reduced to "Ł" and matched.
+for _ae, _aa in (("Nowak Ł", "Kowalski Ł"), ("Novák Š", "Svoboda Š"), ("Yılmaz Ş", "Kaya Ş"),
+                 ("Иванов И", "Петров И")):
+    check_true(f"R2.1: {_ae!r} mismatches {_aa!r}", _mA(_ae, _aa) != [])
+check("R2.1: 'Kowalski' matches 'Kowalski Ł'", _mA("Kowalski", "Kowalski Ł"), [])
+check("R2.1: claim_surname('Nguyen ĐT')", verify.claim_surname("Nguyen ĐT"), "Nguyen")
+check("R2.1: claim_surname never returns one letter when a longer token exists",
+      verify.claim_surname("Kowalski ł"), "Kowalski")
+check("R2.1: DataCite 'Kowalski ŁS' -> family Kowalski",
+      _c1_people([{"name": "Kowalski ŁS", "nameType": "Personal"}]), (["Kowalski, Ł. S."], []))
+check("R2.1: DataCite 'Nguyen ĐT' -> family Nguyen",
+      _c1_people([{"name": "Nguyen ĐT", "nameType": "Personal"}]), (["Nguyen, Đ. T."], []))
+check_true("R2.1: is_initials takes any uppercase script, 1-4 letters",
+           all(common.is_initials(t) for t in ("Ł", "ŁS", "Đ.T.", "И", "J-H", "J.-L.", "JLKM"))
+           and not any(common.is_initials(t) for t in ("Jr", "Li", "JLKMN", "ł", "1A", "-", "")))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
