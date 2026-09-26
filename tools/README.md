@@ -62,8 +62,11 @@ arxiv?, title?, expect_first_author?, expect_year?}`.
 to the arXiv API, fetched in batches because per-paper calls trigger a temporary
 ban. Everything else tries PMC, PubMed, CrossRef, then a title search. A journal
 DOI CrossRef does not hold (Zenodo, figshare, OSF, Dryad software/data-set
-deposits) is checked against DataCite next; resolving there counts the same as
-resolving in CrossRef.
+deposits) is checked against DataCite next, on a CrossRef 404 only; resolving
+there counts the same as resolving in CrossRef, and a 404 from both registries is
+"does not resolve" even when the DataCite fetch fell back to curl. The
+first-author check compares whole words ("Tang" matches "Tang J"), ignoring a
+leading "The"/"A"/"An".
 
 **Verdicts.**
 
@@ -105,7 +108,11 @@ published paper is cited by its version of record.
 - a DataCite-registered software/data-set/preprint DOI CrossRef does not hold
   (Zenodo, figshare, OSF, Dryad): `Authors (Year). Title (Version v)
   [Data set|Computer software|Preprint]. Publisher.`, with the bracket and
-  version omitted when DataCite has none.
+  version omitted when DataCite has none. A creator with no given name is split
+  when safe ("Jagroop Singh Doad" → "Doad, J. S."); one kept whole is flagged
+  `datacite-unsplit-author:<name>`, and a record that is not software or a data
+  set is flagged `datacite-deposit`. Both are stored as the row's
+  `canon_warnings` and must be acknowledged in the audit.
 
 **`--audit` fails on** a missing author or year, `et al.`, an HTML entity or
 markup tag, `?.` or `!.`, a U+2010/U+2011 hyphen, a malformed initial (`L. (.`,
@@ -150,9 +157,9 @@ python3 tools/sentence_case.py --rows rows.json --proper proper_nouns.json --app
   of any subtitle. Each part of a hyphenated word is judged separately.
 - **`--proper`** takes `{"words": [...], "phrases": [...]}`. Phrases let a generic
   word lowercase while a named entity keeps it (`yoga practitioners`, but
-  `Sahaja Yoga`). DataCite's bracket descriptors (`[Data set]`,
-  `[Computer software]`, `[Preprint]`) are fixed punctuation, not Title Case —
-  add them here too.
+  `Sahaja Yoga`). A DataCite deposit's `(Version …)` and bracket descriptor
+  (`[Data set]`, `[Computer software]`, `[Preprint]`) are not part of the title
+  and are never cased, so they need no entry here.
 - **`--vocab`** groups the proposed changes by distinct word instead of by title.
   On a large corpus, hundreds of title diffs collapse into a short list where a
   mis-cased proper noun stands out.

@@ -359,9 +359,14 @@ well. A row with both an arXiv id and a journal DOI has both checked. A journal
 DOI is verified only by its own CrossRef record — or, when CrossRef has no such
 DOI, its DataCite record: Zenodo, figshare, OSF and Dryad software, data-set
 and (some) preprint deposits register with DataCite instead, and resolving
-there counts the same as resolving in CrossRef. A DOI that does not resolve in
-EITHER registry is a `MISMATCH`, even when a PubMed or title search finds the
-claimed paper.
+there counts the same as resolving in CrossRef. Only a CrossRef 404 sends a DOI
+to DataCite; any other CrossRef error is an `ERROR` to re-run. A DOI that does
+not resolve in EITHER registry is a `MISMATCH`, even when a PubMed or title
+search finds the claimed paper, and a DataCite 404 stays a 404 even when the
+fetch has to fall back to curl. The first-author check compares whole words,
+either way round ("Tang" matches "Tang J"; a surname of four or more letters
+matches a longer one it begins), ignoring a leading "The", "A" or "An", so a
+group such as "The pandas development team" no longer matches "Matthews".
 
 | Verdict | Meaning | Action |
 |---|---|---|
@@ -408,8 +413,11 @@ python3 ../tools/handcheck.py --rows rows.json --ingest handcheck_result.json
 `--prepare` searches CrossRef and OpenAlex for a DOI the row turns out to have
 (the same title, not merely contained in a longer one, and the same year) and
 writes the candidates it found plus a hand-check input and brief for everything
-else — each hand-check-input entry carrying `apa_sha`, a hash of the row's `apa`
-as it stood at `--prepare`. `--adopt-dois` gives a row with exactly
+else — each hand-check-input entry carrying `apa_sha`, a hash of the reference
+text it shows (the row's `apa`, else its `search_apa`) as it stood at
+`--prepare`. An existing `handcheck_result.json` is renamed to
+`handcheck_result.stale-<timestamp>.json`, never deleted, because it answers the
+previous `--prepare`. `--adopt-dois` gives a row with exactly
 one candidate that DOI, so it goes through `verify.py` like any other reference; a
 row with several candidates is left alone and named, and one no longer in the
 table (renamed or removed since `--prepare`) is reported rather than silently
@@ -422,7 +430,9 @@ hash of the `apa` it confirmed, so editing that `apa` later lapses the check.
 default `handcheck_input.json`): a result is refused if the row's `apa` changed
 since `--prepare` recorded that entry's `apa_sha`, if its ref never went through
 `--prepare`, or if the `--input` file predates `apa_sha` altogether — in each
-case, re-run `--prepare`. A
+case, re-run `--prepare`. Each result must echo its entry's `apa_sha` (the brief
+says so); a result without it, or with a different one, is refused, which
+catches an old result ingested after the `apa` was edited and re-prepared. A
 `not-found` result exits nonzero: remove the row, or check it again.
 
 ### 5.2 Phase 3f: canonicalize every reference
@@ -442,7 +452,14 @@ PsyArXiv), and unescaped HTML. A DOI CrossRef does not hold is looked up in
 DataCite next — Zenodo, figshare, OSF and Dryad software, data-set and preprint
 deposits register there — and rebuilt as `Authors (Year). Title (Version v)
 [Data set|Computer software|Preprint]. Publisher.`, with the bracket descriptor
-and `(Version …)` omitted when DataCite has none. A journal DOI replaces an arXiv preprint as the
+and `(Version …)` omitted when DataCite has none. The title is DataCite's main
+title plus its subtitle. A creator with no given name is split when that is safe
+("Doe, John"; a personal name such as "Jagroop Singh Doad" becomes "Doad, J. S.");
+one that is not ("The pandas development team") is kept whole and flagged
+`datacite-unsplit-author:<name>`, and a DataCite record that is not software or a
+data set is flagged `datacite-deposit` (a repository copy: cite the version of
+record's DOI if one exists). Canon stores both on the row as `canon_warnings`, and
+the audit makes you acknowledge each. A journal DOI replaces an arXiv preprint as the
 version of record. Only a DOI-less book or report keeps a hand-written reference.
 
 `--audit` is a hard gate. It also warns about near-duplicate rows and multi-word
@@ -479,18 +496,21 @@ The reference gates add their own: `no-abstract`; `kept-existing-apa:<hash>` (a
 verified row canon could not rebuild, keyed to its `apa`, so editing the `apa`
 lapses the acknowledgment); `identity-not-reestablished` (a canonical row verified
 only against its own `apa`); and, under `*`, `no-candidate-ledger`, `no-xref-run`,
-`no-forward-run`, and `incomplete-xref-run` / `incomplete-forward-run` (the last
-recorded run of that pass did not finish).
+`no-forward-run`, `incomplete-xref-run` / `incomplete-forward-run` (the last
+recorded run of that pass did not finish), and `partial-xref-run` /
+`partial-forward-run` (the last run read fewer papers than the table now has with
+a DOI or arXiv id). Canon's `canon_warnings` — `datacite-unsplit-author:<name>`
+and `datacite-deposit` — are acknowledged the same way.
 
 !!! warning "Non-English titles are skipped by default"
     Sentence case would lowercase German nouns, so `sentence_case.py` detects and
     skips non-English titles and lists them; `--include-foreign` overrides.
 
-!!! note "Allowlist DataCite's bracket descriptors"
-    `[Data set]`, `[Computer software]` and `[Preprint]` are fixed APA-7
-    punctuation, not Title Case a human wrote — add them as `phrases` in the
-    corpus's `--proper` file so `sentence_case.py` does not try to lowercase
-    them.
+!!! note "DataCite descriptors are not part of the title"
+    A deposit's `(Version …)` and `[Data set]`, `[Computer software]` or
+    `[Preprint]` follow the title, and the shared APA grammar ends the title
+    before them, so `sentence_case.py` never cases them and `verify.py` compares
+    only the title itself. No `--proper` entry is needed for them.
 
 After this phase, `rows.json` is the live table (contract rule 6).
 
@@ -573,7 +593,9 @@ ref, the row's ids and the abstract's hash — exactly what the checking agent s
 or `abstracts.json` say now: `--ingest` records the verdict as `summary_check`,
 keyed to a hash of the summary text (a summary edited after `--prepare` is
 refused), and also refuses a result whose row's ids or whose abstract text
-changed since `--prepare` — in either case, re-run `--prepare`. A manifest
+changed since `--prepare` — in either case, re-run `--prepare`. Each batch
+entry carries its `summary_sha`, which the checking agent copies into its result;
+a result without it, or with a different one, is refused. A manifest
 written before this binding existed refuses every ref in it, rather than
 silently treating each one as unchanged. A row with no abstract is recorded as
 `no-abstract` — a warning the audit makes you acknowledge
@@ -601,8 +623,9 @@ instead — set `S2_API_KEY` — normalizing a cited arXiv id to
 `10.48550/arxiv.<id>` so it matches a corpus DOI. A paper whose references could
 not be fetched makes the run incomplete, and xref exits 1 unless
 `--allow-incomplete`. It usually finds 25–35 candidates per topic. Either way, it
-writes `<out>.run.json` (`{complete, incomplete, at}`) beside its output, so
-`candidates.py --add` can tell a partial run from a full one.
+writes `<out>.run.json` (`{complete, incomplete, at, tool, n_papers}`) beside its
+output, so `candidates.py --add` can tell a partial run from a full one, refuse it
+under the wrong `--source`, and record how many papers it read.
 
 - Four or more citations across about 40 papers is a strong signal; three is
   borderline.
@@ -638,11 +661,13 @@ schema-2 lane file of the `include`d papers not yet in the corpus, ready for
 5b. Excluded candidates are not discarded: `spreadsheet.py` lists them, with
 their reason, on a "Considered and excluded" sheet, so a paper missing from the
 review is visibly one that was looked at. Each `--add` also records the run
-(`_runs` in the ledger, including `complete` — read from the added file's
-`<out>.run.json` sidecar); on a gated table the audit warns `no-xref-run` /
-`no-forward-run` under `*` until both passes are in, and
-`incomplete-xref-run` / `incomplete-forward-run` if the last recorded run of a
-pass did not finish, until the warning is acknowledged. A hand-edited or
+(`_runs` in the ledger, including `complete` and `n_papers` — read from the added
+file's `<out>.run.json` sidecar, which is refused if the other tool wrote it); on
+a gated table the audit warns `no-xref-run` / `no-forward-run` under `*` until
+both passes are in, `incomplete-xref-run` / `incomplete-forward-run` if the last
+recorded run of a pass did not finish, and `partial-xref-run` /
+`partial-forward-run` if it read fewer papers than the table now has with a DOI or
+arXiv id (rows appended since), until the warning is acknowledged. A hand-edited or
 truncated `candidates.json` is refused by name rather than crashing the audit or
 the spreadsheet.
 

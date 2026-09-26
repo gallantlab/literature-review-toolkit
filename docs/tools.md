@@ -68,9 +68,12 @@ in `tools/README.md` and `PLAYBOOK.md`.
   (±1) and the title to agree — two-way, not merely one title's words found
   inside the other, though one title equaling the other's main title (before a
   subtitle break) still agrees when that main title has at least 3 content
-  words; a journal DOI is verified only by its own CrossRef record, or DataCite
-  on a clean CrossRef 404, so a DOI that resolves in neither is a MISMATCH even
-  when a PubMed or title search finds the claimed paper. arXiv ids are fetched
+  words; the first author is compared by whole words, ignoring a leading
+  "The"/"A"/"An". A journal DOI is verified only by its own CrossRef record, or
+  DataCite on a CrossRef 404 (any other CrossRef error is an ERROR), so a DOI
+  that resolves in neither is a MISMATCH even when a PubMed or title search
+  finds the claimed paper; a DataCite 404 stays a 404 when its fetch falls back
+  to curl. arXiv ids are fetched
   in batches so rate limits cannot produce false NOT-FOUNDs. Accepts a citation
   list or `rows.json` (`--rows`). `--rows` stamps each row as `verified`
   (verdict, ids, source, date) — except a re-verify that would downgrade an
@@ -90,26 +93,33 @@ in `tools/README.md` and `PLAYBOOK.md`.
   stamps rows with `canonical_at`, which `common.write_rows` refuses to overwrite;
   `--repair` stamps it only on a legacy (ungated) table. On a gated table the
   audit also fails a doi.org `link` that disagrees with the row's DOI
-  (`link-doi-mismatch`), and a DOI CrossRef does not have is reported as "DOI
-  does not exist". A row whose fetch fails twice is named and the run exits 1; `--only` rebuilds
+  (`link-doi-mismatch`), and a DOI neither CrossRef nor DataCite has is reported
+  as "DOI does not exist". A DataCite rebuild flags a creator it could not split
+  into family and given name (`datacite-unsplit-author:<name>`) and a record that
+  is not software or a data set (`datacite-deposit`, a repository copy) in the
+  row's `canon_warnings`, which the audit asks you to acknowledge. A row whose fetch fails twice is named and the run exits 1; `--only` rebuilds
   just the named rows. `--list-acks` prints every unacknowledged warning as
   `REF<TAB>WARNING_ID<TAB>TEXT` and exits nonzero only on those — never on a
   defect; `--audit` is the actual gate.
 - **`sentence_case.py`** proposes APA-7 sentence case for a human to review.
   Project proper nouns go in `--proper`; `--vocab` reviews a large corpus by
-  distinct word change rather than title by title.
+  distinct word change rather than title by title. A DataCite deposit's
+  `(Version …) [Descriptor]` is outside the title and never cased.
 - **`handcheck.py`** finds and records the hand check a DOI-less row needs, since
   no API can verify it. `--prepare` searches CrossRef/OpenAlex for a DOI the row
-  turns out to have, and records `apa_sha` (a hash of the row's `apa` as it stood
-  at `--prepare`) on each hand-check-input entry; `--adopt-dois` gives a row with
+  turns out to have, and records `apa_sha` (a hash of the reference it shows: the
+  row's `apa`, else its `search_apa`, as it stood at `--prepare`) on each
+  hand-check-input entry, renaming an existing `handcheck_result.json` to
+  `handcheck_result.stale-<timestamp>.json`; `--adopt-dois` gives a row with
   exactly one candidate that DOI, so it verifies normally (a candidate ref no
   longer in the table is reported, not silently dropped); `--ingest` records
   `confirmed` / `corrected` / `not-found` as `hand_verified`, with the source
   actually checked and a hash of the `apa` it confirmed (an edited `apa` lapses
   the check). `--ingest` is also bound to `--input` (the file `--prepare` wrote):
   it refuses a result whose row's `apa` has drifted from that entry's `apa_sha`,
-  whose ref never went through `--prepare`, or whose `--input` entry predates
-  `apa_sha`. A `not-found` result exits nonzero.
+  whose ref never went through `--prepare`, whose `--input` entry predates
+  `apa_sha`, or that does not echo its entry's `apa_sha` (a result for an older
+  `--prepare`). A `not-found` result exits nonzero.
 - **`spreadsheet.py`** adds the `Cite` and `Family` columns when rows carry them.
   An unknown `source` renders white with a warning instead of failing. It also
   runs the same audit as `references.py --audit` (rejecting a malformed
@@ -131,7 +141,7 @@ in `tools/README.md` and `PLAYBOOK.md`.
   records `summary_check` keyed to a hash of the summary (an edited summary is
   refused), and separately refuses a result whose row's ids or whose abstract
   text drifted from what that manifest recorded, in both cases pointing back to
-  `--prepare`; a manifest written before this binding existed refuses every ref
+  `--prepare`, and one that does not echo its batch entry's `summary_sha`; a manifest written before this binding existed refuses every ref
   in it. A row with no abstract is `no-abstract`, a warning to acknowledge; a
   flagged (`unsupported`) summary is a defect.
 - **`xref.py`** builds the cross-citation table from the corpus's CrossRef
@@ -140,8 +150,8 @@ in `tools/README.md` and `PLAYBOOK.md`.
   a cited arXiv id to `10.48550/arxiv.<id>`. A paper whose references could not
   be fetched makes the run incomplete and it exits 1 unless
   `--allow-incomplete`; either way it writes `<out>.run.json`
-  (`{complete, incomplete, at}`) beside `--out`, so `candidates.py --add` can
-  tell a partial run from a full one. `--internal-out` writes within-corpus
+  (`{complete, incomplete, at, tool, n_papers}`) beside `--out`, so
+  `candidates.py --add` can tell a partial run from a full one. `--internal-out` writes within-corpus
   citation counts for the figure's landmark selection. Accepts `rows.json`
   (`--rows`).
 - **`forward.py`** picks the corpus's landmarks (top in-degree, then citation
@@ -153,8 +163,9 @@ in `tools/README.md` and `PLAYBOOK.md`.
   sidecar `xref.py` does.
 - **`candidates.py`** is the shared ledger for `xref.py` and `forward.py`
   output: `--add` merges candidates in by DOI, keeping every source and score,
-  and records whether that run completed (`complete`, read from the added
-  file's `<out>.run.json` sidecar) under `_runs`; `--decide DOI include|exclude
+  and records whether that run completed and how many papers it read
+  (`complete`, `n_papers`, read from the added file's `<out>.run.json` sidecar,
+  refused if the other tool wrote it) under `_runs`; `--decide DOI include|exclude
   --reason "..."` is required before the audit will pass; `--export-included`
   writes a schema-2 lane file for `merge_lanes.py --append`. The audit fails
   while any candidate is pending, or while an `include`d one is missing from
@@ -162,7 +173,9 @@ in `tools/README.md` and `PLAYBOOK.md`.
   `no-candidate-ledger` warning acknowledged. A gated ledger missing the xref or
   forward run warns `no-xref-run` / `no-forward-run`, and one whose last
   recorded run did not complete warns `incomplete-xref-run` /
-  `incomplete-forward-run`, until acknowledged. A candidate ledger that is not
+  `incomplete-forward-run`, and one whose last run read fewer papers than the
+  table has with a DOI or arXiv id warns `partial-xref-run` /
+  `partial-forward-run`, until acknowledged. A candidate ledger that is not
   the shape every reader assumes (not an object, a malformed entry, a
   non-object `_runs`) is refused by name rather than crashing.
 - **`families.py`** validates an agent-proposed, human-approved grouping: every
