@@ -242,16 +242,22 @@ claimed author/year agree and the rows do not carry two *different* journal DOIs
 (an arXiv preprint's DOI and its own journal DOI are the same paper and still
 merge). When the hint fails that check, both rows are kept and reported as a
 **possible pair** for a person to look at — the same warning the audit's
-duplicate scan raises.
+duplicate scan raises. After the merge, it also title-scores every pair of kept
+rows (similarity ≥ 0.9, regardless of year or DOI) and lists any close pair as a
+possible duplicate too — a second, corpus-wide check independent of the dedup
+above.
 
 **Every `deferred` entry must match a merged row**, by DOI, arXiv id, or title
-(similarity ≥ 0.85, corroborated by `first_author`/`year` when the lane gave
+(similarity ≥ 0.9, corroborated by `first_author`/`year` when the lane gave
 them). Every title-only match is printed for you to check
 (`matched_by_title`). **`merge_lanes.py` fails on a lost deferral** — an entry no
 lane's papers matched — and exits 1: send the lost papers to one recovery lane,
-add its file to `search_raw/`, and re-merge. A lane that returned under 60% of
-its target, or ran out of search budget, is printed as thin — resume it through
-SendMessage rather than re-spawning it.
+add its file to `search_raw/`, and re-merge. It also fails on a **rejected**
+paper — one with no DOI, no arXiv id and no APA string, which can be neither
+verified nor hand-checked — reported the same way: give it a DOI or arXiv id,
+or have the lane write its full APA string as a DOI-less item, then re-merge.
+A lane that returned under 60% of its target, or ran out of search budget, is
+printed as thin — resume it through SendMessage rather than re-spawning it.
 
 **Later additions** (xref/forward candidates via Phase 6, a recovery lane after
 Phase 2c itself) use `--append` instead, which never touches an existing row:

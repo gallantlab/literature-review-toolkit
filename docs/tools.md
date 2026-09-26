@@ -45,12 +45,17 @@ in `tools/README.md` and `PLAYBOOK.md`.
 - **`merge_lanes.py`** dedups schema-2 lane files by DOI, then arXiv id, then
   normalized title + year; a title+year match alone is treated as the same
   paper only when the lanes' claims agree and the rows do not carry two
-  different journal DOIs, otherwise both rows are kept as a possible pair.
-  Every `deferred` entry must match a merged row (DOI, arXiv id, or title
-  similarity ≥ 0.85 corroborated by `first_author`/`year`); a lost deferral
-  exits 1. A lane under 60% of its target, or out of search budget, is
-  flagged thin. `--append FILE --into ROWS` adds a lane's papers to a table
-  that may already be canonical, never touching an existing row.
+  different journal DOIs, otherwise both rows are kept as a possible pair. It
+  also title-scores every pair of kept rows after the merge (similarity ≥ 0.9,
+  regardless of year or DOI) and lists any close pair as a possible duplicate
+  too. Every `deferred` entry must match a merged row (DOI, arXiv id, or title
+  similarity ≥ 0.9 corroborated by `first_author`/`year`); a lost deferral
+  exits 1. So does a **rejected** paper — no DOI, arXiv id or APA string, so it
+  can be neither verified nor hand-checked — give it a DOI/arXiv id or have the
+  lane write its full APA string, then re-merge. A lane under 60% of its
+  target, or out of search budget, is flagged thin. `--append FILE --into
+  ROWS` adds a lane's papers to a table that may already be canonical, never
+  touching an existing row.
 - **`verify.py`** returns `OK`, `MISMATCH`, `NOT-FOUND`, `ERROR` or `UNCHECKED`.
   `ERROR` means a lookup could not complete (it is retried once in the run, then
   re-checked with `--retry-from`); `NOT-FOUND` means every lookup completed and

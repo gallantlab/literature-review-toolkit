@@ -283,16 +283,22 @@ keeping each lane's claim as `search_author`/`search_year`/`search_title`. A
 title+year match alone is a hint, not a merge: it counts as the same paper only
 when the lanes' claimed author/year agree and the rows do not carry two
 *different* journal DOIs (a preprint DOI and its own journal DOI are not a
-conflict). Otherwise both rows are kept and reported as a possible pair.
+conflict). Otherwise both rows are kept and reported as a possible pair. After
+the merge it also title-scores every pair of kept rows (similarity ≥ 0.9,
+regardless of year or DOI) and lists any close pair as a possible duplicate too.
 
 **`merge_lanes.py` fails on a lost deferral** — a paper a lane left out on
 purpose (`deferred`) that no lane's `papers` matched by DOI, arXiv id, or title
-(similarity ≥ 0.85, corroborated by `first_author`/`year` when given). Send the
+(similarity ≥ 0.9, corroborated by `first_author`/`year` when given). Send the
 lost papers to one recovery lane, add its file to `search_raw/`, and re-merge.
-A lane that returned under 60% of its target, or exhausted its search budget,
-is printed as thin — resume it, don't re-spawn it. Later additions (a recovery
-lane, or the cross-citation pass in [§5.6](#56-phase-6-cross-citation-pass)) use
-`--append FILE --into rows.json` instead, which never touches an existing row.
+It also fails on a **rejected** paper — no DOI, no arXiv id and no APA string,
+so it can be neither verified nor hand-checked — the same way: give it a DOI
+or arXiv id, or have the lane write its full APA string as a DOI-less item,
+then re-merge. A lane that returned under 60% of its target, or exhausted its
+search budget, is printed as thin — resume it, don't re-spawn it. Later
+additions (a recovery lane, or the cross-citation pass in
+[§5.6](#56-phase-6-cross-citation-pass)) use `--append FILE --into rows.json`
+instead, which never touches an existing row.
 
 ### 4.2 Lab mode
 
