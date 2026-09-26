@@ -1797,6 +1797,24 @@ _after3 = {r["ref"]: r for r in common.load_json(_rp3)}
 check_true("verify: --override needs no --email/LITREVIEW_EMAIL",
            "verify_override" in _after3["O1"], _after3["O1"])
 
+# Entrance test: --no-stamp with --rows reports only -- rows.json is not written at all.
+_d4 = _tmpf.mkdtemp()
+_rp4 = os.path.join(_d4, "rows.json")
+_rep4 = os.path.join(_d4, "report.json")
+_before4 = [{"ref": "N1", "doi": "10.1/n1", "search_title": "T"}]
+common.dump_json(_before4, _rp4)
+_argv = sys.argv
+sys.argv = ["verify.py", "--rows", _rp4, "--no-stamp", "--out", _rep4, "--email", "t@example.org"]
+try:
+    with _patched(verify, verify_all=_fake_verify_all):
+        verify.main()
+except SystemExit:
+    pass
+finally:
+    sys.argv = _argv
+check("verify --no-stamp leaves rows.json untouched", common.load_json(_rp4), _before4)
+check("verify --no-stamp still writes the report", common.load_json(_rep4)[0]["verdict"], "OK")
+
 
 # ---- reference gates: canon refuses unverified rows (added 2026-09-26) -----
 _crok = lambda d, fallback_venue="": _cr_record()   # noqa: E731
