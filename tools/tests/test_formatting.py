@@ -2210,7 +2210,8 @@ _rows, _rep = merge_lanes.merge([
     _lane("B", [_p("B-01", doi="https://doi.org/10.1/x"),
                 _p("B-02", doi="10.1/deepnets", title="Deep Nets", au="Smith, J.", year=2020),
                 _p("B-03", doi="10.1/y", au="Doe, A."), _p("B-04")],
-          deferred=[{"title": "Deep nets", "reason": "A owns it"}, {"title": "Lost classic", "doi": "10.1/lost"}],
+          deferred=[{"title": "Deep nets", "first_author": "Smith, J.", "reason": "A owns it"},
+                    {"title": "Lost classic", "doi": "10.1/lost"}],
           target=20)])
 check("merge dedups by DOI (any form) and by title+year", [r["ref"] for r in _rows], ["A-01", "A-02", "A-03", "B-03"])
 check("merge records the other lanes", _rows[0].get("also_lanes"), ["B"])
@@ -2445,6 +2446,49 @@ try:
 finally:
     sys.argv = _c1argv
 check_true("lab_corpus stamps built_at", common.is_gated(common.load_json(_c1out)))
+
+# ---- final fixes C2: strict symmetric title_match for deferrals (2026-09-25) -----
+check_true("title_match: a case/punctuation variant matches",
+           common.title_match("Sparse coding in visual cortex", "Sparse Coding in Visual Cortex."))
+check_true("title_match: containment in one direction only is not a match",
+           not common.title_match("Attention is not all you need: pure attention loses rank",
+                                  "Attention is all you need"))
+check_true("title_match: a missing title never matches", not common.title_match("", "Deep learning"))
+
+
+def _c2(kept_title, deferred):
+    return merge_lanes.merge([_lane("A", [_p("A-01", doi="10.1/c2", title=kept_title, au="Vaswani, A.",
+                                             year=2017)], deferred=[deferred])])[1]
+
+
+_c2r = _c2("Attention is all you need",
+           {"title": "Attention is not all you need: pure attention loses rank", "first_author": "Dong, Y.",
+            "year": 2021})
+check("a deferral containing the kept title plus more words is lost",
+      [d["title"] for d in _c2r["lost"]], ["Attention is not all you need: pure attention loses rank"])
+_c2r = _c2("Deep learning", {"title": "Deep learning in neural networks: An overview",
+                             "first_author": "Vaswani, A.", "year": 2017})
+check("a short kept title contained in a longer deferral is lost",
+      [d["title"] for d in _c2r["lost"]], ["Deep learning in neural networks: An overview"])
+_c2r = _c2("Attention is all you need", {"title": "Attention is all you need", "first_author": "Vaswani, A."})
+check("an exact title with an agreeing first author is matched",
+      ([d["title"] for d in _c2r["deferrals_matched"]], _c2r["unconfirmed"]), (["Attention is all you need"], []))
+_c2r = _c2("Attention is all you need", {"title": "Attention is all you need", "reason": "lane B"})
+check("an exact title with no first_author or year is unconfirmed, not matched",
+      ([d["title"] for d in _c2r["unconfirmed"]], _c2r["deferrals_matched"], _c2r["lost"]),
+      (["Attention is all you need"], [], []))
+_c2d = _tmpf.mkdtemp()
+os.makedirs(os.path.join(_c2d, "raw"))
+common.dump_json(_lane("A", [_p("A-01", doi="10.1/c2", title="Attention is all you need")],
+                       deferred=[{"title": "Attention is all you need"}]), os.path.join(_c2d, "raw", "A.json"))
+check("merge_lanes exits 1 on an unconfirmed deferral",
+      _merge_exit(os.path.join(_c2d, "raw"), os.path.join(_c2d, "rows.json")), 1)
+_c2dl = lambda t: [{"doi": "10.1/dl", "title": "Deep learning in neural networks: An overview",  # noqa: E731
+                    "year": "2015", "source": "crossref"}]
+check("find_doi rejects a containment-only title match",
+      handcheck.find_doi({"ref": "B", "search_title": "Deep learning", "search_year": 2015}, (_c2dl,)), [])
+check_true("the search template requires first_author and year on deferrals",
+           "first_author` and `year` are required" in _TPL)
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

@@ -340,6 +340,32 @@ def title_score(a, b):
     return max(difflib.SequenceMatcher(None, a, b).ratio(), contained)
 
 
+TITLE_MATCH = 0.9
+
+
+def title_match(a, b):
+    """True when two titles name the same work: character similarity of the
+    normalized titles >= TITLE_MATCH, OR each title's content words are >=
+    TITLE_MATCH contained in the other. Symmetric on purpose, unlike
+    title_score: "Deep learning" is wholly contained in "Deep learning in
+    neural networks: An overview", and accepting that marks a lost paper as
+    found. Used wherever a title alone decides identity (merge_lanes deferrals,
+    handcheck DOI candidates)."""
+    import difflib
+    a, b = _title_words(a), _title_words(b)
+    if not a or not b:
+        return False
+    if difflib.SequenceMatcher(None, a, b).ratio() >= TITLE_MATCH:
+        return True
+    ta = [w for w in a.split() if w not in _TITLE_STOP]
+    tb = [w for w in b.split() if w not in _TITLE_STOP]
+    if not ta or not tb:
+        return False
+    sa, sb = set(ta), set(tb)
+    return (sum(w in sb for w in ta) / len(ta) >= TITLE_MATCH
+            and sum(w in sa for w in tb) / len(tb) >= TITLE_MATCH)
+
+
 def attach_counts(rows, counts, keyf=None):
     """Attach citations.py output to rows in place: counts[key]['openalex'/'s2'/
     's2_influential'] -> row['cite_openalex'/'cite_s2'/'cite_s2_influential'] —

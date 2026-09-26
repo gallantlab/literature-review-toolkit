@@ -9,7 +9,8 @@ Reads every schema-2 lane file (tools/search_prompt_template.md) in --raw and:
   - rejects a paper with no DOI, arXiv id or APA string (it can be neither
     verified nor hand-checked);
   - matches every `deferred` entry against the merged table and exits 1 on any
-    that no lane kept — send those to a recovery lane and re-merge;
+    that no lane kept, or that matched by title alone with neither first_author
+    nor year to confirm it — send those to a recovery lane and re-merge;
   - flags thin lanes (under 60% of target, or out of search budget) to resume.
 
     python3 tools/merge_lanes.py --raw search_raw --out rows.json
@@ -28,7 +29,6 @@ import verify
 PHASE = "2c"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 THIN = 0.6
-DEFERRAL_TITLE_MATCH = 0.9   # a title-only deferral match needs a closer score than a DOI/arXiv one
 PAIR_MATCH = 0.9
 
 
@@ -133,11 +133,12 @@ def _title_only_gate(hit, row):
 
 
 def _defer_agrees(d, row):
-    """True unless a deferred entry's OPTIONAL first_author/year contradicts the
-    claim on `row`, a candidate it might match by title alone. Absent fields
-    impose no constraint; a given field must agree (surname containment either
-    way for the author, within a year for the year) or the match is refused —
-    a title-only hit is too weak to accept over a claim mismatch."""
+    """True unless a deferred entry's first_author/year contradicts the claim on
+    `row`, a candidate it might match by title alone. An absent field imposes
+    no constraint (a deferral with neither is reported as unconfirmed by
+    merge()); a given field must agree (surname containment either way for the
+    author, within a year for the year) or the match is refused — a title-only
+    hit is too weak to accept over a claim mismatch."""
     fa = d.get("first_author")
     if fa:
         sa = verify.claim_surname(fa).lower()
@@ -155,7 +156,8 @@ def _defer_agrees(d, row):
 def merge(lanes):
     rows, idx, refs = [], {}, set()
     rep = {"lanes": [], "duplicates": [], "conflicts": [], "possible_pairs": [], "rejected": [],
-           "deferrals_matched": [], "matched_by_title": [], "lost": [], "thin": [], "no_deferral_check": []}
+           "deferrals_matched": [], "matched_by_title": [], "unconfirmed": [], "lost": [], "thin": [],
+           "no_deferral_check": []}
     for lane in lanes:
         name = lane["lane"]
         for p in lane["papers"]:
@@ -212,17 +214,23 @@ def merge(lanes):
             continue
         for d in lane["deferred"]:
             doi = _bare(d.get("doi") or "").lower()
-            match, score = (idx.get(("doi", doi)) if doi else None), None
+            match, by_title = (idx.get(("doi", doi)) if doi else None), False
             if match is None:
                 for r in rows:
-                    s = common.title_score(d.get("title"), r.get("search_title")) or 0
-                    if s >= DEFERRAL_TITLE_MATCH and _defer_agrees(d, r):
-                        match, score = r, s
+                    if common.title_match(d.get("title"), r.get("search_title")) and _defer_agrees(d, r):
+                        match, by_title = r, True
                         break
             entry = dict(d, from_lane=lane["lane"])
-            (rep["deferrals_matched"] if match is not None else rep["lost"]).append(
-                dict(entry, found_as=match["ref"]) if match is not None else entry)
-            if match is not None and score is not None:
+            if match is None:
+                rep["lost"].append(entry)
+                continue
+            if by_title and not d.get("first_author") and d.get("year") in (None, ""):
+                # a title alone, with nothing to corroborate it, cannot confirm the paper was kept
+                rep["unconfirmed"].append(dict(entry, found_as=match["ref"]))
+                continue
+            rep["deferrals_matched"].append(dict(entry, found_as=match["ref"]))
+            if by_title:
+                score = common.title_score(d.get("title"), match.get("search_title")) or 0
                 rep["matched_by_title"].append({"title": d.get("title"), "from_lane": lane["lane"],
                                                 "found_as": match["ref"], "score": round(score, 3)})
     return rows, rep
@@ -264,10 +272,14 @@ def main():
               f"({m['score']}) — check it")
     for x in rep["rejected"]:
         print(f"  ✗ {x['ref']} ({x['lane']}): {x['reason']}")
+    for d in rep["unconfirmed"]:
+        print(f"  ✗ UNCONFIRMED: {d.get('title')!r} (deferred by {d['from_lane']}) matched {d['found_as']} "
+              "by title only, with no first_author or year to confirm it — add them to the deferral and "
+              "re-merge, or send it to a recovery lane")
     for d in rep["lost"]:
         print(f"  ✗ LOST: {d.get('title')!r} (deferred by {d['from_lane']}: {d.get('reason', '')}); "
               "no lane kept it — send it to a recovery lane")
-    sys.exit(1 if rep["lost"] or rep["rejected"] else 0)
+    sys.exit(1 if rep["lost"] or rep["rejected"] or rep["unconfirmed"] else 0)
 
 
 def append(rows, keyf, lane):

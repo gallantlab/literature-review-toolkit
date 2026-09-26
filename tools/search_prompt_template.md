@@ -90,8 +90,9 @@ Write it incrementally if you are worried about time, so no work is lost.
 - **Never drop an on-topic paper because another search might own it.** Include it
   and set `lane_fit` to the better-fitting area; duplicates are removed later.
 - List in `deferred` every paper you found and left out on purpose, with the reason.
-  Give `first_author` and `year` when you have them; the merge step relies on them
-  to confirm a deferred paper by title alone.
+  `first_author` and `year` are required on every deferred entry: the merge step
+  needs them to confirm a deferred paper by title alone, and fails the merge on a
+  title-only match it cannot confirm.
 - Set `status.returned` to the number of papers, and `websearch_exhausted` to true if
   your web search stopped working; say in `notes` how you continued.
 

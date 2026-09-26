@@ -5,7 +5,7 @@ A DOI-less row cannot be machine-verified, so this tool does the work around the
 hand check, and the audit fails any DOI-less row without its record:
 
   --prepare           search CrossRef and OpenAlex for a DOI the row is missing
-                      (title similarity >= 0.9 and the same year), and write the
+                      (the same title, by common.title_match, and the same year), and write the
                       hand-check input and brief for the rest
   --adopt-dois FILE   give each row with exactly one found DOI that DOI, so it
                       goes through verify.py instead
@@ -89,7 +89,8 @@ def search_openalex(title):
 
 
 def find_doi(row, searchers=(search_crossref, search_openalex)):
-    """Candidate DOIs for a DOI-less row: title similarity >= 0.9 and the same year."""
+    """Candidate DOIs for a DOI-less row: the same title (common.title_match,
+    which refuses a title merely contained in a longer one) and the same year."""
     title, year = claim_of(row)
     if not title:
         return []
@@ -101,8 +102,8 @@ def find_doi(row, searchers=(search_crossref, search_openalex)):
             print(f"  [search-fail] {fn.__name__}: {type(e).__name__}: {e}", file=sys.stderr)
             continue
         for c in cands:
-            s = common.title_score(title, c["title"])
-            if s is not None and s >= 0.9 and (not year or c["year"] == year):
+            if common.title_match(title, c["title"]) and (not year or c["year"] == year):
+                s = common.title_score(title, c["title"]) or 0
                 hits.setdefault(c["doi"].lower(), dict(c, score=round(s, 3)))
     return list(hits.values())
 

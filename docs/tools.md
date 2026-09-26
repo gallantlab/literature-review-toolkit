@@ -48,9 +48,10 @@ in `tools/README.md` and `PLAYBOOK.md`.
   different journal DOIs, otherwise both rows are kept as a possible pair. It
   also title-scores every pair of kept rows after the merge (similarity ≥ 0.9,
   regardless of year or DOI) and lists any close pair as a possible duplicate
-  too. Every `deferred` entry must match a merged row (DOI, arXiv id, or title
-  similarity ≥ 0.9 corroborated by `first_author`/`year`); a lost deferral
-  exits 1. So does a **rejected** paper — no DOI, arXiv id or APA string, so it
+  too. Every `deferred` entry must match a merged row (DOI, arXiv id, or a
+  symmetric title match confirmed by `first_author`/`year`); a lost deferral
+  exits 1, and so does an unconfirmed one (a title-only match whose deferral
+  gives neither field). So does a **rejected** paper — no DOI, arXiv id or APA string, so it
   can be neither verified nor hand-checked — give it a DOI/arXiv id or have the
   lane write its full APA string, then re-merge. A lane under 60% of its
   target, or out of search budget, is flagged thin. `--append FILE --into

@@ -289,7 +289,9 @@ regardless of year or DOI) and lists any close pair as a possible duplicate too.
 
 **`merge_lanes.py` fails on a lost deferral** — a paper a lane left out on
 purpose (`deferred`) that no lane's `papers` matched by DOI, arXiv id, or title
-(similarity ≥ 0.9, corroborated by `first_author`/`year` when given). Send the
+(similarity ≥ 0.9, or each title's words ≥ 90% contained in the other),
+confirmed by the deferral's `first_author`/`year`. A title-only match whose
+deferral gives neither is **unconfirmed** and fails the merge too. Send the
 lost papers to one recovery lane, add its file to `search_raw/`, and re-merge.
 It also fails on a **rejected** paper — no DOI, no arXiv id and no APA string,
 so it can be neither verified nor hand-checked — the same way: give it a DOI
@@ -389,7 +391,7 @@ python3 ../tools/handcheck.py --rows rows.json --ingest handcheck_result.json
 ```
 
 `--prepare` searches CrossRef and OpenAlex for a DOI the row turns out to have
-(title similarity ≥ 0.9, same year) and writes the candidates it found plus a hand-
+(the same title, not merely contained in a longer one, and the same year) and writes the candidates it found plus a hand-
 check input and brief for everything else. `--adopt-dois` gives a row with exactly
 one candidate that DOI, so it goes through `verify.py` like any other reference; a
 row with several candidates is left alone and named. `--ingest` records each

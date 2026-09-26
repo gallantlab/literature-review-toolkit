@@ -166,7 +166,7 @@ paper's claimed first author, year and title as `search_author` / `search_year` 
 each agent never to drop an on-topic paper because another lane might own it —
 include it and name the lane it fits better (`lane_fit`), since the merge dedups on
 DOI and arXiv id. Anything left out on purpose goes in `deferred`, with its
-`first_author` and `year` when known, so Phase 2c's merge can confirm a deferred
+`first_author` and `year` (required), so Phase 2c's merge can confirm a deferred
 paper by title alone. Do not cap DOI-less items per lane. Three recent builds lost
 14, 6 and 4 papers at their seams, and each loss cost a recovery lane after the fact
 — Phase 2c now catches this in code instead of relying on a session to notice.
@@ -248,11 +248,14 @@ possible duplicate too — a second, corpus-wide check independent of the dedup
 above.
 
 **Every `deferred` entry must match a merged row**, by DOI, arXiv id, or title
-(similarity ≥ 0.9, corroborated by `first_author`/`year` when the lane gave
-them). Every title-only match is printed for you to check
-(`matched_by_title`). **`merge_lanes.py` fails on a lost deferral** — an entry no
-lane's papers matched — and exits 1: send the lost papers to one recovery lane,
-add its file to `search_raw/`, and re-merge. It also fails on a **rejected**
+(`common.title_match`: similarity ≥ 0.9, or each title's words ≥ 90% contained
+in the other — a short title inside a longer one is not a match), confirmed by
+the deferral's `first_author`/`year`. Every title-only match is printed for you
+to check (`matched_by_title`). **`merge_lanes.py` fails on a lost deferral** — an
+entry no lane's papers matched — and on an **unconfirmed** one — a title-only
+match whose deferral gives neither `first_author` nor `year` — and exits 1: add
+the missing fields and re-merge, or send the papers to one recovery lane, add
+its file to `search_raw/`, and re-merge. It also fails on a **rejected**
 paper — one with no DOI, no arXiv id and no APA string, which can be neither
 verified nor hand-checked — reported the same way: give it a DOI or arXiv id,
 or have the lane write its full APA string as a DOI-less item, then re-merge.
@@ -355,8 +358,8 @@ page and confirm author/year. Don't rely on the agent's claim.
 **Hand-checking references with no DOI or arXiv id.** A book, report, thesis or web
 essay cannot be machine-verified, so a gated table needs a recorded hand check
 instead — the audit fails a DOI-less row without one. `tools/handcheck.py --prepare`
-searches CrossRef and OpenAlex for a DOI the row turns out to have (title similarity
-≥ 0.9, same year) and writes the rest as a hand-check input plus a brief;
+searches CrossRef and OpenAlex for a DOI the row turns out to have (the same title
+by `common.title_match`, not merely contained in a longer one, and the same year) and writes the rest as a hand-check input plus a brief;
 `--adopt-dois` gives a row with exactly one candidate DOI that DOI, so it goes
 through `verify.py` like any other reference (a row with several candidates is left
 alone and named); `--ingest` records each checked row as `hand_verified` —
