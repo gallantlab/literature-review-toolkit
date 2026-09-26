@@ -2063,6 +2063,36 @@ check_true("excluded candidates get their own sheet",
            "Considered and excluded" in _xlsx_text(os.path.join(_dd, "bib.xlsx")))
 check("draft_path inserts _DRAFT", spreadsheet.draft_path("/a/b/bib.xlsx"), "/a/b/bib_DRAFT.xlsx")
 
+# ---- fix round 1: spreadsheet.py is a third candidates.json loader (2026-09-26) ----
+# references.audit_rows only validates the ledger when the table is gated, and
+# --draft continues past a failed (gated) audit -- so a corrupted ledger still
+# reached candidates.entries()/v.get("decision") unvalidated on a legacy table,
+# or on a gated table with --draft. Both must exit 1 and write nothing.
+_code, _dd = _sheet_main(_undated, candidates={"10.1/bad": "not-a-dict"})
+check("spreadsheet refuses a corrupted ledger on a legacy table (no file written)",
+      (_code, os.path.exists(os.path.join(_dd, "bib.xlsx"))), (1, False))
+_code, _dd = _sheet_main([_grow()], "--draft", candidates={"10.1/bad": "not-a-dict"})
+check("spreadsheet refuses a corrupted ledger on a gated table with --draft (no draft written)",
+      (_code, os.path.exists(os.path.join(_dd, "bib_DRAFT.xlsx"))), (1, False))
+
+_sd = _tmpf.mkdtemp()
+_sdrp = os.path.join(_sd, "rows.json")
+common.dump_json([_grow()], _sdrp)
+common.dump_json({"10.1/bad": "not-a-dict"}, os.path.join(_sd, "candidates.json"))
+_argv = sys.argv
+sys.argv = ["spreadsheet.py", "--rows", _sdrp, "--out", os.path.join(_sd, "bib.xlsx")]
+_serr = io.StringIO()
+_scode = 0
+try:
+    with _ctx.redirect_stderr(_serr):
+        spreadsheet.main()
+except SystemExit as e:
+    _scode = e.code or 0
+finally:
+    sys.argv = _argv
+check("spreadsheet's corrupted-ledger message names the bad entry and exits 1",
+      ("10.1/bad" in _serr.getvalue(), _scode), (True, 1))
+
 
 # ---- reference gates: handcheck.py (2026-09-26) ----------------------------
 import handcheck  # noqa: E402
@@ -3607,6 +3637,15 @@ check("write_run_sidecar records the incomplete refs, complete=False, and the da
 common.write_run_sidecar(_wrs_out, [], "2026-09-26")
 check("write_run_sidecar records complete=True when nothing is incomplete",
       common.load_json(f"{_wrs_out}.run.json")["complete"], True)
+
+# fix round 1: xref.py used indent=1 for its sidecar before the shared function
+# existed; the refactor must not silently change it to the default indent=2.
+common.write_run_sidecar(_wrs_out, ["A"], "2026-09-26", indent=1)
+with open(f"{_wrs_out}.run.json", encoding="utf-8") as _wrs_fh:
+    _wrs_text = _wrs_fh.read()
+check("write_run_sidecar honors an indent parameter (xref.py's original indent=1)",
+      _wrs_text, json.dumps({"complete": False, "incomplete": ["A"], "at": "2026-09-26"},
+                            indent=1, ensure_ascii=False))
 
 # ---- Task 4 item 2: an incomplete xref/forward run is not recorded as complete
 # (2026-09-26) -------------------------------------------------------------

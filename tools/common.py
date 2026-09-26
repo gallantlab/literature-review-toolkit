@@ -220,14 +220,16 @@ def dump_json(obj, path, indent=2):
         json.dump(obj, f, indent=indent, ensure_ascii=False)
 
 
-def write_run_sidecar(out, incomplete, asof):
+def write_run_sidecar(out, incomplete, asof, indent=2):
     """Write <out>.run.json = {"complete", "incomplete", "at"}, shared by
     xref.py and forward.py so their two copies of this snippet cannot drift.
     candidates.py --add reads it beside the file it is adding, to record
     whether the run that produced `out` finished (`complete`); `incomplete`
-    is the refs/slugs still unresolved, and `asof` the date to stamp."""
+    is the refs/slugs still unresolved, and `asof` the date to stamp.
+    `indent` matches dump_json's own default; xref.py passes 1, matching its
+    pre-refactor indentation for `out` itself."""
     dump_json({"complete": not incomplete, "incomplete": list(incomplete), "at": asof},
-              f"{out}.run.json")
+              f"{out}.run.json", indent=indent)
 
 
 def fold(s):
