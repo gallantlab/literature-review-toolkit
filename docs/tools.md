@@ -20,13 +20,13 @@ in `tools/README.md` and `PLAYBOOK.md`.
 | `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--email` `--no-update-check` `--offline` `--papers` |
 | `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--out` `--raw` `--report` |
 | `verify.py` | 3 | Verify a list of citations against CrossRef, DataCite, arXiv, PMC and PubMed. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
-| `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--email` `--ingest` `--input` `--key` `--prepare` `--rows` |
+| `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--candidates` `--email` `--ingest` `--input` `--key` `--prepare` `--reason` `--reject` `--rows` |
 | `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--asof` `--audit` `--candidates` `--email` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
 | `sentence_case.py` | 3f | Post-canon pass: propose strict APA-7 sentence case for reference titles, for a human to review. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
 | `download.py` | 4 (opt-in) | Download open-access PDFs for a list of papers, only when the user asks for them. | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
 | `reconcile_downloads.py` | 4 (opt-in) | Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
 | `spreadsheet.py` | 5 | Build the bibliography .xlsx from rows.json, and refuse a table that fails the audit. | `--acks` `--candidates` `--draft` `--key` `--out` `--rows` `--sheet-name` |
-| `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--email` `--key` `--out` `--rows` `--sources` |
+| `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--attach` `--attach-only` `--email` `--key` `--out` `--rows` `--sources` |
 | `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--email` `--key` `--out` `--rows` |
 | `summary_audit.py` | 5c | Summary check: agents with no web access confirm each row's summary against its abstract. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
 | `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--export-included` `--lane` `--ledger` `--list` `--reason` `--rows` `--source` |
@@ -92,7 +92,8 @@ each entry links to its section there.
 - **`handcheck.py`** does not treat a reference with no DOI or arXiv id as
   verified. `--prepare` first searches CrossRef and OpenAlex for a DOI the row
   turns out to have. `--adopt-dois` applies a DOI only when exactly one candidate
-  was found. `--ingest` refuses a result that does not answer the current
+  was found; `--reject` records that a row's candidates are all the wrong paper, so
+  the next `--prepare` sends it to the hand check. `--ingest` refuses a result that does not answer the current
   `--prepare`: the row's `apa` changed since, the ref was never prepared, or the
   result's `apa_sha` echo is missing or differs. It exits 1 on any refused or
   `not-found` result. A later edit to the `apa` lapses the check.
@@ -123,8 +124,9 @@ each entry links to its section there.
 - **`citations.py`** never queries Google Scholar, which has no API. OpenAlex is
   the primary source and Semantic Scholar the cross-check. When the OpenAlex
   count is far below Semantic Scholar's, it re-queries OpenAlex's single-work
-  endpoint and keeps the higher count. It leaves `rows.json` alone; attach the
-  counts with `common.attach_counts`. A row with no DOI gets no count.
+  endpoint and keeps the higher count. It leaves `rows.json` alone unless you pass
+  `--attach` or `--attach-only`. A re-run keeps an earlier count that its own lookup
+  lost. An arXiv-only row is counted by its arXiv DOI; a row with neither gets none.
   See [§5.4](manual.md#54-phase-5b-citation-counts).
 - **`abstracts.py`** does not count a failed fetch as a missing abstract. It
   lists failures in `abstracts_failed.json`, and `summary_audit.py --prepare`

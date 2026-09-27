@@ -48,6 +48,10 @@ timeline (in which case Step 2 never runs). Assign nothing before that answer:
 Using the **frozen** family list below, assign EVERY paper to exactly one family
 (its dominant commitment). Work through the corpus in order; do not skip any ref.
 For large corpora, assign in batches and concatenate — never one rushed pass.
+Do not argue with the spec or invent a family. Instead, record every **hard call**:
+a paper that fits its assigned family badly, or fits two families about equally.
+The hard calls are the only place a wrong family definition shows up, so the
+orchestrator reads every one before rendering.
 
 Approved families:
 {APPROVED_FAMILIES_JSON}
@@ -59,8 +63,11 @@ Return ONLY:
 ```json
 { "principle": "...copied from approved spec...",
   "families": [ ...copied from approved spec... ],
-  "assignments": { "<ref>": "<family key>", ...one entry per paper... } }
+  "assignments": { "<ref>": "<family key>", ...one entry per paper... },
+  "hard_calls": [ {"ref": "<ref>", "assigned": "<key>", "also_fits": "<key or none>",
+                   "why": "one sentence"} ] }
 ```
+(`families.py` ignores `hard_calls`; it is for the orchestrator.)
 
 Save that as `families_input.json`, then run:
 ```

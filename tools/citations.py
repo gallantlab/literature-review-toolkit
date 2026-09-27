@@ -21,11 +21,19 @@ Scholar by arXiv id.
 
 OUTPUT: {key: {"openalex": int|None, "s2": int|None, "s2_influential": int|None,
                "asof": "YYYY-MM-DD"}}
-To show the counts in the spreadsheet, attach them to the rows with
-common.attach_counts (as cite_openalex and cite_s2), then rebuild it.
+The spreadsheet and the figure read the counts from the rows, not from this
+file. Pass --attach to write them onto --rows as cite_openalex, cite_s2,
+cite_s2_influential and cite_asof (through the guarded save, so it refuses to
+overwrite a rows.json another tool changed meanwhile), or --attach-only to attach
+an existing --out without fetching.
 
-  python3 tools/citations.py --rows rows.json --out citation_counts.json \\
+A re-run keeps what an earlier run found: when a lookup returns nothing but the
+existing --out has a count for that row, the earlier count stays (a throttled
+Semantic Scholar batch is not "no citations").
+
+  python3 tools/citations.py --rows rows.json --out citation_counts.json --attach \\
           --email you@inst.edu
+  python3 tools/citations.py --rows rows.json --out citation_counts.json --attach-only
 
 OpenAlex's batch filter sometimes returns a low-count duplicate record. So the
 tool keeps the highest count per DOI, retries each miss by single-work lookup,
@@ -137,7 +145,13 @@ def main():
     ap.add_argument("--asof", default=datetime.date.today().isoformat(),
                     help="snapshot date for the record (default: today)")
     ap.add_argument("--sources", default="openalex,s2", help="comma list: openalex,s2")
+    ap.add_argument("--attach", action="store_true",
+                    help="also write the counts onto --rows (cite_openalex, cite_s2, ...)")
+    ap.add_argument("--attach-only", action="store_true",
+                    help="attach an existing --out onto --rows without fetching")
     args = ap.parse_args()
+    if args.attach_only:
+        return attach(args.rows, args.out, args.key)
     if not args.email:
         ap.error("--email or LITREVIEW_EMAIL required (OpenAlex polite pool)")
 
@@ -146,7 +160,7 @@ def main():
     items, no_doi = [], []
     for r in rows:
         k = r.get(keyf)
-        doi = doi_of(r, lower=True)   # OpenAlex/S2 match lowercase DOIs
+        doi = row_doi(r)
         (items if doi else no_doi).append((k, doi) if doi else k)
 
     counts = {k: {"openalex": None, "s2": None, "s2_influential": None, "asof": args.asof}
@@ -175,7 +189,10 @@ def main():
                 if canon is not None and canon > oa:
                     c["openalex"] = canon
 
+    kept = keep_previous(counts, common.load_optional_json(args.out, {}))
     common.dump_json(counts, args.out)
+    if kept:
+        print(f"  kept {kept} earlier count(s) that this run's lookups did not return")
     oa = sum(1 for c in counts.values() if c["openalex"] is not None)
     s2 = sum(1 for c in counts.values() if c["s2"] is not None)
     print(f"{len(rows)} rows -> {args.out}")
@@ -184,5 +201,43 @@ def main():
         print(f"  no-DOI (blank, e.g. books/blogs/reports): {no_doi}")
 
 
+    if args.attach:
+        return attach(args.rows, args.out, args.key)
+    return 0
+
+
+def row_doi(r):
+    """Lowercase DOI to look a row up by: its DOI, else the arXiv DOI of its arXiv id."""
+    doi = doi_of(r, lower=True)          # OpenAlex/S2 match lowercase DOIs
+    if doi:
+        return doi
+    aid = common.norm_arxiv(common.arxiv_id_of(r) or "")
+    return f"10.48550/arxiv.{aid}".lower() if aid else None
+
+
+def keep_previous(counts, previous):
+    """Keep an earlier non-empty count where this run's lookup came back empty.
+    Returns how many values were kept. The asof date stays this run's."""
+    kept = 0
+    for k, c in counts.items():
+        old = previous.get(k) or {}
+        for f in ("openalex", "s2", "s2_influential"):
+            if c.get(f) is None and old.get(f) is not None:
+                c[f] = old[f]
+                kept += 1
+    return kept
+
+
+def attach(rows_path, counts_path, key=None):
+    """Write counts_path's counts onto rows_path through common.save_rows."""
+    rows = common.load_json(rows_path)
+    mtime = os.path.getmtime(rows_path)
+    counts = common.load_json(counts_path)
+    n = common.attach_counts(rows, counts, common.key_field(rows, key))
+    common.save_rows(rows_path, rows, mtime)
+    print(f"attached counts to {n} of {len(rows)} rows in {rows_path}")
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

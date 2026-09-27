@@ -555,6 +555,8 @@ def attach_counts(rows, counts, keyf=None):
             r["cite_s2"] = c["s2"]
         if c.get("s2_influential") is not None:
             r["cite_s2_influential"] = c["s2_influential"]
+        if c.get("asof"):
+            r["cite_asof"] = c["asof"]
         n += 1
     return n
 

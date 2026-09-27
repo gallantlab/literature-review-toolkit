@@ -380,6 +380,55 @@ check_true("a non-git copy is pointed at the plugin menu / GitHub",
 check_true("the local version is read from the stamped manifest",
            preflight.parse_version(preflight.local_version()) is not None)
 
+import handcheck  # noqa: E402
+
+# merge_lanes possible-pair scan: a short title must match on characters, not by containment
+import merge_lanes  # noqa: E402
+
+check_true("pair_score: a short title contained in a long one is not a possible pair",
+           merge_lanes.pair_score("The human visual cortex",
+                                  "Increased activity in human visual cortex during directed attention") < 0.9)
+check("pair_score: identical short titles still pair",
+      merge_lanes.pair_score("Cortical surface-based analysis", "Cortical surface-based analysis"), 1.0)
+check_true("pair_score: a dropped subtitle on a longer title still pairs",
+           merge_lanes.pair_score("Deep image reconstruction from human brain activity",
+                                  "Deep image reconstruction from human brain activity: a new method") >= 0.9)
+
+# handcheck --reject: a row whose candidate DOIs are all the wrong paper used to
+# bounce between --prepare and --adopt-dois forever, never reaching the hand check.
+_hr = [{"ref": "Y1", "apa": "X, A. (2000). A book. Press.", "search_title": "A book", "search_year": 2000}]
+def _hfake(t):
+    return [{"doi": "10.1/wrong", "title": "A book", "year": "2000", "source": "x"}]
+
+
+
+_hc, _ht = handcheck.prepare(_hr, "ref", searchers=(_hfake,))
+check("reject: before, the row only ever gets the wrong candidate", (list(_hc), _ht), (["Y1"], []))
+check("reject: records the rejected DOIs and names an unknown ref",
+      handcheck.reject(_hr, "ref", ["Y1", "Z9"], _hc, "a review of it", "2026-09-27"),
+      (["Y1"], ["Z9: not in the table"]))
+_hc, _ht = handcheck.prepare(_hr, "ref", searchers=(_hfake,))
+check("reject: the next --prepare sends the row to the hand check", (list(_hc), [t["ref"] for t in _ht]),
+      ([], ["Y1"]))
+
+# citations.py: arXiv-only rows are counted, and a re-run keeps what an earlier run found
+import citations  # noqa: E402
+
+check("citations.row_doi: an arXiv-only row is looked up by its arXiv DOI",
+      citations.row_doi({"ref": "A", "arxiv": "2305.18274"}), "10.48550/arxiv.2305.18274")
+_cnew = {"A": {"openalex": 5, "s2": None, "s2_influential": None, "asof": "2026-09-27"}}
+check("citations.keep_previous keeps an earlier count a throttled lookup lost",
+      (citations.keep_previous(_cnew, {"A": {"openalex": 4, "s2": 9, "s2_influential": 1}}), _cnew["A"]["s2"],
+       _cnew["A"]["openalex"]), (2, 9, 5))
+_ctd = _tf.mkdtemp()
+common.dump_json([{"ref": "A", "doi": "10.1/a"}], os.path.join(_ctd, "rows.json"))
+common.dump_json({"A": {"openalex": 7, "s2": 8, "s2_influential": 1, "asof": "2026-09-27"}},
+                 os.path.join(_ctd, "cc.json"))
+citations.attach(os.path.join(_ctd, "rows.json"), os.path.join(_ctd, "cc.json"))
+check("citations --attach writes the counts onto the rows",
+      {k: common.load_json(os.path.join(_ctd, "rows.json"))[0].get(k) for k in ("cite_openalex", "cite_s2", "cite_asof")},
+      {"cite_openalex": 7, "cite_s2": 8, "cite_asof": "2026-09-27"})
+
 for _f in ("citations.py", "abstracts.py", "forward.py", "handcheck.py"):
     with open(os.path.join(os.path.dirname(common.__file__), _f), encoding="utf-8") as _fh:
         check_true(f"{_f} lets a spent OpenAlex budget abort the run", "OpenAlexBudgetError" in _fh.read())
@@ -1993,6 +2042,8 @@ _cy["year"] = 2018
 _rep = references.audit_rows([_cy], "ref", acks={"CY1": {"cached-year:2019/2020": "old, no longer matches"}})
 check("an ack tied to a stale year pair does not cover a new mismatch on the same row",
       (_rep["failed"], _rep["stale_acks"]), (True, [("CY1", "cached-year:2019/2020")]))
+_rep = references.audit_rows([_grow(summary="")], "ref")
+check("a gated row with an empty summary fails with no-summary", _codes(_rep, "G1"), ["no-summary"])
 _rep = references.audit_rows([_grow()], "ref")
 check("a fully checked gated row passes", (_rep["gated"], _rep["failed"], _rep["defects"]), (True, False, {}))
 _rep = references.audit_rows([_grow(), dict(_grow("G2", "10.1/g2"), doi="10.1/changed")], "ref")
@@ -2000,6 +2051,9 @@ check("a DOI edited after verify fails the audit (verify and summary check both 
       _codes(_rep, "G2"), ["link-doi-mismatch", "unverified", "summary-unchecked"])
 _nd = {"ref": "B1", "apa": "Kuhn, T. S. (1962). The structure of scientific revolutions. U Chicago Press.",
        "summary": "", "canonical_at": common.GATES_SINCE}
+_nd["summary"] = "A book on scientific change."
+_nd["summary_check"] = {"verdict": "supported", "summary_sha": common.summary_sha(_nd["summary"]),
+                        "doi": "", "arxiv": ""}
 check("a DOI-less row without a hand check fails", _codes(references.audit_rows([_grow(), _nd], "ref"), "B1"),
       ["hand-check-missing"])
 _nd_ok = dict(_nd, hand_verified={"verdict": "confirmed", "source_checked": "LoC catalog record",
@@ -2890,8 +2944,16 @@ check_true("...naming the DOI that does not resolve",
 
 
 # references.canonical(): CrossRef 404 -> DataCite; both 404 -> unchanged "DOI does not exist"
+def _checked_summary(r, text="Describes the software."):
+    """Give a gated fixture row a summary with a matching supported summary check."""
+    r["summary"] = text
+    d, a = common.ids_of(r)
+    r["summary_check"] = {"verdict": "supported", "summary_sha": common.summary_sha(text), "doi": d, "arxiv": a}
+    return r
+
+
 def _dc_row(ref="DC1", doi="10.5281/zenodo.3509134"):
-    return _stamp({"ref": ref, "doi": doi, "apa": ""})
+    return _checked_summary(_stamp({"ref": ref, "doi": doi, "apa": ""}))
 
 
 with _patched(common, crossref_work=_cr_404, datacite_work=lambda d, fv="": dict(_dc_rec)):
@@ -3237,7 +3299,9 @@ check_true("candidates --list skips the _runs record", "_runs" not in _i8out.get
 check("apa_sha ignores case and whitespace", common.apa_sha(" Kuhn,  T. (1962). The Structure. "),
       common.apa_sha("kuhn, t. (1962). the structure."))
 _i9rows = [{"ref": "B1", "apa": "Kuhn, T. S. (1962). The structure of scientific revolutions. U Chicago Press.",
-            "summary": "", "canonical_at": common.GATES_SINCE}]
+            "summary": "A book on scientific change.", "canonical_at": common.GATES_SINCE,
+            "summary_check": {"verdict": "supported", "summary_sha": common.summary_sha("A book on scientific change."),
+                              "doi": "", "arxiv": ""}}]
 handcheck.ingest(_i9rows, "ref", [{"ref": "B1", "verdict": "confirmed", "source_checked": "LoC record",
                                    "apa_sha": common.apa_sha(_i9rows[0]["apa"])}],
                  [{"ref": "B1", "apa_sha": common.apa_sha(_i9rows[0]["apa"])}], "2026-09-25")
@@ -4260,6 +4324,11 @@ _rep = references.audit_rows(_m2rows, "ref", ledger=_m2L,
 check("M2: partial-forward-run is ack-able", _rep["failed"], False)
 _m2L["_runs"]["forward"]["n_papers"] = 2
 check("M2: a run over every sourced row does not warn",
+      references.audit_rows(_m2rows, "ref", ledger=_m2L)["unacked"].get("*", []), [])
+# a row the passes themselves added (an included candidate) is not "added since"
+_m2L["_runs"]["forward"]["n_papers"] = 1
+_m2L["10.1/p2"] = {"decision": "include", "reason": "cited by 12 corpus papers", "sources": ["forward"]}
+check("M2: a candidate the passes added does not trip partial-<source>-run",
       references.audit_rows(_m2rows, "ref", ledger=_m2L)["unacked"].get("*", []), [])
 
 # ---- final review M3: a non-object candidates.json is refused by spreadsheet (2026-09-26) ----

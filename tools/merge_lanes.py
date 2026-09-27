@@ -192,6 +192,25 @@ def unconfirmed_message(d):
             "re-merge, or send it to a recovery lane")
 
 
+PAIR_MIN_WORDS = 4
+
+
+def pair_score(a, b):
+    """title_score for the corpus-wide possible-pair scan, except that a short
+    title (under PAIR_MIN_WORDS content words) must match on characters: word
+    containment alone made "The human visual cortex" pair with 60 longer titles
+    on one 1,159-row merge. A dropped subtitle on a longer title still scores high."""
+    s = common.title_score(a, b)
+    if s is None:
+        return None
+    na, nb = common._title_words(a), common._title_words(b)
+    short = min(len([w for w in t.split() if w not in common._TITLE_STOP]) for t in (na, nb))
+    if short < PAIR_MIN_WORDS:
+        import difflib
+        return difflib.SequenceMatcher(None, na, nb).ratio()
+    return s
+
+
 def merge(lanes):
     rows, idx, refs = [], {}, set()
     rep = {"lanes": [], "duplicates": [], "conflicts": [], "possible_pairs": [], "rejected": [],
@@ -244,7 +263,7 @@ def merge(lanes):
     titles = [(r["ref"], r.get("search_title") or "") for r in rows]
     for i, (ka, ta) in enumerate(titles):
         for kb, tb in titles[i + 1:]:
-            s = common.title_score(ta, tb)
+            s = pair_score(ta, tb)
             if s is not None and s >= PAIR_MATCH:
                 rep["possible_pairs"].append({"a": ka, "b": kb, "score": round(s, 3)})
     for lane in lanes:

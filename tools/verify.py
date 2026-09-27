@@ -960,11 +960,12 @@ def main():
         if not args.rows:
             ap.error("--override needs --rows")
         rows = common.load_json(args.rows)
+        loaded = os.path.getmtime(args.rows)     # refuse to clobber a concurrent writer
         try:
             override(rows, common.key_field(rows, args.key), args.override, args.reason, args.asof)
         except ValueError as e:
             ap.error(str(e))
-        common.dump_json(rows, args.rows)
+        common.save_rows(args.rows, rows, loaded)
         print(f"recorded an override for {args.override}", file=sys.stderr)
         return
 

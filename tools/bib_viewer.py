@@ -38,9 +38,9 @@ For a corpus with no review attached, it writes a complete viewer page:
 
 Without --author the page carries no provenance note, and the tool warns.
 
-Check the filter by running it, never by reading it: a project's
-`verify_bib_filter.mjs` runs this module's JS against a stub DOM built from the
-rendered entries. The toolkit does not ship that script.
+Check the filter by running it, never by reading it:
+`node tools/checks/verify_bib_filter.mjs <page>.html` runs this module's JS
+against a stub DOM built from the rendered entries.
 """
 import argparse
 import html

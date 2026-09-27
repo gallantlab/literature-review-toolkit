@@ -614,6 +614,9 @@ text it shows (the row's `apa`, else its `search_apa`). An existing
 **`--adopt-dois`** gives each row with exactly one candidate that DOI, so the row
 goes through `verify.py` like any other. A row with several candidates is left
 alone and named. A row no longer in the table is reported, not silently dropped.
+When every candidate is the wrong paper, run `handcheck.py --rows rows.json --reject
+<ref> --reason "..."`: the next `--prepare` skips those DOIs and sends the row to the
+hand check.
 
 **The hand-check agent** checks each work against its own source: a library
 catalog, the publisher's page, or the work itself, never another paper's citation
@@ -720,16 +723,12 @@ spreadsheet's `Cite` columns and the figure's dot sizes read the counts from the
 rows, as `cite_openalex` and `cite_s2`. To attach them, run:
 
 ```bash
-python3 - <<'PY'
-import os, sys; sys.path.insert(0, "../tools")
-import common
-rows = common.load_json("rows.json")
-loaded = os.path.getmtime("rows.json")
-n = common.attach_counts(rows, common.load_json("citation_counts.json"))
-common.save_rows("rows.json", rows, loaded)
-print(f"attached counts to {n} rows")
-PY
+python3 tools/citations.py --rows rows.json --out citation_counts.json --attach-only
 ```
+
+`--attach` does both steps in one run. Attaching writes `rows.json`, so it waits until
+no other tool is writing it. A re-run keeps an earlier count wherever its own lookup
+came back empty, so re-running to fill Semantic Scholar gaps never loses coverage.
 
 !!! warning "A famous old paper with a single-digit count is an undercount"
     OpenAlex's batch endpoint sometimes returns a stub record. Tolman (1948) came
@@ -1093,8 +1092,10 @@ python3 ../tools/bib_viewer.py --rows rows.json --families families.json \
 The viewer can also be embedded in a page (`bib_viewer.render()`, plus
 `bib_viewer.CSS` and `bib_viewer.JS`). Pass `provenance=False` where the masthead
 already carries the disclosure. Verify the viewer's filter by running it, not by
-reading it: `node verify_bib_filter.mjs <page>.html` executes the page's script
-against a stub DOM and checks what is visible.
+reading it: `node tools/checks/verify_bib_filter.mjs <page>.html` executes the
+page's script against a stub DOM and checks what is visible. The same folder holds
+`verify_hover.mjs` and `verify_nav_order.mjs` for the timeline. They need Node.js
+and no browser.
 
 ### 6.3 Phase 8: hand off
 
@@ -1318,6 +1319,7 @@ Do not relax the gate.
 | `unverified (...)` | `verify.py --rows rows.json --only <refs>`, then re-canon those rows |
 | `hand-check-missing` | `handcheck.py --prepare`, the hand-check agent, `--ingest` ([§5.2](#52-phase-3-hand-check-the-references-with-no-doi)) |
 | `summary-unchecked`, `summary-flagged` | `summary_audit.py`; fix a flagged summary and check it again ([§5.5](#55-phase-5c-check-each-summary-against-its-abstract)) |
+| `no-summary` | write a summary from the abstract, then `summary_audit.py` (rows exported from the candidate ledger arrive without one) |
 | `candidates-pending` | `candidates.py --list pending`, then `--decide` each ([§5.6](#56-phase-6-cross-citation-pass-and-the-candidate-ledger)) |
 | `candidate ... is marked include but is not in the table` | `--export-included`, `merge_lanes.py --append`, then verify |
 | `link-doi-mismatch` | make the row's `link` the DOI URL of its `doi` |

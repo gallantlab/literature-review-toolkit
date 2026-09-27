@@ -9,6 +9,16 @@ Do NOT trust its citations — verify them all in Phase 3.
 preflight, keep the "*Exception — a CAPPED search*" sentence under "What to
 return"; otherwise delete it before sending.
 
+**Seed titles.** `{SEED_TITLES}` is an optional bullet list of landmark TITLES the lane
+should cover, never author names (remembered author names have injected fabricated
+attributions; about a third of remembered titles turn out not to exist as typed).
+Delete the "Landmark titles" section if you have none.
+
+**Lab mode.** Add to the topic definition: "A paper with {LAB_PI} as an author is the
+lab's own; do not put it in `papers`. List it in `deferred` with `to_lane: "L"`" when
+the lab's record is merged as lane `L`, so a deferral the record lacks exposes a gap
+in the lab's record.
+
 **Antecedents variant (Phase 2b).** This same template is reused for the required
 antecedents pass. For that pass, FLIP the tier emphasis: the target is
 foundational / classic / highly-cited work that PRE-DATES the modern literature
@@ -65,8 +75,24 @@ Use WebSearch and WebFetch. Try multiple query variants for each angle:
 
 Search both Google Scholar (via `scholar.google.com` URLs) and PubMed
 (`pubmed.ncbi.nlm.nih.gov`). Google Scholar often blocks automated fetches; if
-it does, use PubMed, arXiv and publisher pages instead. Verify each paper actually exists by fetching its abstract page
-before including it.
+it does, use PubMed, arXiv and publisher pages instead. Follow the reference lists
+and "cited by" lists of the landmark papers you find; that is usually more
+productive than more query variants.
+
+If WebSearch stops working (the budget is shared by every agent running at once),
+continue through PubMed E-utilities (`eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi`),
+Semantic Scholar (`api.semanticscholar.org/graph/v1/paper/search`), OpenAlex
+(`api.openalex.org/works?search=`), CrossRef (`api.crossref.org/works?query=`) and the
+arXiv API with WebFetch. That is a first-class route, not a degradation.
+
+## Landmark titles this lane should cover
+
+These are paper TITLES ONLY, from memory, and some may be wrong or not exist. Find
+each one, read its real title, authors and year off the landing page, and include it
+if it fits. Do not trust an author name you have not read off a landing page. If a
+title does not exist under any similar wording, list it in `could_not_confirm`.
+
+{SEED_TITLES}
 
 ## What to return
 
@@ -81,7 +107,7 @@ Write it incrementally if you are worried about time, so no work is lost.
  "papers": [
    {"ref": "{LANE_KEY}-01", "doi": "10.xxxx/yyyy", "arxiv": "", "link": "https://doi.org/10.xxxx/yyyy",
     "first_author": "Family, I. I.", "year": 2022, "title": "Title as on the landing page",
-    "apa": "", "summary": "3-5 sentences from the actual abstract; do not invert findings.",
+    "apa": "", "summary": "2-4 sentences written ONLY from the abstract.",
     "tag": "classic", "topic": "{TOPIC_NAME}", "source": "search", "note": "", "lane_fit": ""}],
  "deferred": [{"title": "...", "doi": "", "first_author": "", "year": "", "reason": "fits lane X better",
               "to_lane": "X"}],
@@ -95,6 +121,11 @@ Write it incrementally if you are worried about time, so no work is lost.
   `apa` from the title page or publisher record, with every author.
 - `first_author`, `year` and `title` are read off the landing page. They are what
   the next phase verifies the DOI against.
+- `summary`: 2-4 sentences written ONLY from the paper's abstract: what it did and what
+  it found. No priority, impact or lineage claims ("the first", "classic", "seminal")
+  unless the abstract makes them, and no details the abstract does not state. Every
+  summary is checked against the abstract later (Phase 5c); on one build this rule cut
+  unsupported summaries from 41% to 5%.
 - **Never drop an on-topic paper because another search might own it.** Include it
   and set `lane_fit` to the better-fitting area; duplicates are removed later.
 - **The target is a floor, not a cap.** Never leave out an on-topic paper to stay near
@@ -119,7 +150,28 @@ Balance `tag` across: `classic` | `recent-review` | `recent-empirical` |
 
 Quality over quantity for pre-{TIER_BOUNDARY_YEAR}, err toward inclusion for recent work.
 
-**Important:** Many published papers have similar titles. Confirm the first
-author and year on the actual landing page (PubMed, journal, or arXiv), not from
-memory or a search snippet. Do not invent author names or invert findings — the
-review needs accurate citations.
+## Verification duty — read this twice
+
+Every citation you return is machine-verified against CrossRef, DataCite, PubMed and
+the arXiv API in the next phase. In past runs about one in four agent-returned
+citations had a fabricated author list, a wrong year, a mis-copied DOI or arXiv id, or
+a reversed conclusion. With this section in the brief, a 1,050-paper build had none.
+
+1. **Visit the actual landing page** for every paper (PubMed, the journal, bioRxiv, the
+   arXiv abstract page) and read the author list off it. Many papers have similar
+   titles; do not reconstruct authors from memory or a search snippet.
+2. **Confirm the first author and the year** on that page. Long author lists are where
+   first authors get mis-ordered.
+3. **Confirm the DOI or arXiv id resolves to the paper you mean**, not just that it
+   resolves: invented DOIs often resolve to an unrelated real paper.
+4. **Read the abstract before writing the summary.** Do not invert the finding.
+5. Judge a DOI by what it resolves to, never by the shape of its string.
+6. If you cannot confirm a paper, leave it out and list it in `could_not_confirm`.
+
+## Output
+
+Write the file incrementally (write what you have, then extend it), so a stall loses
+nothing. If you need a helper script, put it only in `{SCRATCH_DIR}` (other lanes run
+at the same time and share the project folder). Do NOT delegate to subagents. Then
+reply with only: the count of papers written, the year range, and the numbers
+deferred, excluded and could not confirm.

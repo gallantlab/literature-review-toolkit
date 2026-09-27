@@ -31,13 +31,13 @@ and CI fails if any copy is stale.
 | `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--email` `--no-update-check` `--offline` `--papers` |
 | `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--out` `--raw` `--report` |
 | `verify.py` | 3 | Verify a list of citations against CrossRef, DataCite, arXiv, PMC and PubMed. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
-| `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--email` `--ingest` `--input` `--key` `--prepare` `--rows` |
+| `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--candidates` `--email` `--ingest` `--input` `--key` `--prepare` `--reason` `--reject` `--rows` |
 | `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--asof` `--audit` `--candidates` `--email` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
 | `sentence_case.py` | 3f | Post-canon pass: propose strict APA-7 sentence case for reference titles, for a human to review. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
 | `download.py` | 4 (opt-in) | Download open-access PDFs for a list of papers, only when the user asks for them. | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
 | `reconcile_downloads.py` | 4 (opt-in) | Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
 | `spreadsheet.py` | 5 | Build the bibliography .xlsx from rows.json, and refuse a table that fails the audit. | `--acks` `--candidates` `--draft` `--key` `--out` `--rows` `--sheet-name` |
-| `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--email` `--key` `--out` `--rows` `--sources` |
+| `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--attach` `--attach-only` `--email` `--key` `--out` `--rows` `--sources` |
 | `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--email` `--key` `--out` `--rows` |
 | `summary_audit.py` | 5c | Summary check: agents with no web access confirm each row's summary against its abstract. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
 | `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--export-included` `--lane` `--ledger` `--list` `--reason` `--rows` `--source` |
@@ -192,7 +192,9 @@ python3 tools/handcheck.py --rows rows.json --ingest handcheck_result.json
 
 `--prepare` first searches CrossRef and OpenAlex for a DOI the row lacks (same
 title, same year). `--adopt-dois` gives each row with exactly one candidate that
-DOI, so it goes through `verify.py` instead. The other rows go to
+DOI, so it goes through `verify.py` instead. When every candidate for a row is the
+wrong paper, `--reject REF --reason "..."` records that on the row, and the next
+`--prepare` sends it to the hand check instead. The other rows go to
 `handcheck_input.json`, with `handcheck_brief.md` for a checking agent, who
 confirms or corrects each reference against a library catalog, the publisher, or
 the work itself. `--ingest` records each result on its row as `hand_verified`.
@@ -399,8 +401,9 @@ Semantic Scholar by arXiv id. OpenAlex's batch endpoint sometimes returns a
 low-count duplicate record. So the script keeps the highest count per DOI, and
 re-queries the single-work endpoint when OpenAlex is far below Semantic Scholar.
 Still, check that no famous old paper shows a single-digit count. To show the
-counts, attach them to the rows as `cite_openalex` and `cite_s2`
-(`common.attach_counts`), then rebuild the spreadsheet. A spent OpenAlex budget
+counts, attach them to the rows as `cite_openalex` and `cite_s2` with `--attach`
+(fetch and attach) or `--attach-only` (attach an existing file), then rebuild the
+spreadsheet. A re-run keeps an earlier count where its own lookup came back empty. A spent OpenAlex budget
 stops the run with `OpenAlexBudgetError`.
 
 ## Phase 5c: `abstracts.py` and `summary_audit.py`

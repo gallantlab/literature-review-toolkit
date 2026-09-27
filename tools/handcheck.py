@@ -22,11 +22,16 @@ row without a hand-check record. This tool does the work around the hand check:
                       input written before that binding existed), or when the
                       result's own `apa_sha` echo is missing or differs from the
                       input's (a result for an older --prepare).
+  --reject REF        the row's candidate DOIs (in --candidates) are all the wrong
+                      paper: record them on the row as `doi_rejected`, with the
+                      required --reason, so the next --prepare skips them and
+                      sends the row to the hand check. Repeat for several rows.
   --input FILE        the hand-check input that --ingest checks against
                       (default: handcheck_input.json beside --rows)
 
     python3 tools/handcheck.py --rows rows.json --prepare --email you@inst.edu
     python3 tools/handcheck.py --rows rows.json --adopt-dois handcheck_doi_candidates.json
+    python3 tools/handcheck.py --rows rows.json --reject Y-19 --reason "both candidates are reviews of it"
     python3 tools/handcheck.py --rows rows.json --ingest handcheck_result.json
 
 Result file: a JSON list of {"ref", "apa_sha" (copied from the input entry),
@@ -144,7 +149,8 @@ def prepare(rows, keyf, searchers=(search_crossref, search_openalex)):
     for r in rows:
         if not needs_check(r):
             continue
-        hits = find_doi(r, searchers)
+        rejected = {d.lower() for d in (r.get("doi_rejected") or {}).get("dois", [])}
+        hits = [h for h in find_doi(r, searchers) if h["doi"].lower() not in rejected]
         if hits:
             doi_cands[r.get(keyf)] = hits
         else:
@@ -177,6 +183,25 @@ def adopt(rows, keyf, doi_cands):
         by[k].pop("hand_verified", None)
         adopted.append(k)
     return adopted, ambiguous
+
+
+def reject(rows, keyf, refs, doi_cands, reason, asof):
+    """Record that every candidate DOI listed for each ref is the wrong paper.
+    Returns (recorded refs, errors). The DOIs are appended to any rejected before."""
+    by = {r.get(keyf): r for r in rows}
+    done, errors = [], []
+    for k in refs:
+        if k not in by:
+            errors.append(f"{k}: not in the table")
+            continue
+        dois = [c["doi"] for c in doi_cands.get(k, [])]
+        if not dois:
+            errors.append(f"{k}: no candidate DOIs recorded for it in the candidates file")
+            continue
+        prev = (by[k].get("doi_rejected") or {}).get("dois", [])
+        by[k]["doi_rejected"] = {"dois": sorted(set(prev) | set(dois)), "reason": reason, "at": asof}
+        done.append(k)
+    return done, errors
 
 
 def ingest(rows, keyf, results, hc_input, asof):
@@ -251,11 +276,19 @@ def main():
     ap.add_argument("--input", metavar="FILE",
                     help="hand-check input recorded at --prepare, used to detect an apa changed "
                          "since (default: handcheck_input.json beside --rows)")
+    ap.add_argument("--reject", metavar="REF", action="append",
+                    help="the row's candidate DOIs are all wrong: skip them and hand-check it (repeatable)")
+    ap.add_argument("--reason", help="why the candidates are wrong (required with --reject)")
+    ap.add_argument("--candidates", metavar="FILE",
+                    help="candidates file for --reject "
+                         "(default: handcheck_doi_candidates.json beside --rows)")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"))
     ap.add_argument("--asof", default=datetime.date.today().isoformat())
     args = ap.parse_args()
-    if sum(bool(x) for x in (args.prepare, args.adopt_dois, args.ingest)) != 1:
-        ap.error("give exactly one of --prepare, --adopt-dois, --ingest")
+    if sum(bool(x) for x in (args.prepare, args.adopt_dois, args.ingest, args.reject)) != 1:
+        ap.error("give exactly one of --prepare, --adopt-dois, --reject, --ingest")
+    if args.reject and not (args.reason or "").strip():
+        ap.error("--reject needs --reason")
     rows = common.load_json(args.rows)
     loaded = os.path.getmtime(args.rows)         # writes refuse a file changed since
     keyf = common.key_field(rows, args.key)
@@ -286,6 +319,17 @@ def main():
         for k in ambiguous:
             print(f"  ⚠ {k}: several candidate DOIs; keep one in the file and re-run")
         return
+    if args.reject:
+        cpath = args.candidates or os.path.join(here, "handcheck_doi_candidates.json")
+        done, errors = reject(rows, keyf, args.reject, common.load_json(cpath),
+                              args.reason.strip(), args.asof)
+        if done:
+            common.save_rows(args.rows, rows, loaded)
+        print(f"rejected the candidate DOIs of {len(done)} row(s): {', '.join(done) or '-'}; "
+              "re-run --prepare to send them to the hand check")
+        for e in errors:
+            print(f"  ✗ {e}")
+        sys.exit(1 if errors else 0)
     input_path = args.input or os.path.join(here, "handcheck_input.json")
     n, errors = ingest(rows, keyf, common.load_json(args.ingest), common.load_optional_json(input_path, []),
                        args.asof)

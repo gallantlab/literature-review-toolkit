@@ -490,6 +490,10 @@ def row_gate_defects(r, warn):
             warn("no-abstract", "the summary has no abstract to be checked against")
         elif sc.get("verdict") != "supported":
             d.append(f"summary-unchecked (unknown verdict {sc.get('verdict')!r})")
+    else:
+        # an empty summary skipped the summary check entirely, so rows exported from the
+        # candidate ledger (which carry none) passed the gate without one
+        d.append("no-summary (write one from the abstract, then run summary_audit.py)")
     return d
 
 
@@ -558,7 +562,12 @@ def audit_rows(rows, keyf, acks=None, ledger=None):
         else:
             corpus += candidates.candidate_defects(ledger, candidates.corpus_dois(rows))
             runs = ledger.get("_runs") if isinstance(ledger.get("_runs"), dict) else {}
-            n_sourced = sum(1 for r in rows if doi_of(r) or common.arxiv_id_of(r))
+            # Rows the passes themselves brought in (included candidates) cannot have been
+            # read by the run that proposed them; counting them made every build that
+            # appended candidates warn partial-*-run.
+            from_passes = {d for d, c in candidates.entries(ledger) if c.get("decision") == "include"}
+            n_sourced = sum(1 for r in rows if (doi_of(r) or common.arxiv_id_of(r))
+                            and not (candidates.corpus_dois([r]) & from_passes))
             for src, what in (("xref", "backward cross-citation (xref.py)"),
                               ("forward", "forward citation (forward.py)")):
                 if src not in runs:
@@ -571,7 +580,8 @@ def audit_rows(rows, keyf, acks=None, ledger=None):
                 n_run = (runs.get(src) or {}).get("n_papers")
                 if src in runs and isinstance(n_run, int) and n_run < n_sourced:
                     warn("*", f"partial-{src}-run", f"the last {what} run read {n_run} paper(s) but the "
-                         f"table has {n_sourced} with a DOI/arXiv id (rows added since?): re-run it and "
+                         f"table has {n_sourced} with a DOI/arXiv id, not counting the candidates the passes "
+                         "added (rows added since?): re-run it and "
                          f"candidates.py --add, or acknowledge why the new rows need no {src} pass")
     unacked = {}
     for k, ws in warnings.items():
@@ -698,9 +708,11 @@ def main():
         ap.error("--repair writes; --audit reports. Run --repair, then --audit to confirm.")
     if args.repair and args.list_acks:
         ap.error("--repair writes; --list-acks reports. Run --repair, then --list-acks to confirm.")
-    if not args.email:
+    offline = args.audit or args.list_acks or args.repair       # these make no network request
+    if not args.email and not offline:
         ap.error("--email or LITREVIEW_EMAIL required (CrossRef/arXiv polite pool)")
-    common.set_user_agent(args.email)
+    if args.email:
+        common.set_user_agent(args.email)
 
     rows = common.load_json(args.rows)
     loaded = os.path.getmtime(args.rows)         # the write-back refuses a file changed since
@@ -754,8 +766,8 @@ def main():
         print(f"  ✗ {k}: fetch failed twice — NOT rebuilt, its apa is not canonical; "
               f"re-run with --only {k}")
     for k in result["missing"]:
-        print(f"  ✗ {k}: DOI does not exist (CrossRef 404) — NOT rebuilt; fix or drop the DOI, "
-              "then re-verify")
+        print(f"  ✗ {k}: DOI does not exist (404 from CrossRef and DataCite) — NOT rebuilt; "
+              "fix or drop the DOI, then re-verify")
     for k in result["unverified"]:
         print(f"  ✗ {k}: not verified for its current DOI/arXiv id — NOT rebuilt. Run "
               "verify.py --rows first, or clear a false alarm with verify.py --override")

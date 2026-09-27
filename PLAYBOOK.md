@@ -271,6 +271,10 @@ fan-out. Fill every placeholder, and grep the prompt for `{` before sending:
 - `{LANE_KEY}`: the lane's short key, used in `"lane"` and as each `ref` prefix
   (`<LANE_KEY>-01`, …). Refs must be unique across all lanes; the merge refuses a
   repeated ref.
+- `{SEED_TITLES}`: landmark titles only (or delete that section); `{SCRATCH_DIR}`: a
+  per-lane folder such as `scratch/<lane>/` for helper scripts (lanes that shared one
+  folder overwrote each other's scripts); in lab mode, `{LAB_PI}` for the rule that
+  sends the lab's own papers to lane `L` as deferrals (Lab mode, L4c).
 
 For a CAPPED search (Phase 0, choice 2), keep the template's capped-search
 sentence; otherwise delete it. Keep the template's verification duty (landing page,
@@ -542,9 +546,9 @@ python3 tools/handcheck.py --rows rows.json --ingest handcheck_result.json
 2. **`--adopt-dois`** (a writer; after verify finishes) gives each row with exactly
    one candidate that DOI, so it then goes through `verify.py --only`. A row with
    several candidates is left alone and named: keep the right one in the file and
-   rerun `--adopt-dois`. (If none is the right paper, `--prepare` will propose the
-   same candidates again, so the row never reaches the hand-check input; raise it
-   with the user.) An adopted DOI that is wrong fails verify against the row's
+   rerun `--adopt-dois`. If none is the right paper, run `--reject REF --reason
+   "..."` (a writer): it records the candidates on the row as `doi_rejected`, and the
+   next `--prepare` skips them and sends the row to the hand-check input. An adopted DOI that is wrong fails verify against the row's
    claim. A candidate for a ref no longer in the table is reported, not skipped
    silently.
 3. **The hand-check agent** checks every author, the year, title, edition,
@@ -617,7 +621,8 @@ standing in for a quote or dash), `unicode-hyphen` (U+2010/U+2011 in a name),
 `Poline, J. -.`), `replacement-char` (U+FFFD mojibake), a truncated or empty
 venue, and an `uppercase-title run`. On a gated table the reference gates add:
 `unverified`, `link-doi-mismatch`, `hand-check-missing` (Phase 3e),
-`summary-unchecked` / `summary-flagged` (Phase 5c), and the candidate-ledger
+`summary-unchecked` / `summary-flagged` / `no-summary` (Phase 5c; an empty summary
+is a defect, so rows exported from the candidate ledger need one), and the candidate-ledger
 defects (Phase 6). A DOI-less item is not a defect; it is listed as a manual ref
 and needs its hand check.
 
@@ -761,9 +766,13 @@ requests, so it cannot be used. `tools/citations.py` queries two databases by DO
   OpenAlex counts stand. Without `S2_API_KEY` expect gaps.
 
 ```bash
-python3 tools/citations.py --rows rows.json --out citation_counts.json --asof <YYYY-MM-DD>
-python3 -c "import sys; sys.path.insert(0, 'tools'); import common; r = common.load_json('rows.json'); print(common.attach_counts(r, common.load_json('citation_counts.json')), 'rows'); common.dump_json(r, 'rows.json')"
+python3 tools/citations.py --rows rows.json --out citation_counts.json   # fetch (reads rows.json only)
+python3 tools/citations.py --rows rows.json --out citation_counts.json --attach-only   # write onto rows
 ```
+
+A re-run keeps an earlier count wherever this run's lookup came back empty (a
+throttled S2 batch is not "no citations"), so re-running to fill S2 gaps never loses
+coverage.
 
 `citations.py` only reads the rows (it may run during canon), but the second line
 writes `rows.json`, so run it when no other writer is running ("Running steps at
@@ -1076,8 +1085,9 @@ before that clamp, a long claim ran through the next family's title.
   tie-breaks on the dot's drawn y. The sort looked right through two code reviews.
 - *Run interactive code; do not read it.* The ordering bug was caught by executing
   the figure's own `ORDER` expression against its embedded data
-  (`verify_nav_order.mjs`), the same tactic as `verify_hover.mjs`. Both harnesses
-  live in the BIBLIOGRAPHY workspace, not in this repo.
+  (`tools/checks/verify_nav_order.mjs`), the same tactic as
+  `tools/checks/verify_hover.mjs`. Run both (`node tools/checks/<name>.mjs <figure>.html`,
+  no browser needed) after any change to the figure's interactive code.
 - *Renders must be deterministic.* Landmarks were picked into a `set` of strings,
   whose order Python randomizes per process: two renders of identical input moved 5
   of 57 labels, so the re-render harness (which diffs against the delivered file) was
@@ -1585,13 +1595,13 @@ in `tools/README.md` and `docs/tools.md`.
 | `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--email` `--no-update-check` `--offline` `--papers` |
 | `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--out` `--raw` `--report` |
 | `verify.py` | 3 | Verify a list of citations against CrossRef, DataCite, arXiv, PMC and PubMed. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
-| `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--email` `--ingest` `--input` `--key` `--prepare` `--rows` |
+| `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--candidates` `--email` `--ingest` `--input` `--key` `--prepare` `--reason` `--reject` `--rows` |
 | `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--asof` `--audit` `--candidates` `--email` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
 | `sentence_case.py` | 3f | Post-canon pass: propose strict APA-7 sentence case for reference titles, for a human to review. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
 | `download.py` | 4 (opt-in) | Download open-access PDFs for a list of papers, only when the user asks for them. | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
 | `reconcile_downloads.py` | 4 (opt-in) | Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
 | `spreadsheet.py` | 5 | Build the bibliography .xlsx from rows.json, and refuse a table that fails the audit. | `--acks` `--candidates` `--draft` `--key` `--out` `--rows` `--sheet-name` |
-| `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--email` `--key` `--out` `--rows` `--sources` |
+| `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--attach` `--attach-only` `--email` `--key` `--out` `--rows` `--sources` |
 | `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--email` `--key` `--out` `--rows` |
 | `summary_audit.py` | 5c | Summary check: agents with no web access confirm each row's summary against its abstract. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
 | `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--export-included` `--lane` `--ledger` `--list` `--reason` `--rows` `--source` |
@@ -1719,7 +1729,7 @@ rerunning an EXISTING corpus follows "Upgrading an old corpus". Then, in order:
        citations.py (5b) -> xref.py --internal-out internal_citations.json
        (6) -> abstracts.py (5c)
     Then, after canon has finished (both write rows.json): attach the counts
-    (common.attach_counts; Phase 5b) and run forward.py (6).
+    (citations.py --attach-only; Phase 5b) and run forward.py (6).
 
  6. candidates.py --add both outputs; decide every pending one with a
     reason; --export-included; merge_lanes.py --append; then verify --only,
