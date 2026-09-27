@@ -7,7 +7,8 @@ are tried in order: the arXiv API for arXiv papers, then OpenAlex (50 DOIs per
 request), then Semantic Scholar (500 ids per request), then PubMed for rows with
 a `pmid`, then PubMed by DOI (50 per request), then Europe PMC by DOI (20 per
 request). The last two found 150 of the 194 abstracts the others missed on one
-1,215-row build, which a landing-page agent had to collect before. A source's abstract field sometimes holds something else: a journal's
+1,215-row build, which a landing-page agent had to collect before. A source's
+abstract field sometimes holds something else: a journal's
 self-description, JSTOR's terms of use, a citation line, or an author list and
 venue. not_an_abstract() refuses such a text, the next source is tried, and a
 text no later source replaced is reported.
