@@ -10,9 +10,9 @@ candidates, which the run that proposed them cannot have read). `complete` and `
 come from the <FILE>.run.json sidecar that xref.py and forward.py write beside
 their --out; a missing sidecar records complete=False. --add refuses a sidecar
 written by a different tool than --source names, and skips candidates the corpus
-already holds. A candidate whose title matches a table row (common.title_match)
-is the same paper under another DOI, usually a preprint of a published paper:
---add excludes it at once, naming the row.
+already holds. A candidate whose title matches a table row (common.title_match),
+with years no more than DUP_YEARS apart, is the same paper under another DOI,
+usually a preprint of a published paper: --add excludes it at once, naming the row.
 
 Deciding the rest is agent work, and the tool frames it:
 
@@ -126,14 +126,36 @@ def run_record(sidecar, source):
     return bool(sidecar.get("complete")), (n if isinstance(n, int) else None)
 
 
+# A preprint and its published version are at most this many years apart. Past
+# it, a matching title is a different paper: a 2025 "Python toolbox for RSA" is
+# not the 2014 "toolbox for RSA".
+DUP_YEARS = 3
+
+
+def _year(v):
+    m = re.search(r"\d{4}", str(v or ""))
+    return int(m.group(0)) if m else None
+
+
 def row_titles(rows, keyf):
-    """[(key, title)] for every row with a title (the search claim, else the apa's)."""
+    """[(key, title, year)] for every row with a title (the search claim, else the apa's)."""
     out = []
     for r in rows:
-        t = r.get("search_title") or ((common.parse_apa(r.get("apa") or "") or {}).get("title") or "")
+        apa = common.parse_apa(r.get("apa") or "") or {}
+        t = r.get("search_title") or apa.get("title") or ""
         if t.strip():
-            out.append((r.get(keyf, "?"), t))
+            out.append((r.get(keyf, "?"), t, _year(r.get("search_year") or apa.get("year"))))
     return out
+
+
+def same_paper(title, year, titles):
+    """The key of the row in `titles` that is this candidate under another DOI:
+    a matching title, and years (when both known) within DUP_YEARS. Else None."""
+    y = _year(year)
+    for k, rt, ry in titles:
+        if title and common.title_match(title, rt) and (y is None or ry is None or abs(y - ry) <= DUP_YEARS):
+            return k
+    return None
 
 
 def add(ledger, found, source, corpus, asof=None, complete=True, n_papers=None, titles=()):
@@ -163,8 +185,7 @@ def add(ledger, found, source, corpus, asof=None, complete=True, n_papers=None, 
             ledger[d] = {"title": e.get("title") or "", "year": str(e.get("year") or ""),
                          "first_author": e.get("first_author") or e.get("author") or "",
                          "sources": {source: score}, "decision": "pending", "reason": "", "at": ""}
-            t = ledger[d]["title"]
-            same = next((k for k, rt in titles if t and common.title_match(t, rt)), None)
+            same = same_paper(ledger[d]["title"], ledger[d]["year"], titles)
             if same:
                 ledger[d].update(decision="exclude", at=asof or datetime.date.today().isoformat(),
                                  reason=f"already in the table as {same} under another DOI (same title)")

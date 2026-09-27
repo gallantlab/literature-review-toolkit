@@ -862,9 +862,9 @@ candidates, which the run that proposed them cannot have read). `complete` and `
 come from the <FILE>.run.json sidecar that xref.py and forward.py write beside
 their --out; a missing sidecar records complete=False. --add refuses a sidecar
 written by a different tool than --source names, and skips candidates the corpus
-already holds. A candidate whose title matches a table row (common.title_match)
-is the same paper under another DOI, usually a preprint of a published paper:
---add excludes it at once, naming the row.
+already holds. A candidate whose title matches a table row (common.title_match),
+with years no more than DUP_YEARS apart, is the same paper under another DOI,
+usually a preprint of a published paper: --add excludes it at once, naming the row.
 
 Deciding the rest is agent work, and the tool frames it:
 
