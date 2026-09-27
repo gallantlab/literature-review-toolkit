@@ -3636,7 +3636,7 @@ def _i10_rows(rows):
 _i10row = {"ref": "V1", "doi": "10.1/v1", "search_title": "T", "search_author": "Smith", "search_year": 2020}
 
 
-def _i10_verify_all(cits, sleep=0.4, retry_wait=60.0):
+def _i10_verify_all(cits, sleep=0.4, retry_wait=60.0, workers=1):
     _i10_touch(_i10rp)          # another writer lands while verify runs
     return [{"label": c["label"], "verdict": "OK", "found": None, "source": "doi", "issues": []} for c in cits]
 
@@ -5484,6 +5484,49 @@ check("families: agent results merged, lab-mode rows default to lane (or its lan
 check("families: an empty lineage is filled mechanically, oldest first, and says so",
       ([f["lineage"] for f in _fam["families"]], "mechanical" in _fam["families"][0].get("lineage_source", "")),
       (["Hubel 1962 -> Ogawa 1990", "Kay 2008 -> Kanwisher 1997"][:1] + ["Kanwisher 1997 -> Kay 2008"], True))
+
+
+# Parallel lookups: pmap keeps input order, and each worker counts only its own
+# requests, so the courtesy pause still follows only rows that hit the network.
+import threading as _thr  # noqa: E402
+
+_pm_seen = set()
+
+
+def _pm_fn(x):
+    _pm_seen.add(_thr.get_ident())
+    time.sleep(0.01 * (5 - x))            # later items finish first
+    return x * x
+
+
+check("pmap: results come back in input order", common.pmap(_pm_fn, range(5), 3), [0, 1, 4, 9, 16])
+check_true("pmap: work ran on more than one thread", len(_pm_seen) > 1, str(_pm_seen))
+check("pmap: workers=1 runs in this thread", common.pmap(lambda x: _thr.get_ident(), [1, 2], 1),
+      [_thr.get_ident()] * 2)
+
+
+def _pm_count(x):
+    before = common.request_count()
+    if x % 2:
+        common._count_request()
+    time.sleep(0.01)
+    return common.request_count() - before
+
+
+check("request_count is per thread: a worker sees only its own requests",
+      common.pmap(_pm_count, range(6), 3), [0, 1, 0, 1, 0, 1])
+_PCITS = [{"label": f"J{n}", "doi": f"10.1523/p{n}", "expect_first_author": "Smith", "expect_year": "2020",
+           "title": "A real paper"} for n in range(6)]
+with _patched(urllib.request, urlopen=lambda req, timeout=30: _Resp(_cr_body())), _sleeps() as _sl:
+    _out = verify.verify_all(_PCITS, sleep=0.4, retry_wait=0, workers=3)
+check("verify --workers 3: verdicts in input order", [(r["label"], r["verdict"]) for r in _out],
+      [(f"J{n}", "OK") for n in range(6)])
+check("verify --workers 3: one courtesy pause per networked row", _sl, [0.4] * 6)
+_PROWS = [_stamp(r) for r in [{"ref": f"P{n}", "doi": f"10.1523/p{n}", "apa": ""} for n in range(6)]]
+with _patched(common, crossref_work=_FlakyCR()), _sleeps():
+    _res = references.canon_rows(_PROWS, "ref", "2026-09-27", sleep=0, retry_wait=0, workers=3)
+check("canon --workers 3: every row rebuilt, transient failures retried",
+      (_res["rebuilt"], _res["failed"]), (6, []))
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

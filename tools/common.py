@@ -34,6 +34,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -159,13 +160,35 @@ def retry_after(err, cap=120.0):
 
 # Requests actually sent by http(). Loops compare it before/after a row so they
 # pause only after a row that went to the network -- a row answered by a batch
-# prefetch needs no courtesy delay.
-_REQUESTS = 0
+# prefetch needs no courtesy delay. Counted per thread, so a worker in pmap()
+# sees only its own requests.
+_REQUESTS = threading.local()
+
+
+def _count_request():
+    _REQUESTS.n = getattr(_REQUESTS, "n", 0) + 1
 
 
 def request_count():
-    """How many HTTP attempts http() has made in this process."""
-    return _REQUESTS
+    """How many HTTP attempts http() has made in this thread."""
+    return getattr(_REQUESTS, "n", 0)
+
+
+# Rows looked up at once by verify.py and references.py --canon. CrossRef's
+# polite pool (a mailto in the User-Agent) allows 3 concurrent requests, so 3
+# workers stay inside it; each still pauses after a row that hit the network.
+WORKERS = 3
+
+
+def pmap(fn, items, workers=WORKERS):
+    """[fn(x) for x in items], run on up to `workers` threads, in input order.
+    workers <= 1 runs serially in this thread."""
+    items = list(items)
+    if workers <= 1 or len(items) <= 1:
+        return [fn(x) for x in items]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return list(ex.map(fn, items))
 
 
 OPENALEX_HOST = "api.openalex.org"
@@ -203,12 +226,11 @@ def http(url, retries=5, timeout=30, data=None, headers=None):
     An OpenAlex request carries OPENALEX_API_KEY when it is set, and a spent
     OpenAlex daily budget raises OpenAlexBudgetError at once instead of
     backing off."""
-    global _REQUESTS
     hdrs = _openalex_headers(url, headers or HDRS)
     tried_curl = False
     for attempt in range(retries):
         try:
-            _REQUESTS += 1
+            _count_request()
             req = urllib.request.Request(url, data=data, headers=hdrs)
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return decompress(r.read(), r.headers.get("Content-Encoding", ""))
@@ -1137,7 +1159,7 @@ def cache_put(kind, key, data):
         return
     path = _cache_file(kind, key)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
+    tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"    # workers may write one key at once
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump({"key": key, "at": time.time(), "data": data}, fh, ensure_ascii=False)
     os.replace(tmp, path)
@@ -1397,11 +1419,10 @@ def _datacite_get(url, retries=5, timeout=30):
     dropped deterministically on some networks for api.datacite.org while curl
     fetches the same URL (the stack/proxy interaction http()'s fallback exists
     for); through http(), curl's --fail turned every such 404 into an error."""
-    global _REQUESTS
     tried_curl = False
     for attempt in range(retries):
         try:
-            _REQUESTS += 1
+            _count_request()
             req = urllib.request.Request(url, headers=HDRS)
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return decompress(r.read(), r.headers.get("Content-Encoding", ""))
@@ -1533,6 +1554,7 @@ S2_API = "https://api.semanticscholar.org/graph/v1/"
 S2_MIN_INTERVAL = 1.1
 S2_BACKOFF = (20, 40)
 _S2_LAST = [0.0]
+_S2_THREADS = threading.Lock()   # the fallback's pace, shared by this process's threads
 
 
 def _s2_lock_path():
@@ -1567,10 +1589,11 @@ def s2_wait_turn(interval=None):
         return
     except (ImportError, OSError, ValueError):
         pass
-    wait = _S2_LAST[0] + interval - time.monotonic()
-    if wait > 0:
-        time.sleep(wait)
-    _S2_LAST[0] = time.monotonic()
+    with _S2_THREADS:
+        wait = _S2_LAST[0] + interval - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _S2_LAST[0] = time.monotonic()
 
 
 def s2_request(path, body=None):

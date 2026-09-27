@@ -638,12 +638,14 @@ def print_report(report, n_rows):
         print(f"  ✗ {k}: {'; '.join(d)}")
 
 
-def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None):
+def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None,
+               workers=common.WORKERS):
     """Rebuild every sourced row (or just the keys in `only`) in place.
 
     arXiv-routed rows are prefetched in batches first, so they cost no request
-    and no pause of their own; a row that fetch-fails gets one more try after
-    `retry_wait`. Returns {"rebuilt": n, "failed": [keys still failing],
+    and no pause of their own; the rest are fetched `workers` at a time. A row
+    that fetch-fails gets one more try, serially, after `retry_wait`. Returns
+    {"rebuilt": n, "failed": [keys still failing],
     "missing": [keys whose DOI CrossRef does not have (404; not retried)],
     "kept": [keys whose source had no usable record, so the old apa stayed],
     "unverified": [keys not verified for their current DOI/arxiv id, so left
@@ -657,15 +659,21 @@ def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None):
     targets = [r for r in targets if common.verified_ok(r)]
     rebuilt, failed, kept, missing = 0, [], [], []
 
-    def one_pass(batch, chunk):
+    def one_pass(batch, chunk, workers):
         nonlocal rebuilt
         aids = [route(r)[1] for r in batch if route(r)[1]]
         cache = common.arxiv_batch(aids, chunk=chunk) if aids else ({}, set())
-        bad = []
-        for r in batch:
-            k = r.get(keyf, "?")
+
+        def fetch(r):
             before = common.request_count()
             res = canonical(r, cache)
+            if common.request_count() != before:
+                time.sleep(sleep)      # courtesy pause only after a row that hit the network
+            return res
+        bad = []
+        # Fetch `workers` rows at a time; apply the results here, in row order.
+        for r, res in zip(batch, common.pmap(fetch, batch, workers)):
+            k = r.get(keyf, "?")
             if res and res.get("apa"):
                 r["apa"] = res["apa"]
                 if res.get("link"):
@@ -684,16 +692,14 @@ def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None):
                 bad.append(r)
             else:
                 kept.append(k)
-            if common.request_count() != before:
-                time.sleep(sleep)      # courtesy pause only after a row that hit the network
         return bad
 
-    bad = one_pass(targets, 50)
+    bad = one_pass(targets, 50, workers)
     if bad:
         print(f"  [retry] {len(bad)} fetch-fail row(s); cooling down {retry_wait:.0f}s, "
               "then one more try…", file=sys.stderr)
         time.sleep(retry_wait)
-        bad = one_pass(bad, 25)
+        bad = one_pass(bad, 25, 1)
     failed = [r.get(keyf, "?") for r in bad]
     return {"rebuilt": rebuilt, "failed": failed, "missing": missing, "kept": kept, "unverified": unverified}
 
@@ -713,6 +719,8 @@ def main():
                     help="pause after each row that made a request (default 0.25 s)")
     ap.add_argument("--retry-wait", type=float, default=60.0,
                     help="cool-down before fetch-fail rows get their second try (default 60 s)")
+    ap.add_argument("--workers", type=int, default=common.WORKERS,
+                    help=f"rows fetched at once (default {common.WORKERS}; 1 = one at a time)")
     ap.add_argument("--only", help="comma-separated keys: rebuild just these rows, leave the rest "
                     "untouched (targeted re-canon)")
     ap.add_argument("--asof", default=datetime.date.today().isoformat(),
@@ -746,7 +754,7 @@ def main():
     result = {"rebuilt": 0, "failed": [], "missing": [], "kept": [], "unverified": []}
     if not args.repair and not args.audit and not args.list_acks:
         result = canon_rows(rows, keyf, args.asof, sleep=args.sleep,
-                            retry_wait=args.retry_wait, only=only)
+                            retry_wait=args.retry_wait, only=only, workers=args.workers)
         rebuilt = result["rebuilt"]
     if args.repair:
         # On a legacy table the stamp guards it against an emitter overwrite. On a

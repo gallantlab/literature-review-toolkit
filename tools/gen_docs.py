@@ -38,6 +38,11 @@ TARGETS = ["docs/tools.md", "tools/README.md", "PLAYBOOK.md"]
 BEGIN = "<!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->"
 END = "<!-- END GENERATED TOOL INDEX -->"
 SKIP = {"gen_docs.py", "version.py", "__init__.py"}   # maintainer tools, not review tools
+# tools/README.md also carries each tool's full docstring, generated: the README used to
+# restate every tool by hand and drifted from the code it described.
+DETAILS_TARGET = "tools/README.md"
+DETAILS_BEGIN = "<!-- BEGIN GENERATED TOOL DETAILS (python3 tools/gen_docs.py — do not edit by hand) -->"
+DETAILS_END = "<!-- END GENERATED TOOL DETAILS -->"
 # (file, regex whose one group is the stated version)
 VERSION_TARGETS = [
     (".claude-plugin/plugin.json", r'"version": "(\d+\.\d+\.\d+)"'),
@@ -80,6 +85,7 @@ def tool_entries():
         m = re.search(r'^PHASE = "([^"]*)"', src, re.M)
         entries.append({"name": name, "phase": m.group(1) if m else "—",
                         "purpose": _first_sentence(ast.get_docstring(tree)),
+                        "doc": (ast.get_docstring(tree) or "").strip(),
                         "flags": _flags(path) if "argparse" in src else []})
 
     def order(e):     # numeric phases first, then lab (L*), then helpers (—)
@@ -101,13 +107,22 @@ def render_block(entries):
     return "\n".join([BEGIN, render_table(entries), END])
 
 
-def splice(text, inner):
+def render_details(entries):
+    """One section per tool: its whole module docstring, verbatim, in phase order."""
+    out = []
+    for e in entries:
+        phase = f"Phase {e['phase']}" if e["phase"] != "—" else "shared helpers"
+        out.append(f"### `{e['name']}` ({phase})\n\n```text\n{e['doc']}\n```")
+    return "\n\n".join(out)
+
+
+def splice(text, inner, begin=BEGIN, end=END):
     """Replace what lies between the markers with `inner`; the markers and
     everything outside them are kept. Raises if a target has no markers."""
-    i, j = text.find(BEGIN), text.find(END)
+    i, j = text.find(begin), text.find(end)
     if i < 0 or j < 0:
         raise ValueError("target has no generated-block markers")
-    return text[:i + len(BEGIN)] + "\n" + inner + "\n" + text[j:]
+    return text[:i + len(begin)] + "\n" + inner + "\n" + text[j:]
 
 
 PENDING_BUMP = None   # set from --bump: what the commit being prepared will declare
@@ -151,13 +166,16 @@ def main():
     args = ap.parse_args()
     global PENDING_BUMP
     PENDING_BUMP = args.bump
-    table = render_table(tool_entries())
+    entries = tool_entries()
+    table, details = render_table(entries), render_details(entries)
     stale = []
     for rel in TARGETS:
         path = os.path.join(ROOT, rel)
         with open(path, encoding="utf-8") as f:
             text = f.read()
         new = splice(text, table)
+        if rel == DETAILS_TARGET and DETAILS_BEGIN in new:
+            new = splice(new, details, DETAILS_BEGIN, DETAILS_END)
         if new != text:
             stale.append(rel)
             if not args.check:

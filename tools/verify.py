@@ -883,7 +883,7 @@ def _print_result(c, r):
         print(f"             ↳ {i}", file=sys.stderr)
 
 
-def _verify_pass(cits, sleep, chunk=50):
+def _verify_pass(cits, sleep, chunk=50, workers=common.WORKERS):
     # Prefetch every arXiv id in a few batched requests. arXiv rate-limits a
     # per-paper loop into a temporary ban (its retries exhaust and the paper
     # falls through to a false NOT-FOUND), so batching is both faster and the fix
@@ -893,8 +893,8 @@ def _verify_pass(cits, sleep, chunk=50):
     if aids:
         print(f"  [arxiv] batch-resolving {len(set(_norm_arxiv(a) for a in aids))} ids…", file=sys.stderr)
         arxiv_results, arxiv_errored = lookup_arxiv_batch(aids, chunk=chunk)
-    out = []
-    for c in cits:
+
+    def one(c):
         before = common.request_count()
         try:
             r = verify_one(c, arxiv_results, arxiv_errored)
@@ -905,23 +905,24 @@ def _verify_pass(cits, sleep, chunk=50):
         r["label"] = c.get("label", "?")
         if c.get("claim_basis"):
             r["claim_basis"] = c["claim_basis"]      # stamp_rows records what the verdict rests on
-        out.append(r)
         _print_result(c, r)
         if common.request_count() != before:
             time.sleep(sleep)      # courtesy pause only after a row that hit the network
-    return out
+        return r
+    return common.pmap(one, cits, workers)
 
 
-def verify_all(cits, sleep=0.4, retry_wait=60.0):
-    """Verify every citation, then give each ERROR one more try after a
-    cool-down (smaller arXiv chunks). Returns results in input order."""
-    out = _verify_pass(cits, sleep)
+def verify_all(cits, sleep=0.4, retry_wait=60.0, workers=common.WORKERS):
+    """Verify every citation, `workers` rows at a time, then give each ERROR one
+    more try, serially, after a cool-down (smaller arXiv chunks). Returns
+    results in input order."""
+    out = _verify_pass(cits, sleep, workers=workers)
     again = [c for c, r in zip(cits, out) if r["verdict"] == "ERROR"]
     if again:
         print(f"\n  [retry] {len(again)} ERROR row(s); cooling down {retry_wait:.0f}s, then one more try…",
               file=sys.stderr)
         time.sleep(retry_wait)
-        out = merge_reports(out, _verify_pass(again, sleep, chunk=25))
+        out = merge_reports(out, _verify_pass(again, sleep, chunk=25, workers=1))
     return out
 
 
@@ -939,6 +940,8 @@ def main():
                     help="pause after each row that made a request (default 0.4 s)")
     ap.add_argument("--retry-wait", type=float, default=60.0,
                     help="cool-down before ERROR rows get their second try (default 60 s)")
+    ap.add_argument("--workers", type=int, default=common.WORKERS,
+                    help=f"rows looked up at once (default {common.WORKERS}; 1 = one at a time)")
     ap.add_argument("--no-stamp", action="store_true",
                     help="with --rows: report only, do not write `verified` onto the rows")
     ap.add_argument("--override", metavar="REF",
@@ -987,7 +990,7 @@ def main():
     prior = common.load_json(args.retry_from) if args.retry_from else None
     only = {x.strip() for x in args.only.split(",") if x.strip()} if args.only else None
     cits = select_citations(cits, only=only, retry_from=prior)
-    fresh = verify_all(cits, sleep=args.sleep, retry_wait=args.retry_wait)
+    fresh = verify_all(cits, sleep=args.sleep, retry_wait=args.retry_wait, workers=args.workers)
     out = merge_reports(prior, fresh) if prior is not None else fresh
     if args.rows and not args.no_stamp:
         n = stamp_rows(rows, fresh, common.key_field(rows, args.key), args.asof)
