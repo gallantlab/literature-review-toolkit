@@ -85,8 +85,9 @@ hand, which a gated table requires (handcheck.py).
     digitization re-dates old papers);
   - a cached `year` field that disagrees with `apa`.
 On a legacy table, warnings are only reported. On a gated table, each warning
-must be acknowledged, or the audit fails. Record the reason in audit_acks.json
-({ref: {warning_id: reason}}); --list-acks lists the warnings still open.
+must be acknowledged, or the audit fails. --list-acks lists the warnings still
+open, and --ack REF:WARNING_ID --reason TEXT records one in audit_acks.json
+({ref: {warning_id: reason}}), refusing a warning that is not open now.
 
 Reference gates. A table is gated once any row carries a verify stamp, or was
 built or canonicalized on or after the gates date (common.GATES_SINCE). On a
@@ -607,6 +608,24 @@ def row_gate_defects(r, warn):
     return d
 
 
+def record_acks(acks, unacked, pairs, reason):
+    """Add `reason` for each "REF:WARNING_ID" in `pairs` to `acks`. Refuses (all or
+    nothing) a pair that is not an unacknowledged warning right now, so an ack
+    cannot be written for a warning that does not exist or was mistyped."""
+    live = {(k, wid) for k, ws in unacked.items() for wid, _ in ws}
+    bad, todo = [], []
+    for p in pairs:
+        ref, _, wid = p.partition(":")
+        if (ref, wid) not in live:
+            bad.append(p)
+        todo.append((ref, wid))
+    if bad:
+        raise ValueError("not an unacknowledged warning now (see --list-acks): " + ", ".join(bad))
+    for ref, wid in todo:
+        acks.setdefault(ref, {})[wid] = reason.strip()
+    return acks
+
+
 def load_acks(path):
     """audit_acks.json -> {ref: {warning_id: reason}} ({} when absent)."""
     acks = common.load_optional_json(path, {})
@@ -844,6 +863,9 @@ def main():
     ap.add_argument("--asof", default=datetime.date.today().isoformat(),
                     help="date written to each rebuilt/repaired row's canonical_at (default: today)")
     ap.add_argument("--acks", help="acknowledged warnings (default: audit_acks.json beside --rows)")
+    ap.add_argument("--ack", action="append", default=[], metavar="REF:WARNING_ID",
+                    help="acknowledge a warning --list-acks shows, with --reason (repeatable; offline)")
+    ap.add_argument("--reason", help="with --ack: why the warning needs no fix")
     ap.add_argument("--list-acks", action="store_true",
                     help="list every unacknowledged warning as REF<TAB>WARNING_ID<TAB>TEXT and exit")
     ap.add_argument("--candidates", help="candidate ledger (default: candidates.json beside --rows)")
@@ -855,6 +877,10 @@ def main():
         ap.error("--repair writes; --list-acks reports. Run --repair, then --list-acks to confirm.")
     if args.adopt_published and (args.repair or args.audit or args.list_acks):
         ap.error("--adopt-published runs on its own")
+    if args.ack and not (args.reason or "").strip():
+        ap.error("--ack needs --reason")
+    if args.ack:
+        args.list_acks = True            # --ack runs the audit offline, records, then lists what is left
     offline = args.audit or args.list_acks or args.repair or args.adopt_published   # no network request
     if not args.email and not offline:
         ap.error("--email or LITREVIEW_EMAIL required (CrossRef/arXiv polite pool)")
@@ -922,6 +948,14 @@ def main():
                    or os.path.join(os.path.dirname(os.path.abspath(args.rows)), "candidates.json"))
     ledger = common.load_optional_json(ledger_path, LEDGER_MISSING)
     report = audit_rows(rows, keyf, load_acks(acks_path), ledger=ledger, hand_fixes=hand_fixes)
+    if args.ack:
+        try:
+            acks = record_acks(load_acks(acks_path), report["unacked"], args.ack, args.reason)
+        except ValueError as e:
+            sys.exit(f"✗ {e}")
+        common.dump_json(acks, acks_path)
+        print(f"acknowledged {len(args.ack)} warning(s) in {acks_path}")
+        report = audit_rows(rows, keyf, acks, ledger=ledger, hand_fixes=hand_fixes)
     if args.list_acks:
         for k, ws in report["unacked"].items():
             for wid, text in ws:

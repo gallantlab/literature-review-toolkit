@@ -596,10 +596,10 @@ defect; it is listed as a manual ref and needs its hand check.
 
 **Acknowledge warnings.** Some findings need a human verdict, not a fix. On a gated
 table an unacknowledged warning fails the audit like a defect; on a legacy table it
-is only printed. Record each verdict in `audit_acks.json` beside `rows.json`:
-`{ref: {warning_id: "why this is fine"}}` (`*` for corpus-wide ones).
-`references.py --list-acks` prints every unacknowledged warning as
-`REF<TAB>WARNING_ID<TAB>TEXT` to build the file from; it exits 1 while any is
+is only printed. `references.py --list-acks` prints every unacknowledged warning as
+`REF<TAB>WARNING_ID<TAB>TEXT`; record each verdict with `references.py --ack
+REF:WARNING_ID --reason "why this is fine"` (repeatable), which writes
+`audit_acks.json` beside `rows.json` and refuses a warning that is not open. `--list-acks` exits 1 while any is
 unacknowledged, never on a defect, so `--audit` stays the gate. A stale
 acknowledgment (its warning no longer fires) is reported, not failed: delete it.
 
@@ -1559,7 +1559,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `recall.py` | 2c | Measure a rerun's recall against the old build, and list the papers it missed. | `--key` `--old` `--out` `--rows` `--where` |
 | `verify.py` | 3 | Verify a list of citations against CrossRef, DataCite, arXiv, PMC and PubMed. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` `--workers` |
 | `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--candidates` `--email` `--ingest` `--input` `--key` `--prepare` `--reason` `--reject` `--rows` |
-| `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--adopt-published` `--asof` `--audit` `--candidates` `--email` `--hand-fixes` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` `--workers` |
+| `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--ack` `--acks` `--adopt-published` `--asof` `--audit` `--candidates` `--email` `--hand-fixes` `--key` `--list-acks` `--only` `--out` `--reason` `--repair` `--retry-wait` `--rows` `--sleep` `--workers` |
 | `sentence_case.py` | 3f | Post-canon pass: propose strict APA-7 sentence case for reference titles, for a human to review. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
 | `download.py` | 4 (opt-in) | Download open-access PDFs for a list of papers, only when the user asks for them. | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
 | `reconcile_downloads.py` | 4 (opt-in) | Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |

@@ -5727,6 +5727,19 @@ check("abstracts --ingest-missing: found and none recorded, none acknowledged",
           "C-248": {"none": True, "checked": ["https://doi.org/10.1523/x"]}})]),
        _mab["C-248"]["text"], "doi.org" in _mack["C-248"]["no-abstract"]), ((1, 1), "", True))
 
+
+# references --ack records only a live warning.
+_ua = {"C-75": [("multi-word-surname:Llera Montero", "t")]}
+check("references --ack: a live warning is recorded",
+      references.record_acks({}, _ua, ["C-75:multi-word-surname:Llera Montero"], " real compound surname "),
+      {"C-75": {"multi-word-surname:Llera Montero": "real compound surname"}})
+try:
+    references.record_acks({}, _ua, ["C-75:multi-word-surname:Llera"], "x")
+    _msg = ""
+except ValueError as _e:
+    _msg = str(_e)
+check_true("references --ack: a mistyped warning is refused", "not an unacknowledged warning" in _msg)
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

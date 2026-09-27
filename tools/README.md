@@ -36,7 +36,7 @@ and CI fails if any copy is stale.
 | `recall.py` | 2c | Measure a rerun's recall against the old build, and list the papers it missed. | `--key` `--old` `--out` `--rows` `--where` |
 | `verify.py` | 3 | Verify a list of citations against CrossRef, DataCite, arXiv, PMC and PubMed. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` `--workers` |
 | `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--candidates` `--email` `--ingest` `--input` `--key` `--prepare` `--reason` `--reject` `--rows` |
-| `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--adopt-published` `--asof` `--audit` `--candidates` `--email` `--hand-fixes` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` `--workers` |
+| `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--ack` `--acks` `--adopt-published` `--asof` `--audit` `--candidates` `--email` `--hand-fixes` `--key` `--list-acks` `--only` `--out` `--reason` `--repair` `--retry-wait` `--rows` `--sleep` `--workers` |
 | `sentence_case.py` | 3f | Post-canon pass: propose strict APA-7 sentence case for reference titles, for a human to review. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
 | `download.py` | 4 (opt-in) | Download open-access PDFs for a list of papers, only when the user asks for them. | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
 | `reconcile_downloads.py` | 4 (opt-in) | Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
@@ -510,8 +510,9 @@ hand, which a gated table requires (handcheck.py).
     digitization re-dates old papers);
   - a cached `year` field that disagrees with `apa`.
 On a legacy table, warnings are only reported. On a gated table, each warning
-must be acknowledged, or the audit fails. Record the reason in audit_acks.json
-({ref: {warning_id: reason}}); --list-acks lists the warnings still open.
+must be acknowledged, or the audit fails. --list-acks lists the warnings still
+open, and --ack REF:WARNING_ID --reason TEXT records one in audit_acks.json
+({ref: {warning_id: reason}}), refusing a warning that is not open now.
 
 Reference gates. A table is gated once any row carries a verify stamp, or was
 built or canonicalized on or after the gates date (common.GATES_SINCE). On a
