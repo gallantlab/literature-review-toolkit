@@ -97,6 +97,18 @@ def main():
     principle = spec.get("principle", "")
     families = spec.get("families", [])
     assign = spec.get("assignments", {})
+    # The assignment agents are told not to argue with the spec, so their hard calls
+    # (papers that fit it badly) are the only place a wrong family definition shows.
+    hard = spec.get("hard_calls")
+    if hard is None:
+        print("WARNING: the assignment records no hard_calls; ask the assignment agents for them "
+              "(family_prompt_template.md, Step 2) — a wrong family definition shows up only there",
+              file=sys.stderr)
+    elif hard:
+        print(f"{len(hard)} hard call(s) to read before rendering:", file=sys.stderr)
+        for h in hard:
+            print(f"  {h.get('ref')}: {h.get('assigned')} (also fits {h.get('also_fits') or '-'}) — "
+                  f"{h.get('why', '')}", file=sys.stderr)
 
     # ---- validate -----------------------------------------------------------
     keys = [f["key"] for f in families]

@@ -466,7 +466,11 @@ in lab mode, and it fails in both directions. OpenAlex merges same-name authors
 into one id, which leaves false positives to remove. It also splits one person
 across several ids, which leaves papers to add; nothing fails when a record is
 missing. `--search` prints each id's year span and ORCID to help you tell them
-apart. Remove false positives before anything is themed. Then verify before
+apart. To check every item by content, `lab_lane.py --prepare` writes batches and a
+brief for checking agents, and `lab_lane.py --build` turns their results into lane L
+(the lab's own papers, `source: "lab"`), refusing an unchecked item, an included
+duplicate, an item not by the PI or an unknown theme. Field lanes send the lab's
+papers to lane L, so the merge fails on any the record lacks. Then verify before
 canonicalizing, as in topic mode. Every row carries a `built_at` date, so the
 reference gates apply from the start.
 
@@ -1273,6 +1277,11 @@ file holds edits or is an older draft, and re-rendering would overwrite them.
 Rerunning a search on an existing bibliography brings the WHOLE project up to the
 current standard, or redoes it if that is easier. It is never a lighter pass over
 only the new rows.
+
+**Or redo it, and measure the redo.** A fresh build in its own folder can be compared
+with the old one: `recall.py --rows rows.json --old ../<old>/rows.json` reports how
+many of the old papers the rerun found and writes the misses as input for one
+recovery lane.
 
 **What switches the gates on.** A table is gated once any row carries a verify
 stamp, or was built or canonicalized on or after 2026-09-25 (a `built_at` or

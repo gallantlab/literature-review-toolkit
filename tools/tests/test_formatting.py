@@ -2524,6 +2524,40 @@ for _needle in ('"schema": 2', '"deferred"', '"could_not_confirm"', '"lane_fit"'
 check_true("search template no longer abbreviates author lists", "et al." not in _TPL)
 check_true("search template no longer caps DOI-less items", "at most 4" not in _TPL)
 
+# ---- recall.py: a rerun measured against the old build (2026-09-27) --------
+import recall  # noqa: E402
+
+_new = [{"ref": "A-01", "doi": "10.1/a", "search_title": "Paper one"},
+        {"ref": "A-02", "arxiv": "2301.00001", "search_title": "Paper two"},
+        {"ref": "A-03", "search_title": "Natural speech reveals the semantic maps that tile human cerebral cortex"}]
+_old = [{"ref": "O1", "link": "https://doi.org/10.1/A"}, {"ref": "O2", "doi": "10.48550/arXiv.2301.00001"},
+        {"ref": "O3", "apa": "Huth, A. G. (2016). Natural speech reveals the semantic maps that tile human "
+                             "cerebral cortex. Nature, 532, 453-458."},
+        {"ref": "O4", "apa": "Smith, J. (2010). A paper the rerun never found. J X, 1, 1."}]
+_fnd, _mis = recall.misses(_new, _old)
+check("recall: DOI (any case), arXiv id and title all count as found; the rest is missed",
+      (_fnd, [r["ref"] for r in _mis]), (3, ["O4"]))
+
+# ---- lab_lane.py: the lab's checked record becomes lane L (2026-09-27) -----
+import lab_lane  # noqa: E402
+
+_lp = [{"ref": "L1", "doi": "10.1/l1", "title": "A", "year": 2001, "apa": "Gallant, J. L. (2001). A. J, 1, 1."},
+       {"ref": "L2", "doi": "10.1/l2", "title": "A", "year": 2000, "apa": "Gallant, J. L. (2000). A. bioRxiv."},
+       {"ref": "L10", "doi": "10.1/l10", "title": "B", "year": 2001, "apa": "Doe, J., & Gallant, J. L. (2001). B. J, 2, 2."}]
+_lt = [{"key": "V", "name": "Vision"}]
+_lc = {"L1": {"ref": "L1", "include": True, "theme": "V", "kind": "research-article"},
+       "L2": {"ref": "L2", "include": False, "duplicate_of": "L1", "kind": "preprint"},
+       "L10": {"ref": "L10", "include": True, "theme": "V", "kind": "research-article"}}
+_lane, _lpr = lab_lane.build(_lp, _lc, _lt)
+check("lab_lane: included rows become lane L in year then numeric ref order, as source lab",
+      ([p["note"].split()[2] for p in _lane["papers"]], {p["source"] for p in _lane["papers"]}, _lpr),
+      (["L1", "L10"], {"lab"}, []))
+check_true("lab_lane: an excluded duplicate is listed with its reason", "duplicate of L1" in _lane["excluded"][0]["reason"])
+_lane2, _lpr2 = lab_lane.build(_lp, {k: v for k, v in _lc.items() if k != "L10"}, _lt)
+check("lab_lane: a record item with no check result refuses the lane", (_lane2, _lpr2), (None, ["L10: no check result"]))
+_lane3, _lpr3 = lab_lane.build(_lp, dict(_lc, L10=dict(_lc["L10"], theme="Q")), _lt)
+check_true("lab_lane: a theme outside the approved list refuses the lane", _lane3 is None and "theme 'Q'" in _lpr3[0])
+
 # ---- lane_briefs.py: every brief rendered from one spec (2026-09-27) -------
 import lane_briefs  # noqa: E402
 

@@ -1278,10 +1278,25 @@ Semantic Scholar, PubMed) and classify from `abstracts.json`.
 
 **Phase L2 — define the lab and verify the corpus (HUMAN CHECKPOINT #1).** Author-id
 disambiguation is the #1 correctness risk (OpenAlex ids split, merge and collide;
-trainees move between labs). Have an agent classify every paper **from its content,
-not database topic tags**, into the buckets the user wants (e.g. `human` / `primate` /
-`other` for "human work only"), and **web-verify every paper without an abstract and
-every ambiguous call**. Prune false positives. **Do not let the inclusion filter
+trainees move between labs). Check every item **from its content, not database topic
+tags**, with the tool that owns the mechanics:
+
+```bash
+python3 tools/abstracts.py --rows lab_papers.json --out lab_abstracts.json
+python3 tools/lab_lane.py --prepare --papers lab_papers.json --abstracts lab_abstracts.json \
+        --themes themes.json --pi "<PI as printed on papers>"
+# one checking agent per lab_check/input_NN.json, brief lab_check/brief.md -> result_NN.json
+python3 tools/lab_lane.py --build --papers lab_papers.json --themes themes.json
+```
+
+The brief has each agent decide authorship, kind (a meeting abstract, erratum or
+peer-review report is excluded), species, duplicates (keep the version of record) and
+theme, web-verifying every item without an abstract. `--build` writes lane L
+(`search_raw/0_L.json`, `source: "lab"`) and refuses a record item with no check, an
+included duplicate, an item not by the PI, or a theme outside `themes.json`. Field
+lanes defer the lab's papers to lane L (the `lab` block in `lane_briefs.py`), so the
+merge fails on any lab paper the record lacks: that is the completeness check a split
+author id needs. Review the judgment calls the agents flag before building. **Do not let the inclusion filter
 discard the lab's foundational pre-paradigm work** (e.g. macaque physiology, pre-tool
 methods papers): those are the lab's own antecedents and re-enter as `source=lab` in
 the Phase 2b pass even under a "human fMRI only" filter. Flag them to the user here
@@ -1600,6 +1615,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--accept` `--email` `--no-update-check` `--offline` `--papers` `--project` |
 | `lane_briefs.py` | 2 | Render every search lane's brief from one lane spec, so no brief goes out incomplete. | `--spec` |
 | `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--no-preflight` `--out` `--raw` `--report` |
+| `recall.py` | 2c | Measure a rerun's recall against the old build, and list the papers it missed. | `--key` `--old` `--out` `--rows` `--where` |
 | `verify.py` | 3 | Verify a list of citations against CrossRef, DataCite, arXiv, PMC and PubMed. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
 | `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--candidates` `--email` `--ingest` `--input` `--key` `--prepare` `--reason` `--reject` `--rows` |
 | `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--asof` `--audit` `--candidates` `--email` `--hand-fixes` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
@@ -1620,6 +1636,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `prose_audit.py` | 7 | Measure a review's prose, and check that a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |
 | `review_paper.py` | 7 | Build a review article (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `lab_corpus.py` | L1 | Lab mode: fetch a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
+| `lab_lane.py` | L2 | Lab mode, Phase L2: check the lab's record by content, then turn it into lane L. | `--abstracts` `--batch` `--build` `--dir` `--lane` `--out` `--papers` `--pi` `--prepare` `--themes` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
 <!-- END GENERATED TOOL INDEX -->
 
@@ -1691,6 +1708,19 @@ Procedure, in order:
 agents' claims (`search_*`, so verify has nothing independent to check against), or
 the lanes are stale enough that a fresh search is simpler than reconciling row by row.
 Say which you chose, and why.
+
+**A redo is measured against the old build.** Build the new corpus in its own folder
+(the old one stays as the baseline), then, after the first merge:
+
+```bash
+python3 tools/recall.py --rows rows.json --old ../<old>/rows.json --where source=search \
+        --out manual_check/recovery_input.json
+```
+
+It reports how many of the old build's papers the rerun found (by DOI, arXiv id or
+title) and writes the misses for ONE recovery lane, whose agent decides each again
+(include with a claim read off the landing page, or exclude with a reason); append its
+file with `merge_lanes.py --append`. Report the recall at hand-off.
 
 ---
 
