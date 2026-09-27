@@ -11,6 +11,11 @@ Reads every schema-2 lane file (tools/search_prompt_template.md) in --raw and:
   - matches every `deferred` entry against the merged table and exits 1 on any
     that no lane kept, or that matched by title alone with neither first_author
     nor year to confirm it — send those to a recovery lane and re-merge;
+  - records each lane's `excluded` papers (out of scope, or pre-tier and not
+    classic) with their reasons, for the spreadsheet's "Considered and excluded"
+    sheet: an exclusion is a decision, not a hand-off, so it is never required to
+    match a row — but a lane that trimmed on-topic papers to hit its target must
+    put them back in `papers`, since the target is a floor;
   - flags thin lanes (under 60% of target, or out of search budget) to resume.
 A failed merge (lost, unconfirmed or rejected papers) writes merge_report.json
 but not rows.json, and exits 1.
@@ -48,6 +53,12 @@ def load_lane(path, allow_v1=False):
     for k in ("lane", "papers", "deferred"):
         if k not in d:
             raise ValueError(f"{path}: missing {k!r}")
+    ex = d.get("excluded", [])
+    if not isinstance(ex, list) or not all(isinstance(e, dict) for e in ex):
+        raise ValueError(f"{path}: 'excluded' must be a list of objects")
+    for e in ex:
+        if not (e.get("title") or "").strip() or not (e.get("reason") or "").strip():
+            raise ValueError(f"{path}: every excluded entry needs a title and a reason: {e!r}")
     return d
 
 
@@ -176,7 +187,7 @@ def merge(lanes):
     rows, idx, refs = [], {}, set()
     rep = {"lanes": [], "duplicates": [], "conflicts": [], "possible_pairs": [], "rejected": [],
            "deferrals_matched": [], "matched_by_title": [], "unconfirmed": [], "lost": [], "thin": [],
-           "no_deferral_check": []}
+           "no_deferral_check": [], "excluded": []}
     for lane in lanes:
         name = lane["lane"]
         for p in lane["papers"]:
@@ -254,7 +265,21 @@ def merge(lanes):
                 score = common.title_score(d.get("title"), match.get("search_title")) or 0
                 rep["matched_by_title"].append({"title": d.get("title"), "from_lane": lane["lane"],
                                                 "found_as": match["ref"], "score": round(score, 3)})
+        for e in lane.get("excluded") or []:
+            doi = _bare(e.get("doi") or "").lower()
+            kept = idx.get(("doi", doi)) if doi else None
+            if kept is None:
+                kept = next((r for r in rows if common.title_match(e.get("title"), r.get("search_title"))
+                             and _defer_agrees(e, r)), None)
+            rep["excluded"].append(dict(e, from_lane=lane["lane"], kept_as=kept["ref"] if kept else ""))
     return rows, rep
+
+
+def _names_other_lane(d):
+    """A hand-off must name the OTHER lane it went to; an empty, "none" or own-lane
+    `to_lane` is an exclusion written in the wrong list."""
+    to = (d.get("to_lane") or "").strip()
+    return bool(to) and to.lower() != "none" and to != d.get("from_lane")
 
 
 def main():
@@ -300,8 +325,15 @@ def main():
     for d in rep["unconfirmed"]:
         print(unconfirmed_message(d))
     for d in rep["lost"]:
-        print(f"  ✗ LOST: {d.get('title')!r} (deferred by {d['from_lane']}: {d.get('reason', '')}); "
-              "no lane kept it — send it to a recovery lane")
+        fix = ("no lane kept it — send it to a recovery lane" if _names_other_lane(d) else
+               "it names no other lane: put it back in the lane's papers if it is on topic, or move "
+               "it to the lane's excluded list with its reason if it is out of scope")
+        print(f"  ✗ LOST: {d.get('title')!r} (deferred by {d['from_lane']}: {d.get('reason', '')}); {fix}")
+    excl = [e for e in rep["excluded"] if not e["kept_as"]]
+    if rep["excluded"]:
+        print(f"  · {len(excl)} paper(s) excluded by lanes, with reasons (merge_report.json; shown on the "
+              f"spreadsheet's Considered and excluded sheet); {len(rep['excluded']) - len(excl)} more "
+              "excluded by one lane were kept by another")
     sys.exit(1 if failed else 0)
 
 

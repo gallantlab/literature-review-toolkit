@@ -78,6 +78,7 @@ Write it incrementally if you are worried about time, so no work is lost.
     "tag": "classic", "topic": "{TOPIC_NAME}", "source": "search", "note": "", "lane_fit": ""}],
  "deferred": [{"title": "...", "doi": "", "first_author": "", "year": "", "reason": "fits lane X better",
               "to_lane": "X"}],
+ "excluded": [{"title": "...", "doi": "", "first_author": "", "year": "", "reason": "governance as such"}],
  "could_not_confirm": [{"title": "...", "reason": "no such paper under any similar title"}]}
 ```
 
@@ -89,10 +90,16 @@ Write it incrementally if you are worried about time, so no work is lost.
   the next phase verifies the DOI against.
 - **Never drop an on-topic paper because another search might own it.** Include it
   and set `lane_fit` to the better-fitting area; duplicates are removed later.
-- List in `deferred` every paper you found and left out on purpose, with the reason.
-  `first_author` and `year` are required on every deferred entry: the merge step
-  needs them to confirm a deferred paper by title alone, and fails the merge on a
-  title-only match it cannot confirm.
+- **The target is a floor, not a cap.** Never leave out an on-topic paper to stay near
+  it — "lower priority" or "trimmed to target" is not a reason to drop a paper.
+- `deferred` is ONLY for a paper you handed to a different, named lane (`to_lane`) that
+  you believe will include it; when in doubt, include it yourself with `lane_fit`.
+  `first_author` and `year` are required on every deferred entry: the merge step needs
+  them to confirm a deferred paper by title alone, and fails the merge on any deferred
+  paper no lane kept.
+- `excluded` is ONLY for a paper outside the review's scope, or a pre-{TIER_BOUNDARY_YEAR}
+  paper that does not clear the classic bar — with its `reason`, `first_author` and
+  `year`. Excluded papers are listed on the spreadsheet's "Considered and excluded" sheet.
 - Set `status.returned` to the number of papers, and `websearch_exhausted` to true if
   your web search stopped working; say in `notes` how you continued.
 

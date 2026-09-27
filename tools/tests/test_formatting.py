@@ -4931,6 +4931,41 @@ for _e1c, _e1r in (("Van Dam J", "Van DAM J"), ("de la Rosa", "de la ROSA J"), (
                    ("Le Mao", "Le MAO J")):
     check(f"F.E1: {_e1c!r} still matches {_e1r!r}", _mA(_e1c, _e1r), [])
 
+# ---- merge_lanes: a lane's `excluded` list (2026-09-26) --------------------
+# An exclusion is a decision (out of scope, or pre-tier and not classic), not a
+# hand-off, so it never has to match a row; a deferral still does.
+_lx = _lane("A", [_p("A-01", doi="10.1/kept", title="Kept by A")],
+            deferred=[{"title": "Trimmed to target", "first_author": "Roe, R.", "year": 2024,
+                       "reason": "lower priority", "to_lane": "A"}])
+_lx["excluded"] = [{"title": "A governance paper", "doi": "10.1/gov", "first_author": "Poe, P.",
+                    "year": 2023, "reason": "governance as such"},
+                   {"title": "Kept by B", "doi": "10.1/b", "first_author": "Smith, J.", "year": 2020,
+                    "reason": "out of scope for A"}]
+_rx_rows, _rx = merge_lanes.merge([_lx, _lane("B", [_p("B-01", doi="10.1/b", title="Kept by B")])])
+check("an excluded paper is recorded, not lost",
+      ([e["title"] for e in _rx["excluded"]], [d["title"] for d in _rx["lost"]]),
+      (["A governance paper", "Kept by B"], ["Trimmed to target"]))
+check("an exclusion another lane kept names that row", [e["kept_as"] for e in _rx["excluded"]], ["", "B-01"])
+check_true("an own-lane deferral is not a hand-off",
+           not merge_lanes._names_other_lane(dict(_rx["lost"][0])))
+check_true("a deferral naming another lane is a hand-off",
+           merge_lanes._names_other_lane({"to_lane": "B", "from_lane": "A"}))
+_dx = _tmpf.mkdtemp()
+common.dump_json(dict(_lane("A", [_p("A-01", doi="10.1/a")]), excluded=[{"title": "No reason"}]),
+                 os.path.join(_dx, "A.json"))
+check_true("an excluded entry with no reason is refused",
+           _raises(lambda: merge_lanes.load_lane(os.path.join(_dx, "A.json"))))
+common.dump_json(_rx, os.path.join(_dx, "merge_report.json"))
+check("the spreadsheet lists a lane exclusion no lane kept and the table lacks",
+      [(e["title"], e["sources"]) for e in spreadsheet.lane_exclusions(
+          os.path.join(_dx, "merge_report.json"), [{"doi": "10.1/b"}])],
+      [("A governance paper", "lane A")])
+check("... and drops one the table now holds or the ledger lists",
+      (spreadsheet.lane_exclusions(os.path.join(_dx, "merge_report.json"), [{"doi": "10.1/GOV"}]),
+       spreadsheet.lane_exclusions(os.path.join(_dx, "merge_report.json"), [], {"10.1/gov"})), ([], []))
+check("no merge report, no lane exclusions", spreadsheet.lane_exclusions(os.path.join(_dx, "none.json"), []), [])
+
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

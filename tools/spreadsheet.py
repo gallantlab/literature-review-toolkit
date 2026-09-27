@@ -76,6 +76,26 @@ def draft_path(out):
     return f"{stem}_DRAFT{ext or '.xlsx'}"
 
 
+def lane_exclusions(report_path, rows, seen_dois=()):
+    """The papers search lanes excluded on purpose (merge_lanes.py `excluded`), as
+    "Considered and excluded" entries — minus any another lane kept, any the table
+    now holds, and any the candidate ledger already lists."""
+    if not os.path.exists(report_path):
+        return []
+    rep = common.load_json(report_path)
+    have = {common.doi_of(r, lower=True) for r in rows} - {None, ""}
+    seen = {(d or "").lower() for d in seen_dois}
+    out = []
+    for e in (rep.get("excluded") or []) if isinstance(rep, dict) else []:
+        doi = common.doi_of(e, lower=True) or ""
+        if e.get("kept_as") or (doi and (doi in have or doi in seen)):
+            continue
+        out.append({"doi": doi, "title": e.get("title", ""), "year": e.get("year", ""),
+                    "first_author": e.get("first_author", ""), "sources": f"lane {e.get('from_lane', '')}",
+                    "reason": e.get("reason", "")})
+    return out
+
+
 def build(rows, out, sheet_name="References", banner=None, excluded=None):
     """Write the xlsx. Returns (n_rows, has_cite)."""
     # Auto-detect citation counts on any row -> add the two columns.
@@ -233,6 +253,7 @@ def main():
             print("  (legacy corpus: written despite the audit findings above)", file=sys.stderr)
     ledger_dict = ledger if isinstance(ledger, dict) else {}
     excluded = [dict(v, doi=d) for d, v in candidates.entries(ledger_dict) if v.get("decision") == "exclude"]
+    excluded += lane_exclusions(os.path.join(here, "merge_report.json"), rows, {e["doi"] for e in excluded})
     for src in unknown_sources(rows):
         print(f"  ⚠ source={src!r} has no color rule (known: {', '.join(COLORS)}); "
               "rendered white", file=sys.stderr)

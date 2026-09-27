@@ -165,9 +165,15 @@ paper's claimed first author, year and title as `search_author` / `search_year` 
 **With several lanes, no paper may fall between them.** The template already tells
 each agent never to drop an on-topic paper because another lane might own it —
 include it and name the lane it fits better (`lane_fit`), since the merge dedups on
-DOI and arXiv id. Anything left out on purpose goes in `deferred`, with its
-`first_author` and `year` (required), so Phase 2c's merge can confirm a deferred
-paper by title alone. Do not cap DOI-less items per lane. Three recent builds lost
+DOI and arXiv id. A paper handed to another lane goes in `deferred`, naming that
+lane (`to_lane`), with its `first_author` and `year` (required), so Phase 2c's merge
+can confirm a deferred paper by title alone. A paper left out as a decision — outside
+the bibliography's scope, or pre-tier and not classic — goes in `excluded`, with its
+reason; the spreadsheet lists it on the "Considered and excluded" sheet. **The target
+is a floor, not a cap:** a lane never trims an on-topic paper to hit it. On the first
+reference-gated build (2026-09-26) eleven lanes deferred 138 papers no lane kept, most
+of them "trimmed to target"; the merge failed on every one, and the lanes put them
+back. Do not cap DOI-less items per lane. Three recent builds lost
 14, 6 and 4 papers at their seams, and each loss cost a recovery lane after the fact
 — Phase 2c now catches this in code instead of relying on a session to notice.
 
@@ -249,7 +255,8 @@ rows (similarity ≥ 0.9, regardless of year or DOI) and lists any close pair as
 possible duplicate too — a second, corpus-wide check independent of the dedup
 above.
 
-**Every `deferred` entry must match a merged row**, by DOI, arXiv id, or title
+**Every `deferred` entry must match a merged row** (an `excluded` entry need not;
+the merge records it in `merge_report.json`), by DOI, arXiv id, or title
 (`common.title_match`: similarity ≥ 0.9, or each title's words ≥ 90% contained
 in the other — a short title inside a longer one is not a match), confirmed by
 the deferral's `first_author`/`year`. Every title-only match is printed for you

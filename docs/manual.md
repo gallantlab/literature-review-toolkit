@@ -288,13 +288,28 @@ conflict). Otherwise both rows are kept and reported as a possible pair. After
 the merge it also title-scores every pair of kept rows (similarity ≥ 0.9,
 regardless of year or DOI) and lists any close pair as a possible duplicate too.
 
-**`merge_lanes.py` fails on a lost deferral** — a paper a lane left out on
-purpose (`deferred`) that no lane's `papers` matched by DOI, arXiv id, or title
+A lane file has two lists for papers it found and did not keep. `deferred` is a
+**hand-off**: a paper for another, named lane (`to_lane`). `excluded` is a
+**decision**: a paper outside the bibliography's scope, or a pre-tier paper that
+does not clear the classic bar, each with its `reason`, `first_author` and `year`.
+An exclusion never has to match a row; the merge records it in `merge_report.json`,
+and the spreadsheet lists every exclusion no lane kept on its "Considered and
+excluded" sheet, so a paper missing from the table is visibly one a lane decided
+against. The target is a floor, not a cap: a lane never trims an on-topic paper to
+hit it. On the first reference-gated build (2026-09-26) eleven lanes deferred 138
+papers that no lane kept, most "trimmed to target" — every one of them would have
+been silently lost without the deferral check.
+
+**`merge_lanes.py` fails on a lost deferral** — a paper a lane handed off
+(`deferred`) that no lane's `papers` matched by DOI, arXiv id, or title
 (similarity ≥ 0.9, or each title's words ≥ 90% contained in the other),
 confirmed by the deferral's `first_author`/`year`. A title-only match whose
 deferral gives neither, or gives an unreadable `first_author` such as "?", is
 **unconfirmed** and fails the merge too. Send the
-lost papers to one recovery lane, add its file to `search_raw/`, and re-merge.
+lost papers to one recovery lane, add its file to `search_raw/`, and re-merge. A
+lost deferral that names no other lane (an empty, "none" or own-lane `to_lane`) is
+an exclusion or a trimmed paper written in the wrong list: the merge says so, and
+the lane puts it back in `papers` if it is on topic or moves it to `excluded`.
 It also fails on a **rejected** paper — no DOI, no arXiv id and no APA string,
 so it can be neither verified nor hand-checked — the same way: give it a DOI
 or arXiv id, or have the lane write its full APA string as a DOI-less item,
