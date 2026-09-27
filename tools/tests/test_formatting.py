@@ -5640,6 +5640,18 @@ candidates.ingest(_pdl, [("r.json", [dict(_de, doi="10.31234/osf.io/5zf4s", deci
 check("candidates --ingest: of two same-title includes the preprint is excluded",
       (_pdl["10.31234/osf.io/5zf4s"]["decision"], _pdl["10.1017/s0140525x22002813"]["decision"]), ("exclude", "include"))
 
+
+# --adopt-published moves a flagged row; verify then allows the published version's later year.
+_ap = [{"ref": "C-171", "doi": "10.1101/2024.08.06.606687", "canon_warnings": [{"id": "published-version",
+        "text": "a preprint published as 10.1038/s41467-026-70065-3: set the row's doi to it"}]}]
+check("references --adopt-published: row moved, preprint kept", (references.adopt_published(_ap, "ref"),
+      _ap[0]["doi"], _ap[0]["preprint_doi"]),
+      ([("C-171", "10.1101/2024.08.06.606687", "10.1038/s41467-026-70065-3")], "10.1038/s41467-026-70065-3",
+       "10.1101/2024.08.06.606687"))
+check("verify: a moved row's claim year may precede the published year",
+      (verify._year_issue({"expect_year": "2024", "published_later": True}, [{"year": "2026"}]),
+       bool(verify._year_issue({"expect_year": "2024"}, [{"year": "2026"}]))), ([], True))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

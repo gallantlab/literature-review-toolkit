@@ -403,6 +403,8 @@ def rows_to_citations(rows, keyf=None):
             if r.get("canonical_at") and apa:
                 c["claim_basis"] = "canonical-apa"
         c = {"label": r.get(keyf, "?"), "doi": common.doi_of(r), "arxiv": r.get("arxiv"), **c}
+        if r.get("preprint_doi"):
+            c["published_later"] = True       # the claim was read off the preprint
         for k in ("pmid", "pmcid"):
             if r.get(k):
                 c[k] = str(r[k])
@@ -748,15 +750,25 @@ def _title_issue(c, rec, where=""):
     return []
 
 
+PUBLISHED_LAG = 4   # years a preprint may wait for its journal version
+
+
 def _year_issue(c, recs):
     """Year within ±1 of ANY of the records (a preprint and its version of record
-    legitimately differ, and the agent may have reported either)."""
+    legitimately differ, and the agent may have reported either). A row moved
+    from its preprint (`published_later`: it carries preprint_doi) may also be
+    up to PUBLISHED_LAG years later than the claim, which was the preprint's."""
     expect_year = str(c.get("expect_year") or "").strip()
     years = [(r.get("year") or "").strip() for r in recs]
     # Guard the int() — a human-typed "in press"/"2023a" must not crash the run;
     # compare numerically only when both years are clean 4-digit values.
     clean = [int(y) for y in years if y.isdigit()]
-    if expect_year.isdigit() and clean and all(abs(int(expect_year) - y) > 1 for y in clean):
+    late = PUBLISHED_LAG if c.get("published_later") else 1
+
+    def off(y):
+        d = y - int(expect_year)
+        return d > late or d < -1
+    if expect_year.isdigit() and clean and all(off(y) for y in clean):
         return [f"year mismatch: expected {expect_year}, got {'/'.join(years)}"]
     return []
 

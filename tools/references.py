@@ -28,6 +28,7 @@ by hand (handcheck.py).
   python3 tools/references.py --rows rows.json --audit                # report only
   python3 tools/references.py --rows rows.json --list-acks            # unacknowledged warnings
   python3 tools/references.py --rows rows.json --repair               # offline string repair
+  python3 tools/references.py --rows rows.json --adopt-published      # rows flagged published-version
 
 Canon rewrites each rebuilt row's `apa` (and its `link` to the DOI URL), stamps
 `canonical_at`, and prints the audit. --audit prints the audit and writes
@@ -175,8 +176,8 @@ def crossref(doi, fallback_venue=""):
     if r.get("published_as"):
         out["warn"] = ["published-version"]
         out["warn_text"] = {"published-version": (
-            f"a preprint published as {r['published_as']}: set the row's doi to it, then run "
-            "verify.py and references.py with --only on the row")}
+            f"a preprint published as {r['published_as']}: move the row with --adopt-published, then "
+            "run verify.py and references.py with --only on it")}
     return out
 
 
@@ -729,6 +730,23 @@ def print_report(report, n_rows):
         print(f"  ✗ {k}: {'; '.join(d)}")
 
 
+def adopt_published(rows, keyf):
+    """Move every row flagged `published-version` to its published DOI, keeping
+    the preprint's as `preprint_doi` (verify then allows the later year of the
+    published version). Returns [(key, old doi, new doi)]."""
+    moved = []
+    for r in rows:
+        for w in r.get("canon_warnings") or []:
+            if w.get("id") != "published-version":
+                continue
+            m = re.search(r"published as (10\.\S+?):", w.get("text") or "")
+            if m and common.doi_of(r, lower=True) != m.group(1).lower():
+                old = common.doi_of(r) or ""
+                r["preprint_doi"], r["doi"], r["link"] = old, m.group(1), f"https://doi.org/{m.group(1)}"
+                moved.append((r.get(keyf, "?"), old, m.group(1)))
+    return moved
+
+
 def canon_rows(rows, keyf, asof, sleep=0.25, retry_wait=60.0, only=None,
                workers=common.WORKERS):
     """Rebuild every sourced row (or just the keys in `only`) in place.
@@ -805,6 +823,9 @@ def main():
                     help="offline: fix markup / Unicode-hyphen / '?.' damage in place "
                          "WITHOUT re-fetching, so post-canon hand fixes survive. Use to "
                          "retrofit the gate onto an existing corpus.")
+    ap.add_argument("--adopt-published", action="store_true",
+                    help="offline: move every row canon flagged published-version to its published "
+                         "DOI (keeping the old one as preprint_doi); then verify and canon them")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"))
     ap.add_argument("--sleep", type=float, default=0.25,
                     help="pause after each row that made a request (default 0.25 s)")
@@ -826,7 +847,9 @@ def main():
         ap.error("--repair writes; --audit reports. Run --repair, then --audit to confirm.")
     if args.repair and args.list_acks:
         ap.error("--repair writes; --list-acks reports. Run --repair, then --list-acks to confirm.")
-    offline = args.audit or args.list_acks or args.repair       # these make no network request
+    if args.adopt_published and (args.repair or args.audit or args.list_acks):
+        ap.error("--adopt-published runs on its own")
+    offline = args.audit or args.list_acks or args.repair or args.adopt_published   # no network request
     if not args.email and not offline:
         ap.error("--email or LITREVIEW_EMAIL required (CrossRef/arXiv polite pool)")
     if args.email:
@@ -841,6 +864,19 @@ def main():
         missing = only - {r.get(keyf) for r in rows}
         if missing:
             ap.error(f"--only names keys not in {args.rows}: {', '.join(sorted(missing))}")
+    if args.adopt_published:
+        moved = adopt_published(rows, keyf)
+        common.save_rows(args.rows, rows, loaded)
+        if moved:
+            keys = ",".join(k for k, _, _ in moved)
+            for k, old, new in moved:
+                print(f"  {k}: {old} -> {new}")
+            print(f"moved {len(moved)} row(s) to the published version; now run\n"
+                  f"  verify.py --rows {args.rows} --only {keys}\n"
+                  f"  references.py --rows {args.rows} --only {keys}")
+        else:
+            print("no row carries a published-version warning")
+        return 0
     repaired, rebuilt = {}, 0
     result = {"rebuilt": 0, "failed": [], "missing": [], "kept": [], "unverified": []}
     if not args.repair and not args.audit and not args.list_acks:

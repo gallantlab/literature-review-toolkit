@@ -801,7 +801,9 @@ AGE", "Hao CHEN") is kept whole and flagged `datacite-unsplit-author:<name>`. A
 DataCite record that is neither software nor a data set is flagged
 `datacite-deposit`. It is a repository copy, so cite the version of record's DOI
 if one exists. A CrossRef preprint whose server records its published version
-is flagged `published-version`: move the row to that DOI. Canon stores these
+is flagged `published-version`: `references.py --adopt-published` moves the row to
+that DOI, keeping the old one as `preprint_doi`, and verify then allows the later
+year. Canon stores these
 flags on the row as `canon_warnings`, and the audit makes you acknowledge each ([§5.8](#58-acknowledge-what-needs-a-human-verdict)).
 
 **The audit.** `references.py --audit` is a hard gate: it exits 1 on any defect.
