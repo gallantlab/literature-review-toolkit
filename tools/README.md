@@ -44,7 +44,7 @@ and CI fails if any copy is stale.
 | `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--attach` `--attach-only` `--email` `--key` `--out` `--rows` `--sources` |
 | `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--email` `--key` `--out` `--rows` |
 | `summary_audit.py` | 5c | Summary check: agents with no web access confirm each row's summary against its abstract. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
-| `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--export-included` `--ingest` `--lane` `--ledger` `--list` `--per` `--prepare` `--reason` `--rows` `--scope` `--source` |
+| `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--email` `--export-included` `--ingest` `--lane` `--ledger` `--list` `--no-fetch` `--per` `--prepare` `--reason` `--rows` `--scope` `--source` |
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
 | `xref.py` | 6 | Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite. | `--allow-incomplete` `--cache` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--no-cache` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
 | `families.py` | 6b | Validate a family taxonomy, stamp `family` onto rows.json, and write families.json and families.md. | `--asof` `--assign` `--default-from-lanes` `--digest` `--md` `--out` `--results` `--rows` |
@@ -873,6 +873,10 @@ Deciding the rest is agent work, and the tool frames it:
                                tools/candidate_prompt_template.md. FILE defines the
                                bibliography (a lane brief or topic definition); the
                                lanes come from lane_manifest.json beside --rows.
+                               Each candidate carries its CrossRef/DataCite record
+                               and its abstract (abstracts.py's sources), fetched
+                               here, so agents decide and summarize from them
+                               instead of browsing for every paper.
   --ingest 'DIR/result_*.json' records the agents' decisions. It refuses the whole
                                batch if any entry lacks a reason, names a DOI not in
                                the ledger, or includes a paper without the claim

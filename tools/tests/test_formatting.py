@@ -5584,6 +5584,33 @@ check("candidates --export-included: the lane carries the landing-page claim and
       {k: _lane["papers"][0][k] for k in ("ref", "first_author", "title", "summary", "lane_fit")},
       {"ref": "C-01", "first_author": "Doe, J.", "title": "Something else", "summary": "It did x.", "lane_fit": "V"})
 
+
+# candidates --prepare fetches each candidate's registry record and abstract.
+import abstracts as _abs  # noqa: E402
+
+
+def _no_ab(ids):
+    return {}, set()
+
+
+_pend = [{"doi": "10.1/rec"}, {"doi": "10.1/gone"}]
+
+
+def _cr_or_404(doi, fallback_venue=""):
+    if doi == "10.1/gone":
+        raise urllib.error.HTTPError("u", 404, "nf", {}, None)
+    return _cr_record(title="A recorded paper")
+
+
+with _patched(common, crossref_work=_cr_or_404, datacite_work=_cr_or_404), \
+        _patched(_abs, fetch_arxiv=_no_ab, fetch_s2=_no_ab, fetch_pubmed=_no_ab, fetch_pubmed_by_doi=_no_ab,
+                 fetch_europepmc=_no_ab, make_fetch_openalex=lambda e: (lambda ids: ({"10.1/rec": "We did x."},
+                                                                                     set()))):
+    _n = candidates.enrich(_pend, "t@example.org")
+check("candidates enrich: record and abstract attached; a DOI in neither registry has record None",
+      (_n, _pend[0]["record"]["title"], _pend[0]["abstract"], _pend[1]["record"]),
+      ((1, 1), "A recorded paper", "We did x.", None))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

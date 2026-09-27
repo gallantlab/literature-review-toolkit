@@ -21,6 +21,10 @@ Deciding the rest is agent work, and the tool frames it:
                                tools/candidate_prompt_template.md. FILE defines the
                                bibliography (a lane brief or topic definition); the
                                lanes come from lane_manifest.json beside --rows.
+                               Each candidate carries its CrossRef/DataCite record
+                               and its abstract (abstracts.py's sources), fetched
+                               here, so agents decide and summarize from them
+                               instead of browsing for every paper.
   --ingest 'DIR/result_*.json' records the agents' decisions. It refuses the whole
                                batch if any entry lacks a reason, names a DOI not in
                                the ledger, or includes a paper without the claim
@@ -209,9 +213,47 @@ def decide(ledger, doi, decision, reason, asof):
     ledger[d].update(decision=decision, reason=reason.strip(), at=asof)
 
 
-def prepare(ledger, outdir, scope, manifest, per=60, project=None, lab_lane=None):
+def registry_record(doi):
+    """{title, first_author, year, venue} from CrossRef, else DataCite; None when
+    neither registry has the DOI; {"error": why} when a lookup could not complete."""
+    import urllib.error
+    for fetch in (common.crossref_work, common.datacite_work):
+        try:
+            r = fetch(doi)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                continue
+            return {"error": f"HTTP {e.code}"}
+        except Exception as e:
+            return {"error": type(e).__name__}
+        if r:
+            return {"title": r.get("title") or "", "first_author": (r.get("people") or [""])[0],
+                    "year": r.get("year") or "", "venue": r.get("journal") or r.get("publisher") or ""}
+    return None
+
+
+def enrich(pending, email):
+    """Attach each candidate's registry `record` and `abstract` (in place)."""
+    import abstracts
+    common.set_user_agent(email)
+    recs = common.pmap(lambda c: registry_record(c["doi"]), pending)
+    for c, rec in zip(pending, recs):
+        c["record"] = rec
+    rows = [{"ref": c["doi"], "doi": c["doi"], "summary": "-"} for c in pending]
+    fetchers = {"arxiv": abstracts.fetch_arxiv, "openalex": abstracts.make_fetch_openalex(email),
+                "s2": abstracts.fetch_s2, "pubmed": abstracts.fetch_pubmed,
+                "pubmed-doi": abstracts.fetch_pubmed_by_doi, "europepmc": abstracts.fetch_europepmc}
+    ab, _missing, _failed, _stale = abstracts.collect(rows, "ref", {}, fetchers)
+    for c in pending:
+        c["abstract"] = (ab.get(c["doi"]) or {}).get("text", "")
+    n_rec = sum(1 for c in pending if (c["record"] or {}).get("title"))
+    return sum(1 for c in pending if c["abstract"]), n_rec
+
+
+def prepare(ledger, outdir, scope, manifest, per=60, project=None, lab_lane=None, email=None):
     """Write the pending candidates as outdir/input_NN.json, `per` to a file, and
-    outdir/BRIEF.md rendered from TEMPLATE. Returns the input paths."""
+    outdir/BRIEF.md rendered from TEMPLATE. With `email`, each candidate also
+    carries its registry record and abstract (enrich). Returns the input paths."""
     pending = [{"doi": d, "title": c.get("title", ""), "year": c.get("year", ""),
                 "first_author": c.get("first_author", ""), "sources": c.get("sources", {})}
                for d, c in entries(ledger) if c.get("decision") == "pending"]
@@ -223,6 +265,10 @@ def prepare(ledger, outdir, scope, manifest, per=60, project=None, lab_lane=None
     stale = glob.glob(os.path.join(outdir, "input_*.json")) + glob.glob(os.path.join(outdir, "result_*.json"))
     if stale:
         raise ValueError(f"{outdir} already holds input or result files; ingest or move them first")
+    if email:
+        n_ab, n_rec = enrich(pending, email)
+        print(f"  fetched {n_rec} registry record(s) and {n_ab} abstract(s) for {len(pending)} candidates",
+              file=sys.stderr)
     paths = []
     for i in range(0, len(pending), per):
         p = os.path.join(outdir, f"input_{i // per + 1:02d}.json")
@@ -337,6 +383,10 @@ def main():
     ap.add_argument("--scope", metavar="FILE", help="with --prepare: the file that defines the bibliography")
     ap.add_argument("--per", type=int, default=60, help="with --prepare: candidates per input file")
     ap.add_argument("--ingest", metavar="GLOB", help="record the agents' result files")
+    ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"),
+                    help="with --prepare: contact email for fetching records and abstracts")
+    ap.add_argument("--no-fetch", action="store_true",
+                    help="with --prepare: do not fetch records and abstracts")
     ap.add_argument("--asof", default=datetime.date.today().isoformat())
     args = ap.parse_args()
     rows = common.load_json(args.rows)
@@ -371,7 +421,12 @@ def main():
         try:
             lab = next((r.get("lane") or str(r.get(keyf, "")).split("-")[0] for r in rows
                         if r.get("source") == "lab"), None)
-            paths = prepare(ledger, args.prepare, args.scope, manifest, args.per, project=here, lab_lane=lab)
+            if not args.email and not args.no_fetch:
+                ap.error("--prepare fetches records and abstracts: give --email (or LITREVIEW_EMAIL), "
+                         "or --no-fetch")
+            common.enable_record_cache(args.rows)
+            paths = prepare(ledger, args.prepare, args.scope, manifest, args.per, project=here, lab_lane=lab,
+                            email=None if args.no_fetch else args.email)
         except ValueError as e:
             ap.error(str(e))
         print(f"{len(paths)} input file(s) + BRIEF.md -> {args.prepare}; one agent per input file, "

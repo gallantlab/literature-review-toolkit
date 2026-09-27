@@ -34,15 +34,18 @@ For EACH candidate, decide `include` or `exclude`, with a one-line reason.
   bibliography holds (a preprint of a published paper, a reprint, a repository
   copy, a book review); OR not identifiable. Name the reason.
 
-Many titles are clear on their own. When a title is ambiguous or missing, open
-`https://doi.org/<doi>` and read the landing page. Do not guess.
+Each candidate carries `record`, the DOI's own CrossRef or DataCite record (title,
+first author, year, venue), and `abstract`, when one was found. Decide from those.
+When the record is missing or the abstract is empty and the title does not settle
+it, open `https://doi.org/<doi>` and read the landing page. Do not guess.
 
-**For every included paper, read its landing page** and record, OFF THE PAGE:
-`first_author` ("Family, I."), `year`, `title` exactly as on the page, `arxiv` (the
-id, if any), `lane` (the letter it fits best), and `summary`: two to four sentences
-written ONLY from the abstract. No priority, impact or lineage claims ("the first",
-"classic", "seminal") that the abstract does not make. Every include is verified
-against CrossRef later; a claim not read off the page will fail there.
+**For every included paper** record `first_author` ("Family, I."), `year`, `title`,
+`arxiv` (the id, if any), `lane` (the letter it fits best), and `summary`: two to
+four sentences written ONLY from the abstract. Take the first four from `record`
+when it has them, and from the landing page when it does not. If the paper has no
+abstract in its input, read the abstract on the landing page. No priority, impact
+or lineage claims ("the first", "classic", "seminal") that the abstract does not
+make. Every summary is checked against the abstract later.
 
 Write `result_NN.json` as a JSON list with one entry per candidate:
 
