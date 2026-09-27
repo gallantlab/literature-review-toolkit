@@ -5457,6 +5457,34 @@ try:
 finally:
     common.set_record_cache(None)
 
+# families.py merges agent results, defaults lab-mode rows to their lane, fills lineage
+_fd = _tf.mkdtemp()
+_frows = [{"ref": "V-01", "apa": "Hubel, D. H. (1962). Receptive fields. J Physiol, 1, 1."},
+          {"ref": "V-02", "apa": "Kay, K. N. (2008). Identifying images. Nature, 2, 2.", "lane_fit": "S"},
+          {"ref": "S-01", "apa": "Kanwisher, N. (1997). The FFA. J Neurosci, 3, 3."},
+          {"ref": "X-01", "apa": "Ogawa, S. (1990). BOLD. PNAS, 4, 4."}]
+common.dump_json(_frows, os.path.join(_fd, "rows.json"))
+common.dump_json({"V-01": 9, "S-01": 2}, os.path.join(_fd, "internal_citations.json"))
+common.dump_json({"principle": "p", "families": [{"key": "V", "name": "Vision", "claim": "c"},
+                                                 {"key": "S", "name": "Semantics", "claim": "c"}],
+                  "assignments": {}}, os.path.join(_fd, "spec.json"))
+common.dump_json({"assignments": {"X-01": "V"}, "hard_calls": [{"ref": "X-01", "assigned": "V", "why": "methods"}]},
+                 os.path.join(_fd, "result_1.json"))
+_argv = sys.argv
+sys.argv = ["families.py", "--rows", os.path.join(_fd, "rows.json"), "--assign", os.path.join(_fd, "spec.json"),
+            "--results", os.path.join(_fd, "result_*.json"), "--default-from-lanes",
+            "--out", os.path.join(_fd, "families.json"), "--md", os.path.join(_fd, "families.md")]
+try:
+    families.main()
+finally:
+    sys.argv = _argv
+_fam = common.load_json(os.path.join(_fd, "families.json"))
+check("families: agent results merged, lab-mode rows default to lane (or its lane_fit)",
+      _fam["assignments"], {"V-01": "V", "V-02": "S", "S-01": "S", "X-01": "V"})
+check("families: an empty lineage is filled mechanically, oldest first, and says so",
+      ([f["lineage"] for f in _fam["families"]], "mechanical" in _fam["families"][0].get("lineage_source", "")),
+      (["Hubel 1962 -> Ogawa 1990", "Kay 2008 -> Kanwisher 1997"][:1] + ["Kanwisher 1997 -> Kay 2008"], True))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

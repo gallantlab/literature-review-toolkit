@@ -38,6 +38,7 @@ drops empty families.
 """
 import argparse
 import datetime
+import glob
 import os
 import re
 import sys
@@ -80,6 +81,12 @@ def main():
     ap.add_argument("--out", default="families.json", help="canonical cache to write")
     ap.add_argument("--md", default="families.md", help="human-readable grouping to write")
     ap.add_argument("--asof", default=datetime.date.today().isoformat())
+    ap.add_argument("--results", action="append", default=[], metavar="GLOB",
+                    help="assignment agents' result files to merge into --assign's assignments: each "
+                         "{ref: key} or {\"assignments\": {...}, \"hard_calls\": [...]} (repeatable)")
+    ap.add_argument("--default-from-lanes", action="store_true",
+                    help="lab mode, where the lanes ARE the themes: a row no result assigned takes "
+                         "its lane key, else its lane_fit, when that is a family key")
     ap.add_argument("--digest", action="store_true",
                     help="instead of validating, print a compact corpus digest "
                          "(ref / topic / cite / lead-year / summary) for the proposal step")
@@ -102,7 +109,33 @@ def main():
     spec = common.load_json(args.assign)
     principle = spec.get("principle", "")
     families = spec.get("families", [])
-    assign = spec.get("assignments", {})
+    assign = dict(spec.get("assignments", {}))
+    hard_from_results = []
+    for pattern in args.results:
+        paths = sorted(glob.glob(pattern))
+        if not paths:
+            sys.exit(f"ERROR: --results {pattern!r} matches no file")
+        for p in paths:
+            res = common.load_json(p)
+            if isinstance(res, dict) and "assignments" in res:
+                hard_from_results += res.get("hard_calls") or []
+                res = res["assignments"]
+            clash = {r for r in res if r in assign and assign[r] != res[r]}
+            if clash:
+                sys.exit(f"ERROR: {p} re-assigns {len(clash)} ref(s) differently, e.g. {sorted(clash)[:5]}")
+            assign.update(res)
+    if args.default_from_lanes:
+        fkeys = {f["key"] for f in spec.get("families", [])}
+        for r in rows:
+            if r["ref"] in assign:
+                continue
+            lane, fit = r["ref"].split("-")[0], (r.get("lane_fit") or "").strip()[:1]
+            if lane in fkeys:
+                assign[r["ref"]] = fit if fit in fkeys else lane
+            elif fit in fkeys:
+                assign[r["ref"]] = fit
+    if hard_from_results:
+        spec["hard_calls"] = list(spec.get("hard_calls") or []) + hard_from_results
     # The assignment agents are told not to argue with the spec, so their hard calls
     # (papers that fit it badly) are the only place a wrong family definition shows.
     hard = spec.get("hard_calls")
@@ -162,6 +195,25 @@ def main():
     if top_n / len(refs) > DOMINANT_WARN:
         print(f"WARNING: family '{top_key}' holds {top_n}/{len(refs)} "
               f"({top_n/len(refs):.0%}) — consider splitting.", file=sys.stderr)
+
+    # ---- lineage: filled mechanically where the spec left it empty -----------
+    # The six rows with the most within-corpus citations (internal_citations.json
+    # from xref --internal-out; OpenAlex count to break ties), oldest first, named
+    # from their canonical apa: nothing invented, but a selection, not an argument.
+    indeg = common.load_optional_json(os.path.join(os.path.dirname(os.path.abspath(args.rows)),
+                                                   "internal_citations.json"), {})
+    by_ref = {r["ref"]: r for r in rows}
+    for fam in families:
+        if (fam.get("lineage") or "").strip():
+            continue
+        members = [r for r in refs if assign[r] == fam["key"] and by_ref[r].get("apa")]
+        def weight(r):
+            return (-(indeg.get(r) or 0), -(by_ref[r].get("cite_openalex") or 0))
+        top = sorted(members, key=weight)[:6]
+        top.sort(key=lambda r: common.year_of(by_ref[r]["apa"]) or 0)
+        fam["lineage"] = " -> ".join(
+            f"{common.lead_surname(by_ref[r]['apa'])} {common.year_of(by_ref[r]['apa'])}" for r in top)
+        fam["lineage_source"] = "mechanical: top within-corpus citations, oldest first"
 
     # ---- stamp rows.json (display name) + persist canonical cache ------------
     for r in rows:

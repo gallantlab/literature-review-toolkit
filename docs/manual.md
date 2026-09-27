@@ -1051,7 +1051,7 @@ python3 ../tools/families.py --rows rows.json --digest
 
 # 3. assign (agents briefed from tools/family_prompt_template.md), validate and stamp
 python3 ../tools/families.py --rows rows.json --assign families_input.json \
-        --out families.json
+        --results 'families_batches/result_*.json' --out families.json
 
 # 4. render the timeline
 python3 ../tools/families_figure.py --rows rows.json --families families.json \

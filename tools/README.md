@@ -47,7 +47,7 @@ and CI fails if any copy is stale.
 | `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--export-included` `--lane` `--ledger` `--list` `--reason` `--rows` `--source` |
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
 | `xref.py` | 6 | Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite. | `--allow-incomplete` `--cache` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--no-cache` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
-| `families.py` | 6b | Validate a family taxonomy, stamp `family` onto rows.json, and write families.json and families.md. | `--asof` `--assign` `--digest` `--md` `--out` `--rows` |
+| `families.py` | 6b | Validate a family taxonomy, stamp `family` onto rows.json, and write families.json and families.md. | `--asof` `--assign` `--default-from-lanes` `--digest` `--md` `--out` `--results` `--rows` |
 | `families_figure.py` | 6b | Render the interactive lineage timeline of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |
 | `bib_viewer.py` | 7 | Render a searchable bibliography of the whole corpus, for a page that has no timeline. | `--author` `--author-note` `--families` `--out` `--rows` `--subtitle` `--title` |
 | `cite_check.py` | 7 | Gate: every in-text citation in a review must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
@@ -635,7 +635,16 @@ the timeline. This script does the deterministic half.
 ```bash
 python3 tools/families.py --rows rows.json --digest                  # corpus digest for the proposal
 python3 tools/families.py --rows rows.json --assign families_input.json --out families.json
+python3 tools/families.py --rows rows.json --assign spec.json --results 'batches/result_*.json' \
+        --default-from-lanes --out families.json      # merge agent results; lab mode: lanes are themes
 ```
+
+`--results` merges the assignment agents' result files (`{ref: key}`, or with
+`hard_calls`) and refuses one that re-assigns a ref differently. `--default-from-lanes`
+(lab mode, where each lane is a theme) assigns every row no result covered to its lane
+key, else its `lane_fit`. A family whose `lineage` is empty gets one mechanically: its six
+rows with the most within-corpus citations (`internal_citations.json`), oldest first,
+marked `lineage_source`.
 
 **Input** (`families_input.json`): `{principle, families: [{key, name, claim,
 lineage}], assignments: {ref: key}, hard_calls: [{ref, assigned, also_fits,
