@@ -409,8 +409,10 @@ def main():
         acks = common.load_optional_json(acks_path, {})
         try:
             if args.prepare_missing:
-                paths = prepare_missing(rows, keyf, ab, args.prepare_missing, args.per, project=here, acks=acks)
-                print(f"{len(missing_rows(rows, keyf, ab, acks))} row(s) -> {len(paths)} file(s) + BRIEF.md in "
+                paths = prepare_missing(rows, keyf, ab, args.prepare_missing, args.per,
+                                        project=here, acks=acks)
+                n = len(missing_rows(rows, keyf, ab, acks))
+                print(f"{n} row(s) -> {len(paths)} file(s) + BRIEF.md in "
                       f"{args.prepare_missing}; then --ingest-missing "
                       f"'{os.path.join(args.prepare_missing, 'result_*.json')}'")
                 return
