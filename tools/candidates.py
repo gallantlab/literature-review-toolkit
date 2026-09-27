@@ -431,7 +431,7 @@ def main():
         for d, c in entries(ledger):
             if c.get("upgrade_row") and c["upgrade_row"] in {r.get(keyf) for r in rows} and d not in corpus:
                 print(f"  ✗ {c['upgrade_row']} cites a preprint; its published version is {d}. Set the row's "
-                      "doi to it, then verify.py --only and references.py --canon --only it", file=sys.stderr)
+                      "doi to it, then run verify.py and references.py with --only on it", file=sys.stderr)
     elif args.prepare:
         if not args.scope:
             ap.error("--prepare needs --scope FILE (the file that defines the bibliography)")

@@ -178,7 +178,7 @@ def request_count():
     return getattr(_REQUESTS, "n", 0)
 
 
-# Rows looked up at once by verify.py and references.py --canon. CrossRef's
+# Rows looked up at once by verify.py and references.py (canon). CrossRef's
 # polite pool (a mailto in the User-Agent) allows 3 concurrent requests, so 3
 # workers stay inside it; each still pauses after a row that hit the network.
 WORKERS = 3
