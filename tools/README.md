@@ -18,6 +18,7 @@ and CI fails if any copy is stale.
 <!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
 | Script | Phase | Purpose | Flags |
 |---|---|---|---|
+| `preflight.py` | 0 | Phase 0 preflight: before any search, check the API keys and the OpenAlex budget. | `--email` `--offline` `--papers` |
 | `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--out` `--raw` `--report` |
 | `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / DataCite / arXiv. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
 | `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--email` `--ingest` `--input` `--key` `--prepare` `--rows` |

@@ -92,6 +92,10 @@ Write it incrementally if you are worried about time, so no work is lost.
   and set `lane_fit` to the better-fitting area; duplicates are removed later.
 - **The target is a floor, not a cap.** Never leave out an on-topic paper to stay near
   it — "lower priority" or "trimmed to target" is not a reason to drop a paper.
+  *Exception — a CAPPED search* (the user chose to cap it at the Phase-0 preflight;
+  include this sentence only then): the target is a hard cap of {TARGET_COUNT}; keep the
+  most important papers, and list every on-topic paper over the cap in `excluded` with
+  reason `over the capped-search limit`, so it is shown, not lost.
 - `deferred` is ONLY for a paper you handed to a different, named lane (`to_lane`) that
   you believe will include it; when in doubt, include it yourself with `lane_fit`.
   `first_author` and `year` are required on every deferred entry: the merge step needs

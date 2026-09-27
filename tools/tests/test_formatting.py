@@ -337,6 +337,32 @@ finally:
         os.environ.pop("OPENALEX_API_KEY", None)
     else:
         os.environ["OPENALEX_API_KEY"] = _old_key
+# preflight: the first step of every search. Missing keys or a short OpenAlex
+# budget must stop the build (exit 2) and put the three choices to the user.
+import preflight  # noqa: E402
+
+_full = {"LITREVIEW_EMAIL": "a@b.edu", "OPENALEX_API_KEY": "k", "S2_API_KEY": "s"}
+_ok_oa = {"status": 200, "remaining": 9000, "limit": 10000, "reset_s": 3600}
+check_true("preflight: keys set and budget ample -> ok",
+           preflight.assess(_full, 1000, _ok_oa, {"status": 200})[0])
+_ok, _probs, _ = preflight.assess({"LITREVIEW_EMAIL": "a@b.edu"}, 1000, None, None)
+check_true("preflight: no keys -> not ok, both keys named",
+           not _ok and {"openalex-key", "s2-key"} <= set(_probs))
+_txt = "\n".join(preflight.choices(_probs, 1000, None))
+check_true("preflight: the three choices are offered",
+           all(s in _txt for s in ("(1) Get the API keys", "(2) Cap the search", "(3) Be prepared to wait")))
+check_true("preflight: a key with too little budget left is still a stop",
+           "openalex-budget" in preflight.assess(_full, 1000, {**_ok_oa, "remaining": 10}, None)[1])
+check_true("preflight: a spent keyless budget (429) is a stop",
+           "openalex-budget" in preflight.assess({**_full, "OPENALEX_API_KEY": ""}, 100,
+                                                 {"status": 429, "remaining": 0, "limit": 1000}, None)[1])
+check_true("preflight: no email -> not ok even with keys",
+           not preflight.assess({**_full, "LITREVIEW_EMAIL": ""}, 100, None, None)[0])
+check_true("preflight: need grows with corpus size, and fits() inverts it",
+           preflight.openalex_need(1000) > preflight.openalex_need(100)
+           and preflight.openalex_need(preflight.openalex_fits(1000)) <= 1000
+           < preflight.openalex_need(preflight.openalex_fits(1000) + 1))
+
 for _f in ("citations.py", "abstracts.py", "forward.py", "handcheck.py"):
     with open(os.path.join(os.path.dirname(common.__file__), _f), encoding="utf-8") as _fh:
         check_true(f"{_f} lets a spent OpenAlex budget abort the run", "OpenAlexBudgetError" in _fh.read())

@@ -2,7 +2,7 @@
 name: literature-review
 license: MIT
 metadata:
-  version: 1.21.0
+  version: 1.22.0
   author: Jack L. Gallant
 description: Structured academic literature review — search a topic and its antecedents, verify every citation against PMC/PubMed/CrossRef/arXiv, rebuild references into canonical APA form, count citations, cross-reference the set, and assemble an annotated xlsx bibliography, then offer an interactive lineage timeline of its theoretical families on every review. Use whenever the user asks for a lit review or literature review, wants to build or audit a bibliography, survey the literature on a topic, verify or canonicalize a list of citations, check which references cite which, gather citation counts, trace the intellectual lineage of a field, or review a lab's own corpus in the context of its field. PDF acquisition is opt-in and never runs by default.
 ---
@@ -51,6 +51,12 @@ Pick the mode in Phase 0, before anything else.
 Both share the same verify / count / families / figure machinery.
 
 ## Before running any script
+
+**Check API access first.** When someone asks for a search, the first thing to run is
+`python3 tools/preflight.py --papers <planned size>`. Exit 2 means a key is missing
+(`OPENALEX_API_KEY`, `S2_API_KEY`) or the OpenAlex budget is short: stop, and tell the
+user they can (1) get the API keys (both free), (2) cap the search, or (3) be prepared to
+wait — then let them choose before launching any lane (PLAYBOOK Phase 0).
 
 NCBI and CrossRef expect a contact email in the User-Agent. Either pass `--email
 you@inst.edu` to each tool or export `LITREVIEW_EMAIL` once for the session. A
