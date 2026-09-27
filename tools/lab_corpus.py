@@ -4,7 +4,8 @@
 Topic mode starts from a query and searches outward. LAB MODE starts from a known
 set of papers (a lab's output), derives its themes, tracks them over time, and
 only then searches outward to place them in the field. This tool fetches that
-corpus, the seed everything else hangs off.
+corpus, the seed everything else hangs off. In lab mode, it and lab_lane.py run
+before the search lanes.
 
 Give it an OpenAlex author id; find one with --search first. "All papers from a
 lab" is approximated by the PI's authored works. Pass several ids with repeated
@@ -26,7 +27,9 @@ Disambiguation is the main correctness risk, and it cuts both ways. An id can be
 MERGED (holding several namesakes, so Phase L2 must prune it) or SPLIT (one
 person across several ids, so Phase L2 must ADD the others, and nothing fails
 when a record is missing). This is why --search prints each id's year span and
-ORCID; read its warnings. See PLAYBOOK "Lab mode".
+ORCID; read its warnings. OpenAlex abstracts are patchy and its topic tags too
+coarse, so fetch abstracts from Semantic Scholar or PubMed before the Phase L2
+check. See PLAYBOOK "Lab mode" for the later steps.
 """
 import argparse
 import datetime

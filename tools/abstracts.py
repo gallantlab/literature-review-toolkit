@@ -20,6 +20,7 @@ paper has no abstract. When its ids no longer match the row, it is reported as
 stale: check that it is still this paper's abstract, then set its ids to the
 row's.
 
+abstracts.json goes beside --rows unless --out names another file.
 abstracts_failed.json, written beside abstracts.json, maps each ref whose fetch
 could not complete to the reason ({} when none). A failed fetch is not "no
 abstract", so summary_audit.py --prepare refuses those refs.

@@ -8,9 +8,11 @@ problem, because it prints whatever prose it is given.
 
   python3 tools/cite_check.py --rows rows.json --content content.json
 
-It reads the `abstract` and every `sections[].paragraphs[]` of the content JSON,
-parses APA author-date citations in parenthetical and narrative form, and checks
-each against author-year keys built from the canonical `apa` strings.
+It reads the `abstract` and every `sections[].paragraphs[]` of the content JSON.
+It parses APA author-date citations in parenthetical form ("(Farb et al., 2007)")
+and narrative form ("Farb et al. (2007)", "Farb and Segal (2007)"). It folds
+accents ("Millière" matches "Milliere") and checks each citation against
+author-year keys built from the canonical `apa` strings.
 
 Exit 1 on an UNRESOLVED citation, because the reference list cannot back it.
 AMBIGUOUS citations are warnings, because the fix is editorial. APA-7 8.19 names

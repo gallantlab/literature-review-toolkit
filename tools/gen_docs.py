@@ -17,7 +17,11 @@ family-count limit. So the index is generated from the modules themselves: the
 docstring's first sentence, the module's PHASE constant, and the options that
 `--help` reports. The narrative around it stays hand-written.
 
-Each target carries the block between two marker comments; everything outside
+tools/README.md also gets a second generated block: every tool's whole module
+docstring, one section per tool in phase order. So a tool's details are written
+once, at the top of the script, and the README cannot drift from them.
+
+Each target carries a block between two marker comments; everything outside
 them is left alone. A tool without a PHASE constant is listed with "—".
 gen_docs.py and version.py are maintainer tools, so they are not listed.
 """
@@ -111,8 +115,9 @@ def render_details(entries):
     """One section per tool: its whole module docstring, verbatim, in phase order."""
     out = []
     for e in entries:
-        phase = f"Phase {e['phase']}" if e["phase"] != "—" else "shared helpers"
-        out.append(f"### `{e['name']}` ({phase})\n\n```text\n{e['doc']}\n```")
+        p = e["phase"]
+        label = "Shared helpers" if p == "—" else f"Lab mode {p}" if p.startswith("L") else f"Phase {p}"
+        out.append(f"### {label}: `{e['name']}`\n\n```text\n{e['doc']}\n```")
     return "\n\n".join(out)
 
 

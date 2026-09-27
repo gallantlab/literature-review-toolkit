@@ -6,7 +6,7 @@ a lane missing the verification duty, a leftover {PLACEHOLDER}, a capped-search 
 left in an uncapped build. This tool fills tools/search_prompt_template.md for each
 lane, builds the shared lane table, keeps or drops the template's conditional blocks
 (forward/antecedent, capped/uncapped, lab, seeds), and refuses to write any brief
-with a placeholder or block marker left in it.
+with a placeholder or block marker left in it. Never fill the template by hand.
 
     python3 tools/lane_briefs.py --spec lanes.json
 
@@ -34,16 +34,24 @@ The spec (JSON):
 
 The scale is how big a search the user asked for (common.SEARCH_SCALES): it sets
 each lane's target (a lane may set its own), whether lanes are capped, and the
-number of lanes allowed. A numeric scale is a capped total spread over the lanes,
-and the lane targets may not add up to more than it. Every scale still needs at
-least one antecedent lane (contract rule 4). When the project's preflight.json
+number of lanes allowed. `scan` and `focused` cap each lane at 15 or 30 papers.
+`standard` (the default) and `exhaustive` set floors of 40 and 60. A numeric
+scale is a capped total spread over the lanes, and the lane targets may not add
+up to more than it. Every scale still needs at least one antecedent lane
+(contract rule 4). When the project's preflight.json
 records that the user chose to cap the search, an uncapped scale is refused. The
 tool prints the plan and the preflight command sized to it.
 
 Lane keys are 1-4 capital letters or digits, since they prefix every ref. Seeds
 are TITLES only: a seed that carries an author name is refused, because
 remembered author names have injected fabricated attributions into past builds.
-Exit 1 on a spec error, naming every problem.
+
+It exits 1, naming every problem, on:
+  - a missing field, a repeated or malformed key, or a seed that names an author;
+  - a lane count outside the scale's range, or no antecedent lane;
+  - lane targets that add up to more than a numeric scale;
+  - an uncapped scale when preflight.json records that the user chose to cap;
+  - a brief with anything left unfilled.
 """
 import argparse
 import datetime

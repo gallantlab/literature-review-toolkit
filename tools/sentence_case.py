@@ -15,7 +15,7 @@ corpus's own proper nouns to a --proper file, then apply.
   python3 tools/sentence_case.py --rows rows.json                    # print the diff
   python3 tools/sentence_case.py --rows rows.json --vocab            # review by token
   python3 tools/sentence_case.py --rows rows.json --proper mine.json # project allowlist
-  python3 tools/sentence_case.py --rows rows.json --apply
+  python3 tools/sentence_case.py --rows rows.json --proper mine.json --apply
 
 `--vocab` is the fast way to review a large corpus: instead of reading 150 title
 diffs, read the ~400 distinct token changes they amount to. A mis-cased proper
@@ -29,8 +29,9 @@ Protected automatically, with no allowlist needed:
   - each hyphen/slash/dash part judged separately, so 'Resting-State' is not
     mistaken for camelCase
   - the first word of the title and of any subtitle after a colon
-A DataCite deposit's `(Version …)` and `[Descriptor]` are not part of the title,
-so they are never cased. Titles that look German or French are skipped and
+A DataCite deposit's `(Version …)` and bracket descriptor (`[Data set]`,
+`[Computer software]`, `[Preprint]`) are not part of the title, so they are never
+cased and need no --proper entry. Titles that look German or French are skipped and
 listed, because casing them lowercases every noun; --include-foreign cases them
 anyway.
 
@@ -39,7 +40,7 @@ corpus. Domain proper nouns (a practice, a cohort, a trial, an instrument, a
 language) belong in a per-project `--proper` file: {"words": [...], "phrases":
 [...]}. Phrases match case-insensitively and are restored to the capitalization
 written there, so a generic word can lowercase while a named entity containing
-it does not.
+it does not (yoga practitioners, but Sahaja Yoga).
 
 --apply writes in place (or to --out), and refuses a rows.json that changed since
 it was read. Before it writes, it re-applies every fix in hand_fixes.json beside

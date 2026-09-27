@@ -2,7 +2,9 @@
 """Hand-check the references that have no DOI or arXiv id (books, reports, essays).
 
 No API can verify a DOI-less row, so on a gated table the audit fails any such
-row without a hand-check record. This tool does the work around the hand check:
+row without a hand-check record. A checking agent confirms or corrects each
+reference against a library catalog, the publisher, or the work itself. This
+tool does the work around the hand check:
 
   --prepare           search CrossRef and OpenAlex for a DOI the row lacks (the
                       same title, by common.title_match, and the same year).

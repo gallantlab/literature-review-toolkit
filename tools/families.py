@@ -3,7 +3,9 @@
 
 The carving is judgment: the agent proposes a few families and assigns every
 paper, with a human checkpoint on the family definitions (see
-family_prompt_template.md and PLAYBOOK Phase 6b). This tool does the mechanical
+family_prompt_template.md and PLAYBOOK Phase 6b). On every review the agent
+proposes families and pitches the timeline built from them. The user uses the
+families, changes them, or skips the timeline. This tool does the mechanical
 half. It checks that the assignment is exhaustive and exclusive, warns when it is
 unbalanced, stamps the rows, and renders families.md (tables by family plus a
 family x topic cross-tab). families.json is the reproducible cache, like
@@ -32,9 +34,22 @@ in any case, so it can be rebuilt from the `family` already stamped on the rows.
 It warns on a one-paper family or one holding more than 60% of the papers, and
 drops empty families.
 
+--results GLOB (repeatable) merges the assignment agents' result files into the
+spec's assignments. Each file is {ref: key}, or {"assignments": {...},
+"hard_calls": [...]}, and a file that re-assigns a ref differently is refused.
+--default-from-lanes is for lab mode, where each lane is a theme. It assigns each
+row that no result covered to its `lane_fit` when that is a family key, else to
+its lane key when that is one.
+
+A family whose `lineage` is empty gets one mechanically: its six rows with the
+most within-corpus citations (internal_citations.json beside --rows, with the
+OpenAlex count breaking ties), oldest first, marked `lineage_source`.
+
   python3 tools/families.py --rows rows.json --digest     # compact corpus for the proposal
   python3 tools/families.py --rows rows.json --assign families_input.json \\
           --out families.json
+  python3 tools/families.py --rows rows.json --assign spec.json --results 'batches/result_*.json' \\
+          --default-from-lanes --out families.json      # merge agent results; lab mode
 """
 import argparse
 import datetime
@@ -86,7 +101,7 @@ def main():
                          "{ref: key} or {\"assignments\": {...}, \"hard_calls\": [...]} (repeatable)")
     ap.add_argument("--default-from-lanes", action="store_true",
                     help="lab mode, where the lanes ARE the themes: a row no result assigned takes "
-                         "its lane key, else its lane_fit, when that is a family key")
+                         "its lane_fit when that is a family key, else its lane key")
     ap.add_argument("--digest", action="store_true",
                     help="instead of validating, print a compact corpus digest "
                          "(ref / topic / cite / lead-year / summary) for the proposal step")

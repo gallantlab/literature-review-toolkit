@@ -12,9 +12,10 @@ asks only whether the citations resolve.
 
 For each prose block it reports words, sentence count, mean and longest sentence
 length, and citation count, and it lists the longest sentences (at least --long
-words, default 45). It then reports pairs of blocks that share many citations
-(--overlap, default 8), which is how one argument gets told twice in two
-sections. A page script is read by parsing it, never by importing it.
+words, default 45). Aim for a mean of 25 words or less. It then reports pairs
+of blocks that share at least --overlap citations (default 8), which is how one
+argument gets told twice in two sections. --exclude REGEX skips blocks whose label matches. A page script is
+read by parsing it, never by importing it.
 
 Rewriting for concision can drop citations unnoticed, so this tool is also the
 gate on that pass. Keep a copy of the source before revising, and compare

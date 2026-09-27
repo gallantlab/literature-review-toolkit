@@ -6,9 +6,10 @@ reports, a preprint and its published version as two works, and sometimes a
 namesake's papers. Classifying it from database tags mislabels papers, so agents
 read each item and decide; this tool does the mechanics around them.
 
-  --prepare   split lab_papers.json into batches of --batch items (default 90),
-              with any abstracts fetched by abstracts.py, and write
-              lab_check/brief.md for the checking agents. They write
+  --prepare   split lab_papers.json into lab_check/input_NN.json batches of
+              --batch items (default 90), with any abstracts fetched by
+              abstracts.py, and write lab_check/brief.md for the checking
+              agents. One agent per input file writes
               lab_check/result_NN.json: per item by_pi (authorship), kind,
               species, duplicate_of, include, theme and reason.
   --build     join the record with every result into search_raw/0_L.json, a
@@ -17,9 +18,13 @@ read each item and decide; this tool does the mechanics around them.
               the record or checked twice, an included duplicate, an included item
               not by the PI, and (with --themes) a theme not in that file. The file
               sorts first, so a lab paper a field lane also found keeps its lab row.
+              Each excluded item is listed in the lane's `excluded` with its
+              reason. An included item with no DOI keeps its OpenAlex reference
+              and gets a hand check (Phase 3e).
 
     python3 tools/lab_lane.py --prepare --papers lab_papers.json --abstracts lab_abstracts.json \\
             --pi "Jack L. Gallant"
+    #   one checking agent per lab_check/input_NN.json writes lab_check/result_NN.json
     python3 tools/lab_lane.py --build --papers lab_papers.json
 
 --themes themes.json (optional): [{"key": "V", "name": "...", "claim": "..."}],

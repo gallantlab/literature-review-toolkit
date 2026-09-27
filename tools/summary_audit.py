@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Summary check: agents with no web access confirm each row's summary against its abstract.
 
+The checking agents see only the abstract, so a summary cannot claim what the
+abstract does not say.
+
   --prepare   write summary_audit/batch_NN.json (summary + abstract pairs, up to
               --batch rows each, default 40), brief.md for the checking agents,
               and manifest.json. Old batch and result files are deleted first.
@@ -26,6 +29,7 @@ abstracts.json (an empty text if it has none), rewrite the summary from it, and
 --prepare again. The audit fails both verdicts (summary-flagged, abstract-wrong).
 
     python3 tools/summary_audit.py --rows rows.json --prepare
+    #   checking agents write summary_audit/result_NN.json
     python3 tools/summary_audit.py --rows rows.json --ingest
 """
 import argparse

@@ -24,17 +24,18 @@ packed by year within its lane.
 
 LANDMARKS are selected and labeled automatically (big dots). A paper is a
 landmark if ANY of:
-  (1) it is among the most-cited in its family (top --per-family by
+  (1) it is among the most-cited in its family (top --per-family, default 4, by
       max(OpenAlex, S2));
-  (2) it is foundational within this review: cited by >= --motif-min of the
-      corpus's own papers (needs internal_citations.json from
+  (2) it is foundational within this review: cited by >= --motif-min (default 3)
+      of the corpus's own papers (needs internal_citations.json from
       `xref.py --internal-out`, read from beside rows.json unless --internal
       names another; skipped if there is none);
   (3) it is a home-lab paper: a row with source == "lab", or one with an author
-      surname given by --lab-author or the LITREVIEW_LAB_AUTHOR env var (off by
-      default). Home-lab papers are starred (★) and ringed in --lab-color
-      (default gold, moved automatically if it clashes with a family lane).
---max-labels caps the total for legibility. When the cap bites, the home-lab
+      surname given by --lab-author Surname (repeatable) or the
+      LITREVIEW_LAB_AUTHOR env var (comma-separated; both off by default).
+      Home-lab papers are starred (★) and ringed in --lab-color (default gold,
+      moved automatically if it clashes with a family lane; quote the #).
+--max-labels (default 28) caps the total for legibility. When the cap bites, the home-lab
 papers and the top 2 most-cited per family always survive, and within-review
 in-degree fills the rest. On a large corpus that cites itself densely, hundreds
 of papers can clear --motif-min, so the cap is what keeps the figure readable.
@@ -51,7 +52,13 @@ about how often a paper is cited. Counts span four orders of magnitude in a real
 corpus (0 to ~24k), so both scales normalize against the 95th percentile and
 clamp above it. `sqrt` is area-proportional and separates the heavy tail; `log`
 compresses harder and reads flatter. Citation count is partly an AGE variable,
-so the right-hand edge of any timeline is small.
+so the right-hand edge of any timeline is small. --size-range MIN,MAX sets the
+dot radius range in pixels (default 2.0,11.0).
+
+OTHER OPTIONS. For a long time span, --time-warp (0 to 1) compresses sparse early
+decades, and --min-year clamps the axis start. --xlsx embeds the spreadsheet with
+a download button. --emphasize-source lab draws one source's rows large.
+--no-raster skips the PNG and PDF.
 
   python3 tools/families_figure.py --rows rows.json --families families.json \\
           --out-prefix mytopic_families --title "My topic — theoretical families"

@@ -19,11 +19,13 @@ It checks:
                      have spent it before you start; a free key has its own
                      10,000. A probe reads the budget left right now.
   S2_API_KEY         without it, Semantic Scholar throttles hard: xref and the S2
-                     counts take hours and leave gaps.
+                     counts take hours and leave gaps. A probe checks that
+                     Semantic Scholar accepts the key.
 It also estimates what the planned corpus costs in OpenAlex credits. Size it with
 --scale, the search scale the user asked for (scan, focused, standard, exhaustive
 or a number of papers; common.scale_plan, with --lanes N if the lane count is
-known), or give the size directly with --papers N (default 500).
+known), or give the size directly with --papers N (default 500). --offline
+checks the environment only, with no probes and no GitHub check.
 
 Exit 0 when the build can run as planned. Exit 2 when the user must decide
 first: a newer toolkit is available (offer to install it), LITREVIEW_EMAIL is not
@@ -41,6 +43,7 @@ email cannot be accepted. A cleared run exits 0.
     python3 tools/preflight.py --project <topic>/ --scale focused
     python3 tools/preflight.py --project <topic>/ --scale focused --accept wait   # the user's choice
     python3 tools/preflight.py --project <topic>/ --papers 600 --offline   # environment only, no probes
+    python3 tools/preflight.py --project <topic>/ --papers 600 --no-update-check  # a build under way
 """
 import argparse
 import datetime

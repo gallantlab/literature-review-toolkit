@@ -12,7 +12,9 @@ page, or exclude, with a reason). The old reference is a pointer, not a claim.
 
 --where KEY=VALUE keeps only the old rows whose field matches (repeatable), e.g.
 source=search to compare field papers only. Prints the recall and writes
-[{"old_ref", "doi", "reference_in_old_build", "old_family"}] for the misses.
+[{"old_ref", "doi", "reference_in_old_build", "old_family"}] for the misses, to
+recovery_input.json beside --rows unless --out names another file. Add the
+recovery lane's file to the table with `merge_lanes.py --append`.
 """
 import argparse
 import os

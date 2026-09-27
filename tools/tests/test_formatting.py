@@ -5528,6 +5528,17 @@ with _patched(common, crossref_work=_FlakyCR()), _sleeps():
 check("canon --workers 3: every row rebuilt, transient failures retried",
       (_res["rebuilt"], _res["failed"]), (6, []))
 
+
+# gen_docs: tools/README.md's per-tool sections are the module docstrings, verbatim.
+_gd = gen_docs.render_details([{"name": "a.py", "phase": "3", "doc": "A does x.\n\nMore."},
+                               {"name": "l.py", "phase": "L1", "doc": "L."},
+                               {"name": "common.py", "phase": "—", "doc": "C."}])
+check("gen_docs: detail headings name phase, lab phase, helpers",
+      re.findall(r"^### (.+)$", _gd, re.M), ["Phase 3: `a.py`", "Lab mode L1: `l.py`", "Shared helpers: `common.py`"])
+check_true("gen_docs: the whole docstring is carried", "A does x.\n\nMore." in _gd)
+check("gen_docs: splice keeps markers and outside text",
+      gen_docs.splice("x\nB\nold\nE\ny", "new", "B", "E"), "x\nB\nnew\nE\ny")
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

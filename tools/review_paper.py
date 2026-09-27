@@ -4,18 +4,23 @@
 This tool owns only the mechanics: the title, author and disclosure block, the
 abstract, the section headings and paragraphs, an embedded figure with its
 caption, and an APA-7 reference list. The reference list holds every row's
-canonical `apa` from rows.json (deduplicated, in APA-7 order, hanging indent,
-each with its link). reference_list() builds it, and HTML pages should reuse it.
+canonical `apa` from rows.json (deduplicated, hanging indent, each with its
+link). It follows APA-7 order: authors letter by letter, then year, then title,
+so a sole author precedes that author's co-authored works. reference_list()
+builds it, and HTML pages should reuse it.
 
 It does NOT write prose. Write the prose separately with the scientific-writing
 skill, and supply it as a content JSON (--content). In-text citations are APA
 author-date, e.g. "(Huth et al., 2016)". Every in-text citation must name a paper
-in rows.json. This tool prints whatever prose it is given, so run cite_check.py
-before rendering.
+in rows.json. This tool prints whatever prose it is given, so before rendering
+run the priority audit (every origin claim cites the earliest paper) and
+cite_check.py.
 
 If the review is AI-authored, say so: put the model's name in `authors`, an
 `author_note` identifying it as an AI, and a `disclosure` paragraph (the
-fabricate-then-verify caveat; see PLAYBOOK Phase 7).
+fabricate-then-verify caveat; see PLAYBOOK Phase 7). State in the disclosure
+that the bibliography was machine-verified and that the author read abstracts,
+not full texts.
 
 content.json schema:
 {

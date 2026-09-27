@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Merge search-lane files into rows.json, and fail when a paper fell between lanes.
 
-It reads every schema-2 lane file (see tools/search_prompt_template.md) in --raw
-and:
+It reads every schema-2 lane file (see tools/search_prompt_template.md) in --raw.
+A lane file holds `papers`, `deferred` (a hand-off to a named lane, with
+`first_author` and `year`), `excluded` (each with a reason) and
+`could_not_confirm`. The merge:
   - dedups by DOI, then arXiv id, then normalized title + year, and records the
     other lanes that returned a paper (`also_lanes`). A title + year match with
     a conflicting author or year, or with two different journal DOIs, stays as
     two rows and is reported as a possible pair. Every other pair of similar
     titles is reported too; a title of under four content words must match on
     characters, since word containment alone paired one short title with 60
-    longer ones;
+    longer ones. Authors are compared the way verify.py compares them, and an
+    unknown author never merges a pair or confirms a deferral;
   - keeps each lane's claim as search_author / search_year / search_title,
     which verify.py checks the DOI against;
   - rejects a paper with no DOI, arXiv id or APA string, since it can be neither

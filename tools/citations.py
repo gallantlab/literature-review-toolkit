@@ -25,7 +25,8 @@ The spreadsheet and the figure read the counts from the rows, not from this
 file. Pass --attach to write them onto --rows as cite_openalex, cite_s2,
 cite_s2_influential and cite_asof (through the guarded save, so it refuses to
 overwrite a rows.json another tool changed meanwhile), or --attach-only to attach
-an existing --out without fetching.
+an existing --out without fetching (through the same guard). Rebuild the
+spreadsheet afterward.
 
 A re-run keeps what an earlier run found: when a lookup returns nothing but the
 existing --out has a count for that row, the earlier count stays (a throttled
@@ -37,8 +38,9 @@ Semantic Scholar batch is not "no citations").
 
 OpenAlex's batch filter sometimes returns a low-count duplicate record. So the
 tool keeps the highest count per DOI, retries each miss by single-work lookup,
-and re-queries a count far below Semantic Scholar's. Counts are a snapshot at run
-time; re-run to refresh. See PLAYBOOK Phase 5b.
+and re-queries a count far below Semantic Scholar's. Still, check that no famous
+old paper shows a single-digit count. Counts are a snapshot at run time; re-run
+to refresh. See PLAYBOOK Phase 5b.
 """
 import argparse
 import datetime

@@ -7,7 +7,7 @@ through ONE formatter from the authoritative record: CrossRef for a DOI, the
 arXiv API for an arXiv id. When CrossRef has no such DOI, DataCite is tried,
 because Zenodo, figshare, OSF and Dryad register software, data-set and some
 preprint deposits there. When a row has both a journal DOI and an arXiv id, the
-journal DOI wins.
+journal DOI wins, because a published paper is cited by its version of record.
 
 Canon rebuilds only a row whose verify stamp is OK (or overridden with a reason)
 for its current ids, so it never prints a wrong paper in a correct format. It
@@ -31,19 +31,100 @@ by hand (handcheck.py).
 
 Canon rewrites each rebuilt row's `apa` (and its `link` to the DOI URL), stamps
 `canonical_at`, and prints the audit. --audit prints the audit and writes
-nothing. On a gated table (any row verified, or built on or after the gates
-date), the audit also applies the reference gates: the verify stamp, the hand
+nothing, and exits 1 on any defect. On a gated table (see the reference gates
+below), the audit also applies the reference gates: the verify stamp, the hand
 check, the summary check, the candidate ledger, and an acknowledgment in
 audit_acks.json for every warning. spreadsheet.py runs this same audit. Canon
 needs --email or LITREVIEW_EMAIL; --audit, --list-acks and --repair make no
 network request and do not.
 
-Some registry records are wrong in ways canon cannot fix (a split compound
-surname, two authors packed into one, a missing subtitle or year). Because canon
-re-fetches on every run, such a fix lives in hand_fixes.json beside --rows
-(--hand-fixes): {ref: [{"old", "new", "why"}]} (common.load_hand_fixes). Canon
-and --repair re-apply every fix after they write, and exit 1 on a fix that no
-longer matches its row. The audit fails a row whose fix is gone (hand-fix-lost).
+OUTPUT. Each rebuilt `apa` is APA-7 from CrossRef, DataCite or the arXiv API, with:
+  - the full author list (more than 20 authors: the first 19, an ellipsis, the last);
+  - correct initials and name particles (de Heer), and fixed casing
+    (ANDERSON -> Anderson);
+  - HTML unescaped, and all-caps titles sentence-cased;
+  - a real venue, including the preprint servers CrossRef leaves blank (bioRxiv,
+    PsyArXiv, arXiv, or arXiv's journal_ref when present).
+A DataCite-registered software, data-set or preprint DOI that CrossRef does not
+hold (Zenodo, figshare, OSF, Dryad) is written as
+    Authors (Year). Title (Version v) [Data set|Computer software|Preprint]. Publisher.
+The bracket and version are left out when DataCite has none. A creator with no
+given name is split when that is safe: "Jagroop Singh Doad" or "Doad J S" gives
+"Doad, J. S.", and "Kim J-H" gives "Kim, J.-H.". A `familyName` is the surname
+when `name` contains it as a whole word. A name is never split on trailing
+initials, into a one-letter surname, or from a 3-4 letter capitalized word
+("Collins AGE", "Hao CHEN"). A creator kept whole is flagged
+datacite-unsplit-author:<name>. A record that is not software or a data set, or
+whose publisher is "Unpublished", is flagged datacite-deposit. Both are stored as
+the row's `canon_warnings`, and each must be acknowledged in the audit.
+
+--audit fails on formatting defects:
+  - a missing author or year, or `et al.` in the author list;
+  - an HTML entity or markup tag, `?.` or `!.`, or a U+2010/U+2011 hyphen;
+  - a malformed initial (`L. (.`, `J. -.`);
+  - punctuation glued to the next word, or a `?` where a quote or dash belongs;
+  - U+FFFD mojibake;
+  - a truncated or empty venue;
+  - an uppercase title (three or more all-caps words in a row);
+  - a hand fix that is no longer in the row (hand-fix-lost, below).
+A DOI-less book or report is not a formatting defect. It is listed for a check by
+hand, which a gated table requires (handcheck.py).
+
+--audit warns on the cases that need a human verdict:
+  - near-duplicate titles, usually a preprint and its published version with
+    different DOIs. Keep the version of record, and re-check any in-text citation
+    whose year changes;
+  - multi-word surnames, which may be real (Lambon Ralph) or given names CrossRef
+    folded into the surname (Thomas Yeo). A leading initial in the surname
+    (A. Moffat) is unambiguous and repaired automatically;
+  - one-letter surnames (S, D. J.), almost always an initial split off as the
+    surname. Acknowledge a real one (O) as single-letter-surname:<name>;
+  - a footnote digit glued to the title;
+  - a deposit-year conflict, where the DOI encodes a different year (back-file
+    digitization re-dates old papers);
+  - a cached `year` field that disagrees with `apa`.
+On a legacy table, warnings are only reported. On a gated table, each warning
+must be acknowledged, or the audit fails. Record the reason in audit_acks.json
+({ref: {warning_id: reason}}); --list-acks lists the warnings still open.
+
+Reference gates. A table is gated once any row carries a verify stamp, or was
+built or canonicalized on or after the gates date (common.GATES_SINCE). On a
+gated table the audit also fails:
+  - a row with a DOI or arXiv id that is not verified OK for its current ids;
+  - a DOI-less row with no valid hand check, or whose `apa` changed since it;
+  - a row with no summary (no-summary);
+  - a summary with no summary check for its current text and ids, one judged
+    unsupported, or one checked against an abstract judged not the paper's
+    (abstract-wrong);
+  - a `link` that is not the row's DOI;
+  - a pending candidate in candidates.json, or an included candidate that is not
+    in the table.
+It also adds warnings to acknowledge:
+  - no candidate ledger;
+  - an xref or forward run that is missing or did not finish, or that read fewer
+    papers than the table now has (not counting the candidates the passes added);
+  - a row verified only against its own canonical `apa`;
+  - a verified row that canon could not rebuild;
+  - each canon warning;
+  - a summary with no abstract to check it against.
+
+Hand fixes. Some registry records are wrong in ways canon cannot fix (a split
+compound surname, two authors packed into one, a missing subtitle or year).
+Mojibake is flagged, not fixed, because the original character is lost. Because
+canon re-fetches on every run, it would undo a fix typed into `apa`. So such a
+fix lives in hand_fixes.json beside --rows (--hand-fixes), with "old" the damaged
+text, "new" the final text and "why" its source: {ref: [{"old", "new", "why"}]}
+(common.load_hand_fixes). Write "new" in its final form, sentence case included.
+Canon, --repair and `sentence_case.py --apply` re-apply every fix after they
+write. Canon and --repair exit 1 on a fix that no longer matches its row. The
+audit fails a row whose fix is gone (hand-fix-lost).
+
+--repair fixes pure string damage (markup, Unicode hyphens, `?.` and `!.`)
+without re-fetching, so earlier hand edits survive. Use it on an old corpus
+instead of a full re-run. Canon stamps each rebuilt row with `canonical_at`,
+which common.write_rows checks before overwriting. --repair adds that stamp only
+on a legacy table: on a gated table the stamp means "rebuilt from a verified
+source", which a string repair is not.
 
 arXiv ids are fetched in batches of 50 (one request per 50 rows, 3 s apart, as
 arXiv asks), never one per row. A row whose fetch fails gets a second try at the

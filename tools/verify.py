@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 """Verify a list of citations against CrossRef, DataCite, arXiv, PMC and PubMed.
 
+Search agents have gotten as many as a quarter of their citations wrong (authors,
+years, or the whole paper), so nothing enters the spreadsheet unverified.
+
 Reports one verdict per citation:
   OK          the record agrees with the claim
   MISMATCH    the record disagrees on first author, year or title, or the DOI
-              does not resolve
+              does not resolve: fix or drop the row, or --override a false alarm
   NOT-FOUND   every lookup completed and none matched: chase it down, since it
               is likely fabricated
   ERROR       a lookup could not complete (rate limit, network): re-run it
-  UNCHECKED   the row carried no claim to check, so a resolving DOI shows only
-              that the DOI exists
+  UNCHECKED   the row carried no author, year or title to check, so a resolving
+              DOI shows only that the DOI exists: give it a claim or a canonical apa
 NOT-FOUND and ERROR are kept strictly apart. An earlier version swallowed
 exceptions into NOT-FOUND, which can drop a real paper on a transient throttle.
-Never drop a NOT-FOUND without chasing it, and always re-run an ERROR.
+Never drop a NOT-FOUND without chasing it, and always re-run an ERROR. A
+malformed row becomes ERROR without aborting the batch. When a PMC or PubMed
+lookup fails and the fallback title search returns a paper that does not match,
+the verdict is also ERROR, not MISMATCH.
 
 Exit status: 0 only when every verdict is OK; 1 otherwise. references.py --audit
 and cite_check.py fail the same way, so a chained Phase 3 run stops at the first
@@ -32,12 +38,38 @@ DOI, but they never stand in for a DOI: when a DOI resolves in neither registry,
 a fallback hit makes the verdict MISMATCH ("DOI does not resolve"), and no hit
 makes it NOT-FOUND.
 
-First author. Surnames are compared, not initials. A record's first author is
-trusted only when the registry deposited it structured (family + given name);
-otherwise the verdict is MISMATCH with "confirm by hand". An ambiguous claim
-("Hao CHEN") gets the same, and an unreadable name on either side ("?", "anon")
-never matches. The year may differ by one from any record, and the title must
-agree both ways (common.title_agrees).
+First author. Surnames are compared, not initials.
+  - A record is read by its source's "Family INITIALS" contract: "Collins AGE" is
+    Collins, and an arXiv "John Smith" becomes "Smith J".
+  - A record's first author is trusted only when the registry deposited it
+    structured (family + given name). These forms give MISMATCH with "confirm by
+    hand":
+      a DataCite first creator without both familyName and givenName, unless it
+        is "Family, Given" or an Organizational group;
+      a CrossRef first author with no given name, or a first entry with no family;
+      an arXiv name with a capitalized word ("CHEN Hao");
+      a bare "Hae-Jeong Park" or "Hao CHEN J".
+  - Accepted as they are: bare records with spaced initials or a comma list
+    ("Kim J H", "Chen, Hao H"), and a CrossRef whole name deposited as the family.
+  - A claim is read once, in whatever shape it was reported. "Smith J", "J. Smith"
+    and "Smith, J." all give Smith. Initials of any script ("Ł" or "И") count as
+    initials. A list ("Smith J; Jones K" or "Smith J and Jones K") gives its first
+    name. An ambiguous claim, such as "Hao CHEN" or "Collins AGE", is also an
+    issue to confirm by hand.
+  - The claim's surname must match a whole word of the record's: "Tang" matches
+    "Tang J", "Heuvel" matches "van den Heuvel M", and "Hanna" matches
+    "Andrews-Hanna J". "Van Essen" does not match "Van Dijk", nor "Min"
+    "Seung-Min Park", nor "Lambon Ralph" "Ralph J". In a given-first claim ("John
+    Smith"), each given name must start with one of the record's initials (or be
+    a word of its surname). A claim led by a capitalized particle ("DU Wei")
+    matches only a record that carries the particle.
+  - A group author ("ATLAS Collaboration", "Stanford University", "Google
+    Research") is compared whole. An unknown name on either side ("?", "anon",
+    "unknown", or no readable word) is an author issue, never a match.
+The year may differ by one from any record, and the title must agree both ways
+(common.title_agrees). merge_lanes.py uses the same author comparison to tell a
+duplicate from two papers that share a title. It never merges on, or confirms a
+deferral by, an unknown author.
 
 Input format (JSON list of dicts):
 [
@@ -52,6 +84,8 @@ Input format (JSON list of dicts):
   },
   ...
 ]
+expect_first_author is the author as reported, in any shape ("Tang J", "J. Tang",
+"Tang, J.").
 
   python3 tools/verify.py < input.json > report.json
   python3 tools/verify.py --citations input.json --out report.json
@@ -68,7 +102,8 @@ against its apa alone, and the audit then asks a human to confirm it
 
 --rows also writes each verdict onto its row as `verified` (every verdict, not
 only OK, bound to the row's DOI and arXiv id), unless --no-stamp. references.py
-rebuilds only rows with an OK stamp for their current ids. To clear a false alarm
+rebuilds only rows with an OK stamp for their current ids, and its audit reads the
+stamp too. To clear a false alarm
 (e.g. a preprint retitled on publication), record why; this needs no network:
   python3 tools/verify.py --rows rows.json --override A-07 --reason "retitled on publication"
 
@@ -77,6 +112,13 @@ after a cool-down (--retry-wait). To re-check a few rows later:
   python3 tools/verify.py --rows rows.json --retry-from report.json --out report.json
 This re-verifies only the rows that were not OK and splices them back into the
 report (--only A-01,B-02 names rows explicitly).
+
+Record cache. verify and canon (references.py) keep every CrossRef, DataCite and
+arXiv record they fetch in .record_cache/ beside --rows (or --citations) for 14
+days. So canon reuses what verify fetched, and a targeted re-run makes almost no
+requests. Only successful records are cached, so a missing or failed lookup still
+reads as NOT-FOUND or ERROR. LITREVIEW_RECORD_CACHE=off turns the cache off; any
+other value is used as its folder.
 """
 import argparse
 import datetime

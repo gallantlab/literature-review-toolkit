@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite.
 
-For each paper, fetch its reference list from CrossRef, or from Semantic Scholar
-for an arXiv paper or one CrossRef holds no list for. A paper with no DOI but a
+It finds papers the corpus cites often but does not contain. For each paper,
+fetch its reference list from CrossRef, or from Semantic Scholar for an arXiv
+paper or one CrossRef holds no list for. A paper with no DOI but a
 `pdf` has the DOIs in its PDF read with pdftotext instead. Then count, for each
 cited DOI, how many input papers cite it, and rank those cited by at least
 --min-cites (default 3). --exclude drops DOIs the table already has, and
@@ -20,6 +21,8 @@ Input format (JSON list):
 
   python3 tools/xref.py --papers list.json --out xref.json --min-cites 3
   python3 tools/xref.py --rows rows.json --out xref.json     # slug = row key, DOI from doi/link
+  python3 tools/xref.py --rows rows.json --out xref.json --exclude existing_dois.json \\
+          --min-cites 4 --resolve-unknown --internal-out internal_citations.json
 
 With --rows, an arXiv-only row is looked up by its arXiv DOI, and a row with
 neither a DOI nor a pdf is skipped. --internal-out also writes {slug:

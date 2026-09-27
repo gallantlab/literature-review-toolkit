@@ -4,7 +4,8 @@
 Companion to download.py (Phase 4, opt-in): run it only when the user has asked
 for PDF acquisition. It scans --downloads-dir (default ~/Downloads) for PDFs
 modified in the last --since-hours (default 12), and moves each match into
---out-dir as <slug>.pdf. --dry-run reports without moving anything.
+--out-dir as <slug>.pdf. --dry-run reports without moving anything. It needs
+pdftotext (brew install poppler).
 
 Matching, most reliable first:
   1. **Filename ↔ DOI substring.** Many publishers encode the DOI suffix in the

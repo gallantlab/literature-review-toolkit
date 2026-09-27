@@ -5,7 +5,8 @@ It runs the same audit as references.py --audit. On a gated table, a failing
 audit writes nothing and exits 1; --draft writes <out>_DRAFT.xlsx instead, with a
 banner saying it is not a deliverable. A legacy table (one that predates the
 reference gates) is written despite the findings. A candidates.json that is not a
-valid ledger is refused on any table.
+valid ledger is refused on any table. Always rebuild from scratch: the writer
+cannot edit an existing file.
 
 Base schema (sheet "References", or --sheet-name):
   Topic | Ref # | APA reference | Link | Summary | Tag | PDF (local) | Xref
@@ -43,6 +44,7 @@ Input format (JSON list):
 ]
 
   python3 tools/spreadsheet.py --rows rows.json --out bibliography.xlsx
+  python3 tools/spreadsheet.py --rows rows.json --out bibliography.xlsx --draft   # a marked draft
 """
 import argparse
 import os
