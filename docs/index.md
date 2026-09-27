@@ -3,7 +3,7 @@
 **Scripts that let an LLM agent run a literature review without fabricating
 references.**
 
-Version 1.28.0 · MIT license · [AI disclosure](#ai-disclosure)
+Version 1.29.0 · MIT license · [AI disclosure](#ai-disclosure)
 
 The agent decides what to search, what matters, how to group it, and optionally
 how to write it up. The scripts handle the API calls, verification and
@@ -37,7 +37,7 @@ toolkit checks those steps by script instead of trusting the agent's memory.
 <span class="big">1</span>
 ### Scope
 You choose the topic and how far back to search, or, in **lab mode**, which
-lab's publications to start from.
+lab's publications to start from. You also say how big a search you want.
 </div>
 
 <div class="card" markdown>
@@ -61,13 +61,16 @@ Between those points, every step runs automatically:
 - **Antecedents.** A required second search finds the field's methodological,
   empirical and theoretical roots, which a forward search misses.
 - **Verification.** Every citation is checked against PubMed, PMC, CrossRef,
-  DataCite and arXiv. Search agents fabricate roughly **1 in 4**.
+  DataCite and arXiv. Without a duty to verify, search agents got about
+  **1 in 4** citations wrong.
 - **Canonical references.** Every reference is rebuilt from its verified DOI into
   APA-7. References with no DOI get a hand check.
 - **Summary checks.** A checking agent with no web access compares every
   summary with the paper's abstract.
 - **Citation counts.** Counts come from OpenAlex, checked against Semantic
   Scholar.
+- **Missed papers.** The corpus's own reference lists, and the papers that cite
+  its landmarks, surface papers the search missed.
 - **The audit.** A failed check stops the build. The spreadsheet runs the full
   audit and refuses a table that fails it.
 
@@ -122,7 +125,7 @@ From verification on, both modes run the same pipeline. See
 You need Python 3, a contact email, and two free API keys. Without an OpenAlex
 key, every client on one IP address shares a single daily budget, and a campus
 network can spend it before you start. Keyless Semantic Scholar is heavily
-throttled.
+throttled. In the directory that will hold your reviews:
 
 ```bash
 git clone https://github.com/gallantlab/literature-review-toolkit.git
@@ -131,11 +134,18 @@ pip install -r requirements.txt
 export LITREVIEW_EMAIL=you@institution.edu   # NCBI and CrossRef require one
 export OPENALEX_API_KEY=...                   # https://help.openalex.org/api/authentication
 export S2_API_KEY=...                         # https://www.semanticscholar.org/product/api#api-key-form
-python3 tools/preflight.py --project <topic>/ --papers 600   # newer version? keys? today's OpenAlex budget?
 ```
 
 Then open Claude Code in the directory that holds the clone and describe the
-review. The agent runs the preflight first and follows
+review. Say how big a search you want, in your own words: "a quick look at the
+key papers", "the core literature", "about 300 papers" or "everything". Say
+nothing and you get the standard search. Every check runs at every size. The
+scales are listed in [Topic mode](manual.md#41-topic-mode).
+
+Before it searches, the agent runs the
+[preflight](manual.md#23-phase-0-run-the-preflight-before-every-new-search). It
+checks for a newer toolkit, your keys and today's OpenAlex budget, and asks you
+to choose when access is short. The agent then follows
 [`PLAYBOOK.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/PLAYBOOK.md).
 A full build takes hours. [Installation](manual.md#21-install) and
 [environment variables](manual.md#22-environment-variables) are covered in the

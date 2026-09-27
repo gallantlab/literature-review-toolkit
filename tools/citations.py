@@ -15,9 +15,9 @@ xref, citations and abstracts; their requests take turns through a pacer shared
 across processes, so they may run at the same time.
 
 INPUT: a JSON list of rows. Each row needs a key (default: "ref", else "label")
-and a DOI, from a "doi" field or a https://doi.org/... "link"; a row without one
-gets empty counts. arXiv DOIs (10.48550/arXiv.<id>) are looked up in Semantic
-Scholar by arXiv id.
+and a DOI, from a "doi" field or a https://doi.org/... "link". An arXiv-only row
+is counted by its arXiv DOI (10.48550/arXiv.<id>), which Semantic Scholar is
+asked for by arXiv id. A row with neither id gets empty counts.
 
 OUTPUT: {key: {"openalex": int|None, "s2": int|None, "s2_influential": int|None,
                "asof": "YYYY-MM-DD"}}

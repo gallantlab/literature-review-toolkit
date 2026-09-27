@@ -9,7 +9,9 @@ labeled at left with its claim. Each dot is one verified paper, placed by
 publication year. Dot area is proportional to citation count, and a hollow dot
 has no count. Labeled dots are landmarks, chosen automatically by citation count
 and by how often the corpus itself cites them. A ring and a ★ mark a home-lab
-paper, when starring is turned on. [§7.2 of the manual](manual.md#72-the-lineage-figure) gives the full key.
+paper: a row from the lab's own record in lab mode, or any paper by an author
+named in `LITREVIEW_LAB_AUTHOR`. [§7.2 of the manual](manual.md#72-the-lineage-figure)
+gives the full key.
 
 ---
 
@@ -200,4 +202,5 @@ decoding of conversation has barely begun.
     Each run also produces an interactive HTML figure. Hover a dot for its
     reference, click it for its summary, counts and DOI, and step through papers
     with Next/Prev or the arrow keys. For publication, each run also writes an
-    SVG copy, plus PNG and PDF when `rsvg-convert` or Inkscape is installed. See [Reading the lineage figure](manual.md#72-the-lineage-figure).
+    SVG copy, plus PNG and PDF when `rsvg-convert` or Inkscape is installed. See
+    [Reading the lineage figure](manual.md#72-the-lineage-figure).

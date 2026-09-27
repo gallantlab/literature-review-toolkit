@@ -17,32 +17,36 @@ has a ground truth: a DOI either resolves to the cited paper or it does not.
 
 The toolkit separates the two. **The agent supplies judgment; the scripts supply
 ground truth.** Every checkable fact is checked by a script, behind a gate that
-fails the build instead of misleading the reader. This matters because search
-agents fabricate roughly **1 in 4** citations. They invent DOIs, swap first
-authors, invert findings, and sometimes attach the wrong author list to a real
-paper. Nothing downstream trusts an unverified reference. Summaries get the same
+fails the build instead of misleading the reader. This matters because, without a
+duty to verify, search agents got about **1 in 4** citations wrong. They invented
+DOIs, swapped first authors, inverted findings, and sometimes attached the wrong
+author list to a real paper. Every lane brief now carries that duty
+([§4.1](#41-topic-mode)), and still nothing downstream trusts an unverified
+reference. Summaries get the same
 treatment: each one is checked against its paper's abstract.
 
-**Target size.** Aim for 50–70 high-impact and recent papers per topic. Corpora of
-400–650 papers work, but several figure defaults then need retuning
+**Size.** You set the size of the search when you describe the review, from a
+quick scan to an exhaustive search ([§4.1](#41-topic-mode)). Every check runs at
+every size. Builds so far have run from about 50 to over 1,100 papers. Above about
+110 papers, several figure defaults need retuning
 ([§9.4](#94-the-figure-hides-landmarks-or-looks-wrong)).
 
 ### 1.1 The pipeline
 
 ```mermaid
 flowchart TD
-    P["⓪ Preflight<br/>toolkit version, API keys, budget"]
+    P["⓪ Preflight<br/>toolkit version, API keys, budget<br/>→ preflight.json"]
 
     subgraph TOPIC["Topic mode"]
-      T1["① Scope the topic<br/>(human decision)"]
-      T2["② Search lanes<br/>forward + antecedents"]
-      T2b["②c Merge lanes<br/>(fails on a lost deferral)"]
+      T1["① Scope the topic and the scale<br/>(human decision)"]
+      T2["② Search lanes<br/>forward + antecedents<br/>briefs from lane_briefs.py"]
+      T2b["②c Merge lanes<br/>(fails on a lost deferral<br/>or a lane over its cap)"]
       T1 --> T2 --> T2b
     end
 
     subgraph LAB["Lab mode"]
       L1["L1 Ingest lab corpus<br/>(OpenAlex by author id)"]
-      L2["L2 Prune false positives<br/>(human decision)"]
+      L2["L2 Prune and check the record<br/>(human decision; lane L)"]
       L3["L3 Derive themes<br/>& their drift over time"]
       L1 --> L2 --> L3
     end
@@ -77,7 +81,8 @@ flowchart TD
 ```
 
 <small>**Two front ends feed one verified backbone.** The preflight (⓪) runs
-before any search. Topic mode (left) starts from a question; lab mode (right)
+before any search, and the merge (②c) refuses to build a table without its record.
+Topic mode (left) starts from a question; lab mode (right)
 starts from a lab's publications. Both enter verification (③), and every later
 phase is shared. Yellow boxes are human decisions. Green boxes are gates: each one
 stops the pipeline on an error. Papers added by the cross-citation pass (⑥) loop
@@ -89,30 +94,35 @@ straight to the spreadsheet is taken only when you skip it.</small>
 ### 1.2 The pipeline as commands
 
 ```
- 0. preflight.py --scale <scan|focused|standard|exhaustive|N>
+ 0. preflight.py --project <topic>/ --scale <scan|focused|standard|exhaustive|N>
       Exit 2: stop. Offer the newer toolkit if there is one. If API access
       is short, choose: get the keys, cap the search, or be prepared to wait.
- 1. Scope the topic (your decision). Write the lane briefs in the schema-2
-      format; launch the forward and antecedent lanes together.
+      Record the choice with --accept cap|wait|current-version.
+ 1. Scope the topic and its scale (your decision). Describe the lanes in
+      lanes.json; lane_briefs.py --spec lanes.json writes every brief.
+      Launch the forward and antecedent lanes together.
  2. merge_lanes.py --raw search_raw --out rows.json
-      A lost deferral fails the merge: send it to one recovery lane, add its
-      file, and re-merge. Resume any lane the merge flags as thin.
+      Needs a cleared preflight.json. A lost deferral fails the merge: send
+      it to one recovery lane, add its file, and re-merge. A capped lane
+      over its cap also fails it. Resume any lane flagged as thin.
  3. verify.py --rows rows.json --out verify_report.json
       Fix or drop each MISMATCH and NOT-FOUND, or clear a false alarm with
       --override. Meanwhile, run handcheck.py --prepare and the hand-check
       agent for the DOI-less rows; run --ingest after verify finishes.
  4. Pitch the proposed families to the user (families.py --digest).
- 5. In parallel with references.py (canon), run citations.py, xref.py and
-      abstracts.py (they share the Semantic Scholar key's pace on their own).
-      After canon, attach the counts; then run forward.py, which ranks its
-      landmarks by xref's output and the counts.
+ 5. In parallel with references.py (canon), run citations.py (fetch only),
+      xref.py and abstracts.py; they share the Semantic Scholar key's pace.
+      After canon, citations.py --attach-only; then run forward.py, which
+      ranks its landmarks by xref's output and the counts.
  6. candidates.py --add the xref and forward results; decide each one with
       a reason; --export-included, merge_lanes.py --append, then verify
       (or hand-check), canon and citation counts for the new rows.
- 7. sentence_case.py in a reviewed pass; record hand fixes in hand_fixes.json.
+ 7. sentence_case.py in a reviewed pass. Record each hand fix in
+      hand_fixes.json; canon and sentence_case.py re-apply them.
  8. summary_audit.py --prepare, the checking agents, --ingest. Fix each
       flagged summary and check it again.
- 9. families.py --assign, then families_figure.py (unless skipped at 4).
+ 9. families.py --assign (read the hard calls it prints), then
+      families_figure.py (unless the timeline was skipped at 4).
 10. Acknowledge each remaining warning in audit_acks.json.
 11. spreadsheet.py: runs the full audit and writes the deliverable only
       if it passes.
@@ -122,12 +132,13 @@ straight to the spreadsheet is taken only when you skip it.</small>
 
 | # | You decide | Phase | Why it is yours |
 |---|---|---|---|
-| 1 | **Scope**: topic and span, or which lab corpus, and how big a search | 1 / L1–L2 | Only you know the question. |
+| 1 | **Scope and size**: the topic and its span, or which lab corpus; and how big a search | 1 / L1–L2 | Only you know the question and how much of the field you need. |
 | 2 | **Families and the timeline** | 6b | The agent always offers the timeline and proposes its families; you use them, change them, or skip the timeline. |
 | 3 | **The write-up** *(optional)* | 7 | Prose is judgment; the toolkit does not fake it. |
 
 The preflight can add a fourth: when API access is short, you choose how the
-build proceeds ([§2.3](#23-phase-0-run-the-preflight-before-every-new-search)).
+build proceeds, and the choice is recorded
+([§2.3](#23-phase-0-run-the-preflight-before-every-new-search)).
 
 ---
 
@@ -169,23 +180,25 @@ export S2_API_KEY=...         # free key from semanticscholar.org
 The toolkit sends the OpenAlex key as an `Authorization` header, and only to
 `api.openalex.org`, so it never appears in a URL or a log line. One Semantic
 Scholar key serves `citations.py`, `xref.py` and `abstracts.py`. Their requests
-take turns through a pacer shared across processes, so the three may run at the
-same time without drawing each other's 429s.
+take turns through one pacer, a lock file shared by every toolkit process on the
+machine. So the three may run at the same time without drawing each other's 429s.
 
 ### 2.3 Phase 0: run the preflight before every new search
 
 A build runs for hours, and two of its services ration keyless use. To find out
-before the build starts whether it can finish, run the preflight and point it at
-the project folder:
+before the build starts whether it can finish, create the project folder and run
+the preflight from the bibliography root:
 
 ```bash
+mkdir -p <topic>
 python3 tools/preflight.py --project <topic>/ --scale focused
 ```
 
 `--scale` is the size of search you asked for (`scan`, `focused`, `standard`,
-`exhaustive` or a number of papers; add `--lanes N` if you know the lane count), and
-the preflight sizes its budget estimate to it. `--papers` gives the planned corpus
-size directly instead (default 500). The preflight does four things:
+`exhaustive` or a number of papers; see [§4.1](#41-topic-mode)). Add `--lanes N`
+if you know the lane count. The preflight sizes its budget estimate to the scale;
+`--papers` gives the planned corpus size directly instead (default 500). The
+preflight does four things:
 
 1. **Checks for a newer toolkit.** The toolkit is updated often. The preflight
    compares this copy's version with the one on GitHub. When GitHub is newer, it
@@ -209,23 +222,27 @@ is missing or the budget is short, the preflight prints three choices:
 - **Get the API keys.** Both are free, and each has its own budget. Add the export
   lines to your shell profile, open a new shell, and rerun the preflight.
 - **Cap the search.** Use fewer lanes and a hard per-lane cap, sized so the build
-  fits the budget. Every lane brief then says the search is capped. A lane lists
-  each on-topic paper over its cap in `excluded`, with reason
-  `over the capped-search limit`. Those papers appear on the spreadsheet's
-  "Considered and excluded" sheet instead of being lost. Without `S2_API_KEY`, also
-  run `xref.py --allow-incomplete` and say so at hand-off.
+  fits the budget: a capped scale (`scan`, `focused` or a number of papers). Every
+  lane brief then says the search is capped, and each lane lists the on-topic
+  papers over its cap in `excluded`, with reason `over the capped-search limit`.
+  Those papers appear on the spreadsheet's "Considered and excluded" sheet instead
+  of being lost. Without `S2_API_KEY`, also run `xref.py --allow-incomplete` and
+  say so at hand-off.
 - **Be prepared to wait.** Nothing is skipped, but it takes longer. An OpenAlex step
   that runs out of budget stops with `OpenAlexBudgetError`; rerun it after the
   budget resets at midnight UTC. A large build can need more than one day.
   Semantic Scholar steps back off on every 429 and can take hours on a large corpus.
 
-**The record, and the gate.** Every run writes `preflight.json` into the project.
-`merge_lanes.py`, the step that first builds the table, refuses to run without one
-that is under 14 days old and cleared. A record is cleared when everything passed, or
-when you have recorded your choice: rerun with `--accept cap` or `--accept wait` after
-a key or budget stop, or `--accept current-version` to keep this toolkit instead of
-updating. A missing email can never be accepted. To merge without a record, pass
-`merge_lanes.py --no-preflight "reason"`; the reason is kept in `merge_report.json`.
+**The record is a gate.** Every run writes `preflight.json` into the project
+folder; if the folder does not exist yet, nothing is recorded. `merge_lanes.py`,
+the step that first builds the table, refuses to run without a record that is at
+most 14 days old and cleared. A record is cleared when everything passed, or when
+you have recorded your choice. After a key or budget stop, rerun with `--accept
+cap` or `--accept wait`. To keep this toolkit instead of updating, add `--accept
+current-version`. A run whose every stop is accepted exits 0. A missing email can
+never be accepted. After a cap choice, `lane_briefs.py` refuses an uncapped scale
+([§4.1](#41-topic-mode)). To merge without a record, pass `merge_lanes.py
+--no-preflight "reason"`; the reason is kept in `merge_report.json`.
 
 **The OpenAlex budget.** Without a key, OpenAlex gives each IP address 1,000
 credits a day, shared by every client behind it. A key has its own 10,000. The
@@ -252,15 +269,19 @@ and reach the scripts as `../tools/`. To make that path work, link the toolkit's
 ├── tools -> literature-review-toolkit/tools    (the link the commands use)
 ├── visual_cerebellum/                      <- one review, one subdir
 │   ├── visual_cerebellum_bibliography.xlsx     <-- THE DELIVERABLE
+│   ├── preflight.json                      (Phase 0 record; the merge requires it)
 │   ├── topic_definition.md                 (scope you and the agent agreed on)
+│   ├── lanes.json                          (Phase 2 lane spec, with the scale)
+│   ├── briefs/, lane_manifest.json         (Phase 2: the generated lane briefs)
 │   ├── search_raw/                         (Phase 2: one lane file per lane)
 │   ├── merge_report.json                   (Phase 2c: deferrals, exclusions, thin lanes)
 │   ├── rows.json                           (the live table; everything renders from it)
 │   ├── verify_report.json                  (Phase 3 verdicts)
 │   ├── handcheck_input.json, handcheck_result.json   (Phase 3 hand checks)
+│   ├── hand_fixes.json                     (Phase 3f fixes that survive a re-canon)
 │   ├── citation_counts.json                (Phase 5b, cached)
 │   ├── abstracts.json, summary_audit/      (Phase 5c summary checks)
-│   ├── xref_visual_cerebellum.json         (Phase 6 frequency table, + .run.json)
+│   ├── xref_visual_cerebellum.json         (Phase 6 frequency table, + .run.json, .refs.json)
 │   ├── forward_candidates.json             (Phase 6 forward citations, + .run.json)
 │   ├── internal_citations.json             (Phase 6, within-corpus in-degree)
 │   ├── candidates.json                     (Phase 6 candidate ledger)
@@ -278,14 +299,16 @@ and reach the scripts as `../tools/`. To make that path work, link the toolkit's
 === "With an agent (intended)"
 
     Open Claude Code in the bibliography root and describe the review in plain
-    English. The agent reads `PLAYBOOK.md`, runs the preflight, creates the
-    subdirectory, runs the phases, and reports when done. It asks about scope
-    only when the request is ambiguous.
+    English, including how big a search you want. The agent reads `PLAYBOOK.md`,
+    creates the subdirectory, runs the preflight, runs the phases, and reports
+    when done. It asks about scope only when the request is ambiguous.
 
     ```text
     i want a literature review on the anatomical connections between the visual
     system and the cerebellum. any anatomy papers from primate or human, using
     any tractography method. go back as far as the 1970s.
+
+    give me a quick look at the key papers on predictive coding in the retina.
 
     extend the existing visual_cerebellum review with another 20 papers focused
     on cerebello-thalamic projections.
@@ -308,22 +331,25 @@ Ten rules. The rest of this manual elaborates them.
 
 | # | Rule | Phase |
 |---|---|---|
-| 0 | **Check for a newer toolkit and for API access before any search**: `preflight.py`. If it exits 2, stop. Offer the newer version if there is one. If access is short, let the user choose: get the keys, cap the search, or be prepared to wait. | 0 |
+| 0 | **Check for a newer toolkit and for API access before any search**: `preflight.py`. If it exits 2, stop. Offer the newer version if there is one. If access is short, let the user choose: get the keys, cap the search, or be prepared to wait. The merge refuses to run until the record is cleared. | 0 |
 | 1 | **Verify every citation** before it enters a deliverable, preprints included. `verify.py --rows` stamps each row; canon and the audit refuse a row without an OK stamp for its current ids. | 3 |
 | 2 | **Every reference is canonical**: rebuilt from its verified DOI, never typed by an agent or copied from a database. Canon's refusal to rebuild an unverified row is unconditional, on every table. `--audit` is a hard gate. | 3f |
 | 3 | **One row per DOI.** A paper appears once in `rows.json`. | all |
-| 4 | **Run the antecedents pass on every review**, in both modes. Without it the field looks ten years old. | 2b |
+| 4 | **Run the antecedents pass on every review**, in both modes and at every scale. Without it the field looks ten years old. `lane_briefs.py` refuses a spec with no antecedent lane. | 2b |
 | 5 | **Audit the temporal order of ideas** before delivering a written review. Origin claims cite the earliest deserving paper. | 7 |
-| 6 | **After Phase 3f, `rows.json` is the live table.** Edit it by hand; never re-run the script that first emitted it. | — |
+| 6 | **From the first merge on, `rows.json` is the live table.** Add rows only with `merge_lanes.py --append`, and change them only through the tools or by hand. Never regenerate it. | 2c |
 | 7 | **Fetch without asking** from PubMed, PMC, CrossRef, OpenAlex, Unpaywall, arXiv and publishers; these are read-only GETs. Every link is a bare `https://doi.org/<doi>`, never a library-proxy URL. | — |
 | 8 | **PDFs are opt-in.** Default no. | 4 |
 | 9 | **The spreadsheet is the release gate.** It runs the full audit and refuses a failing table; `--draft` writes one marked as a draft. | 5 |
 
 !!! danger "Rule 6 causes the most damage"
-    Re-running the original row emitter after canonicalization wipes the
-    canonical references and the citation counts. `common.write_rows` refuses to
-    overwrite a table stamped `canonical_at`, but a project script that writes
-    the file directly bypasses that guard. Edit `rows.json` in place.
+    Regenerating `rows.json`, by a fresh `merge_lanes.py --raw --out` or a
+    project row emitter, drops every stamp, hand check and summary check written
+    since. After canon it also wipes the canonical references, the citation
+    counts and the families. `common.write_rows` refuses to overwrite a table
+    stamped `canonical_at`, but a project script that writes the file directly
+    bypasses that guard. Edit `rows.json` in place, and record a fix to a
+    reference in `hand_fixes.json` ([§5.3](#53-phase-3f-canonicalize-every-reference)).
 
 ---
 
@@ -345,8 +371,10 @@ they are identical.
 species or method restrictions, and how far back. Write it to
 `topic_definition.md`, which anchors every later search.
 
-**The size of the search (your decision).** Say it in your own words when you
-describe the review, and the agent maps it to a scale:
+**Phase 1: the size of the search (your decision).** Say it in your own words when
+you describe the review. The agent maps it to a scale, passes it to the preflight
+([§2.3](#23-phase-0-run-the-preflight-before-every-new-search)), and writes it into
+the lane spec:
 
 | Scale | You say | Papers per lane | Capped | Lanes |
 |---|---|---|---|---|
@@ -354,27 +382,49 @@ describe the review, and the agent maps it to a scale:
 | `focused` | "the core literature" | 30 | yes | 3-8 |
 | `standard` | nothing about size (the default) | 40, a floor | no | 4-12 |
 | `exhaustive` | "everything", "comprehensive" | 60, a floor | no | 6-20 |
-| a number | "about 300 papers" | the total spread over the lanes | yes | any |
+| a number | "about 300 papers" | the total spread over the lanes | yes | up to 50 |
 
-In a capped search each lane keeps its most important papers and lists the rest as
-excluded, and the merge fails a lane that returns more than its cap. In an uncapped
-search the target is a floor: on recent builds lanes returned about three times it.
-Every scale still needs an antecedent lane, and every check runs at every scale.
+A lane may set its own target. A smaller scale means fewer papers, never fewer
+checks: every gate runs at every scale, and every scale needs an antecedent lane.
 
-**Phase 2: search.** Each search lane is an agent with its own brief. To make the
-briefs, describe the lanes in a spec (`lanes.json`) and run
-`python3 tools/lane_briefs.py --spec lanes.json`. The spec holds the bibliography's
-title and scope, whether the search is capped, the lab in lab mode, and each lane's
-key, kind (forward or antecedent), target, definition, exclusions, queries and seed
-titles. The tool fills
+**Phase 2: search.** Each search lane is an agent with its own generated brief;
+never fill one by hand. To make the briefs, describe the lanes in a spec,
+`lanes.json`, in the project folder:
+
+```json
+{"title": "Anatomical connections between the visual system and the cerebellum",
+ "for": "<who the review is for>",
+ "description": "What the bibliography covers, and what is out of scope for every lane.",
+ "scale": "focused",
+ "lanes": [{"key": "A", "name": "Cerebello-thalamic projections",
+            "short": "one line for the lane table", "kind": "forward",
+            "definition": "...", "exclusions": ["..."], "queries": ["..."],
+            "seeds": ["a landmark title, no author"]},
+           {"key": "R", "name": "Roots: tract-tracing methods", "kind": "antecedent", "...": "..."}]}
+```
+
+The example shows two of its lanes; a `focused` spec needs three to eight.
+
+Then run `python3 ../tools/lane_briefs.py --spec lanes.json`. It fills
 [`tools/search_prompt_template.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/search_prompt_template.md)
-for every lane. It refuses a spec with a missing field, a repeated key, or a seed that
-names an author, and it refuses a brief with anything left unfilled. So every brief
-carries the verification duty and the other rules. Each lane agent writes one JSON
-lane file (schema 2) into `search_raw/`. Links must be DOI
-URLs. By default, papers older than about five years need to be highly cited or
-foundational. Newer papers have no citation threshold, because they have not had
-time to accrue citations. Move the boundary forward as the calendar moves.
+for each lane and keeps only the blocks that apply: forward or antecedent, capped
+or uncapped, lab mode, seeds. It writes `briefs/brief_<KEY>.md`,
+`lane_manifest.json` and an empty `search_raw/`, and prints the prompt to give each
+search agent and a preflight command sized to the plan. Lab mode adds `"lab":
+{"pi": ..., "lane": "L"}` ([§4.2](#42-lab-mode)).
+
+The tool refuses a spec with any of these problems, and names each one:
+
+- a missing field, a repeated lane key, or a seed that names an author;
+- a lane count outside the scale's range, or no antecedent lane;
+- an uncapped scale after you chose, at the preflight, to cap the search;
+- a brief with anything left unfilled.
+
+So every brief carries the verification duty and the other rules. Each lane agent
+writes one JSON lane file (schema 2) into `search_raw/`. Links must be DOI URLs.
+Papers older than the tier boundary (the spec's `tier`, by default five years
+before today) need to be highly cited or foundational. Newer papers have no
+citation threshold, because they have not had time to accrue citations.
 
 A lane file has four lists:
 
@@ -385,24 +435,30 @@ A lane file has four lists:
 | `excluded` | a **decision**: a paper outside the scope, or an older paper that does not clear the classic bar, with its `reason`, `first_author` and `year` |
 | `could_not_confirm` | a paper the lane could not confirm exists |
 
-**The target is a floor, not a cap.** A lane never drops an on-topic paper to stay
-near its target; "trimmed to target" is not a reason. The only exception is a
-capped search, chosen at the preflight
-([§2.3](#23-phase-0-run-the-preflight-before-every-new-search)). On the first
+**In an uncapped search, the target is a floor.** A lane never drops an on-topic
+paper to stay near its target; "trimmed to target" is not a reason. On recent
+builds, uncapped lanes returned about three times their target. On the first
 reference-gated build (2026-09-26), eleven lanes deferred 138 papers that no lane
 kept, most of them "trimmed to target". Without the merge's deferral check, every
 one of them would have been lost without notice.
 
-!!! tip "Give each search lane an explicit verification duty"
-    Tell each lane to read the author list off the landing page, confirm that the
-    DOI resolves to the right paper, and read the abstract before summarizing.
-    This cuts fabrication from about 25% to near zero. A 555-paper corpus built
-    this way returned 535 OK, 2 MISMATCH and 0 NOT-FOUND in Phase 3.
+**In a capped search, the target is a hard cap.** Each lane keeps its most
+important papers and lists every other on-topic paper in `excluded`, with reason
+`over the capped-search limit`. The merge fails a capped lane that returns more
+than its cap.
+
+!!! tip "Why every brief carries a verification duty"
+    The brief tells each lane to read the author list off the landing page,
+    confirm that the DOI resolves to the right paper, and read the abstract before
+    summarizing. Without that duty, about 1 in 4 citations came back wrong. A
+    555-paper corpus built with it returned 535 OK, 2 MISMATCH and 0 NOT-FOUND in
+    Phase 3.
 
 !!! warning "Expect a third of remembered seed titles not to exist"
-    If you seed lanes with landmark titles recalled from memory, label them as
-    unverified. Roughly 30–40% are not real papers. An agent told the seeds may be
-    wrong substitutes genuine work; an agent not told invents a paper to match.
+    Roughly 30–40% of landmark titles recalled from memory are not real papers.
+    The brief therefore labels seeds as unverified titles, and `lane_briefs.py`
+    refuses a seed that names an author. An agent told the seeds may be wrong
+    substitutes genuine work; an agent not told invents a paper to match.
 
 **Phase 2b: antecedents (required).** The forward search favors recent papers and
 the topic's current framing, so it misses the field's roots. A second set of
@@ -412,10 +468,10 @@ lanes searches three kinds of roots:
 2. **Foundational results**: older physiology, psychophysics and behavior.
 3. **Theory**: the ideas the field is built on.
 
-Reuse the search template with the tier flipped to favor classics. Launch these
-lanes with the forward lanes; they write into the same `search_raw/`. Pre-2000
-classics, books and chapters often have no DOI. Those keep a hand-written APA
-reference, get a hand check in Phase 3
+Give these lanes `"kind": "antecedent"` in the spec; their briefs favor classics.
+Launch them with the forward lanes; they write into the same `search_raw/`.
+Pre-2000 classics, books and chapters often have no DOI. Those keep a hand-written
+APA reference, get a hand check in Phase 3
 ([§5.2](#52-phase-3-hand-check-the-references-with-no-doi)), and get no citation
 count.
 
@@ -426,6 +482,10 @@ lane files into `rows.json`:
 python3 ../tools/merge_lanes.py --raw search_raw --out rows.json
 ```
 
+The merge first reads `preflight.json` from the project folder, and stops if no
+cleared record under 14 days old is there
+([§2.3](#23-phase-0-run-the-preflight-before-every-new-search)).
+
 `merge_lanes.py` dedups by DOI, then arXiv id, then normalized title plus year. It
 keeps each lane's claim as `search_author`, `search_year` and `search_title`,
 which verification checks the DOI against. A title-and-year match alone is a hint,
@@ -434,7 +494,9 @@ years agree and the rows do not carry two *different* journal DOIs. (A preprint
 DOI and its own journal DOI are not a conflict.) Otherwise both rows are kept and
 reported as a possible pair. After the merge, it also compares the titles of every
 pair of kept rows. Any pair with a similarity of 0.9 or more, whatever the year
-or DOI, is listed as a possible duplicate.
+or DOI, is listed as a possible duplicate. A title of fewer than four content words
+must match character by character, so a short title such as "The human visual
+cortex" does not pair with every longer title that contains its words.
 
 Exclusions never have to match a row. The merge records them in
 `merge_report.json`, and the spreadsheet lists every exclusion that no lane kept
@@ -458,6 +520,8 @@ visibly one that a lane decided against.
 - **A rejected paper**: one with no DOI, no arXiv id and no APA string, so it can
   be neither verified nor hand-checked. Give it a DOI or arXiv id, or have the lane
   write its full APA reference, then re-merge.
+- **A capped lane over its cap**, read from `lane_manifest.json`. Resume the lane:
+  it keeps its most important papers and moves the rest to `excluded`.
 
 The merge also prints each **thin lane**: one that returned under 60% of its
 target, or ran out of search budget. Resume that lane; do not re-spawn it.
@@ -473,36 +537,50 @@ refuses an empty `rows.json`, because a first merge is `--raw`/`--out`, not
 ```bash
 python3 ../tools/lab_corpus.py --search "Jack Gallant"           # find the OpenAlex id
 python3 ../tools/lab_corpus.py --author A5056348548 --out lab_papers.json
+python3 ../tools/abstracts.py --rows lab_papers.json --out lab_abstracts.json
 ```
 
 **L1: ingest.** `lab_corpus.py` pulls a PI's works from OpenAlex. Pass several
 `--author` ids to widen coverage to key lab members, or because one person's
-record is split across several ids.
+record is split across several ids. Every row carries `source: "lab"` and a
+`built_at` date, so the reference gates apply from the start. OpenAlex topic tags
+are too coarse to classify papers by, so fetch the abstracts too.
 
 **L2: prune (your decision).** Author disambiguation is the main correctness risk
 in lab mode, and it fails in both directions. OpenAlex merges same-name authors
 into one id, which leaves false positives to remove. It also splits one person
 across several ids, which leaves papers to add; nothing fails when a record is
 missing. `--search` prints each id's year span and ORCID to help you tell them
-apart. To check every item by content, `lab_lane.py --prepare` writes batches and a
-brief for checking agents, and `lab_lane.py --build` turns their results into lane L
-(the lab's own papers, `source: "lab"`), refusing an unchecked item, an included
-duplicate, an item not by the PI or an unknown theme. Field lanes send the lab's
-papers to lane L, so the merge fails on any the record lacks. Then verify before
-canonicalizing, as in topic mode. Every row carries a `built_at` date, so the
-reference gates apply from the start.
+apart.
+
+**L3: derive themes (your decision).** The agent derives the lab's research themes
+from the abstracts, and how their emphasis changed over time. You approve them.
+They are written to `themes.json` as `[{"key", "name", "claim"}]`, and they become
+the lanes for the rest of the pipeline.
+
+**Checking the record by content.** Database tags mislabel papers, so checking
+agents read every item of the record. `lab_lane.py` does the mechanics around
+them; it needs the approved themes, because each item is assigned to one:
 
 ```bash
-python3 ../tools/verify.py --rows lab_papers.json --out verify_report.json
-python3 ../tools/references.py --rows lab_papers.json --out lab_papers.json
+python3 ../tools/lab_lane.py --prepare --papers lab_papers.json --abstracts lab_abstracts.json \
+        --themes themes.json --pi "Jack L. Gallant"
+# dispatch one checking agent per lab_check/input_NN.json; brief: lab_check/brief.md
+python3 ../tools/lab_lane.py --build --papers lab_papers.json --themes themes.json
 ```
 
-**L3: derive themes.** The agent derives the lab's research themes and how their
-emphasis changed over time. OpenAlex topic metadata is not enough; fetch
-abstracts first. The themes become the lanes for the rest of the pipeline.
+Each agent decides authorship, kind, species, duplicates and theme. A meeting
+abstract, erratum or peer-review report is excluded, and of two versions of one work
+the version of record is kept. `--build` writes lane L, the lab's own papers, to
+`search_raw/0_L.json`. It refuses an unchecked item, an included duplicate, an item
+not by the PI, or a theme not in `themes.json`.
 
 **L4c: contextualize.** This runs the full topic-mode front end (Phases 2–6) once
-per theme, with the same guardrails.
+per theme, with the same guardrails. The lane spec has a lane per theme, the
+antecedent lanes, and `"lab": {"pi": "Jack L. Gallant", "lane": "L"}`. Field lanes
+then defer the lab's papers to lane L, so the merge fails on any lab paper the
+record lacks. That is the completeness check a split author id needs. Lane L's
+file sorts first, so a lab paper that a field lane also found keeps its lab row.
 
 The lab's own early work counts as an antecedent. An inclusion filter such as
 "human fMRI only" must not drop, for example, macaque physiology that predates
@@ -652,9 +730,12 @@ text it shows (the row's `apa`, else its `search_apa`). An existing
 **`--adopt-dois`** gives each row with exactly one candidate that DOI, so the row
 goes through `verify.py` like any other. A row with several candidates is left
 alone and named. A row no longer in the table is reported, not silently dropped.
-When every candidate is the wrong paper, run `handcheck.py --rows rows.json --reject
-<ref> --reason "..."`: the next `--prepare` skips those DOIs and sends the row to the
-hand check.
+When every candidate is the wrong paper, record that, and the next `--prepare`
+skips those DOIs and sends the row to the hand check:
+
+```bash
+python3 ../tools/handcheck.py --rows rows.json --reject Y-19 --reason "both candidates are reviews of it"
+```
 
 **The hand-check agent** checks each work against its own source: a library
 catalog, the publisher's page, or the work itself, never another paper's citation
@@ -729,13 +810,15 @@ the gate passes. On a gated table, an unacknowledged warning fails the audit too
 re-fetching or undoing hand fixes. It stamps `canonical_at` only on a legacy
 table, never on a gated one.
 
-**Hand fixes.** Some records are wrong at the registry: a compound surname split in
-two, two authors packed into one, a missing subtitle or year. Record each fix in
-`hand_fixes.json` beside `rows.json`, as `{"<ref>": [{"old": "<the damaged text>",
-"new": "<the final text>", "why": "<the source>"}]}`. Write `new` in its final form,
-sentence case included. Canon and `sentence_case.py --apply` re-apply every fix after
-they write, so a re-canon cannot undo one. The audit fails a row whose fix is missing
-(`hand-fix-lost`), and canon exits 1 on a fix that no longer matches its row.
+**Hand fixes survive every re-canon.** Some records are wrong at the registry: a
+compound surname split in two, two authors packed into one, a missing subtitle or
+year. Canon re-fetches on every run, so a fix typed into `rows.json` alone would be
+undone. Record each fix in `hand_fixes.json` beside `rows.json`, as `{"<ref>":
+[{"old": "<the damaged text>", "new": "<the final text>", "why": "<the source>"}]}`.
+Write `new` in its final form, sentence case included. Canon and `sentence_case.py
+--apply` re-apply every fix after they write. The audit fails a row whose fix is
+gone (`hand-fix-lost`). Canon exits 1 on a fix whose damaged and final text are both
+missing from the row, because the row changed underneath it.
 
 **Sentence case.** `--vocab` lists each distinct word change for review, and
 `--apply` writes the changes. `proper_nouns.json` lists the words and phrases to
@@ -751,30 +834,33 @@ keep capitalized, as `{"words": [...], "phrases": [...]}`.
     before them. So `sentence_case.py` never cases them, and `verify.py` compares
     only the title itself. No `--proper` entry is needed for them.
 
-After this phase, `rows.json` is the live table (contract rule 6).
+From here on, `rows.json` holds the canonical references, and regenerating it
+would wipe them (contract rule 6).
 
 ### 5.4 Phase 5b: citation counts
 
 ```bash
-python3 ../tools/citations.py --rows rows.json --out citation_counts.json
+python3 ../tools/citations.py --rows rows.json --out citation_counts.json               # fetch
+python3 ../tools/citations.py --rows rows.json --out citation_counts.json --attach-only # attach
 ```
 
 OpenAlex is the primary source (about 95% coverage by DOI); Semantic Scholar is
 the cross-check. Google Scholar has no API and blocks scripted access, so it is
 not used. Counts are a snapshot: record the `--asof` date, and do not expect the
-two sources to agree. Papers with no DOI stay blank.
+two sources to agree. An arXiv-only row is looked up by its arXiv DOI. A row with
+neither a DOI nor an arXiv id stays blank.
 
-`citations.py` writes `citation_counts.json` and leaves `rows.json` alone. The
-spreadsheet's `Cite` columns and the figure's dot sizes read the counts from the
-rows, as `cite_openalex` and `cite_s2`. To attach them, run:
+**Fetching and attaching are separate steps.** The fetch writes
+`citation_counts.json` and leaves `rows.json` alone, so it can run while canon
+does. The spreadsheet's `Cite` columns and the figure's dot sizes read the counts
+from the rows, as `cite_openalex` and `cite_s2`. So once canon has finished, attach
+them with `--attach-only`. `--attach` fetches and attaches in one run, when no
+other tool is writing `rows.json`. Like every tool that writes the table, it
+refuses to write when `rows.json` changed after it loaded the file.
 
-```bash
-python3 tools/citations.py --rows rows.json --out citation_counts.json --attach-only
-```
-
-`--attach` does both steps in one run. Attaching writes `rows.json`, so it waits until
-no other tool is writing it. A re-run keeps an earlier count wherever its own lookup
-came back empty, so re-running to fill Semantic Scholar gaps never loses coverage.
+**A re-run keeps what an earlier run found.** Where a lookup comes back empty but
+the existing `citation_counts.json` has a count for that row, the earlier count
+stays. So re-running to fill Semantic Scholar gaps never loses coverage.
 
 !!! warning "A famous old paper with a single-digit count is an undercount"
     OpenAlex's batch endpoint sometimes returns a stub record. Tolman (1948) came
@@ -807,13 +893,20 @@ python3 ../tools/summary_audit.py --rows rows.json --ingest
 API for arXiv papers, then OpenAlex, then Semantic Scholar, then PubMed. Each
 entry records the `doi` and `arxiv` it was fetched for, and is fetched again when
 the row's ids change. A hand-added entry (`"source": "landing-page"`, carrying the
-row's `doi` and `arxiv`) is never overwritten; one whose ids no longer match is
-reported as stale; one with an empty `text` records that the paper has no abstract.
-A fetch that fails is reported separately from a paper with no abstract, and
-written to `abstracts_failed.json`. A source text that is not an abstract
-(boilerplate such as a journal's self-description or JSTOR's terms of use, a citation
-line, an author list and venue) is refused and reported, and the next source is
-tried.
+row's `doi` and `arxiv`) is never overwritten. One whose ids no longer match is
+reported as stale, and one with an empty `text` records that the paper has no
+abstract. A fetch that fails is reported separately from a paper with no abstract,
+and written to `abstracts_failed.json`.
+
+**Text that is not an abstract is refused.** Sources sometimes hold something else
+in the abstract field: a journal's self-description, JSTOR's terms of use, a
+citation line for another item, or an author list and venue. A summary written
+from one of these describes the text, not the paper. So `abstracts.py` reports it
+and tries the next source.
+
+**Every row needs a summary.** On a gated table, a row with an empty summary is a
+defect (`no-summary`). Rows exported from the candidate ledger arrive without one,
+so write theirs from the abstract before `--prepare`.
 
 **Preparing the batches.** `summary_audit.py --prepare` splits the rows that need
 a check into batches (`--batch`, default 40), each with its summaries and
@@ -826,9 +919,8 @@ already passed.
 **The checking agents.** Dispatch one agent per batch, with no web access. It
 judges only whether the abstract supports the summary. Its verdict is "supported",
 "unsupported" with the unsupported clause quoted exactly, or "wrong-abstract" when
-the abstract on file is not this paper's. A wrong abstract is an audit defect: add
-the real one as a landing-page entry, rewrite the summary, and check it again. It writes
-`summary_audit/result_NN.json`, echoing each entry's `summary_sha`.
+the abstract on file is not this paper's. It writes `summary_audit/result_NN.json`,
+echoing each entry's `summary_sha`.
 
 **Ingesting the results.** `--ingest` records each verdict on its row as
 `summary_check`. It binds every result to the manifest, which records exactly what
@@ -843,8 +935,13 @@ It refuses a result, and you re-run `--prepare`, when:
   rather than treating each one as unchanged.
 
 A row with no abstract is recorded as `no-abstract`, a warning you acknowledge
-([§5.8](#58-acknowledge-what-needs-a-human-verdict)). A flagged summary is a
-defect: fix it and run `--prepare` again.
+([§5.8](#58-acknowledge-what-needs-a-human-verdict)). Two verdicts are defects:
+
+- **A flagged summary** (`summary-flagged`): fix the summary and run `--prepare`
+  again.
+- **A wrong abstract** (`abstract-wrong`): add the paper's real abstract as a
+  landing-page entry, or an entry with an empty `text` if it has none. Rewrite the
+  summary from it, then run `--prepare` again.
 
 ### 5.6 Phase 6: cross-citation pass and the candidate ledger
 
@@ -871,6 +968,11 @@ finds 25–35 candidates per topic.
   matches a corpus DOI.
 - **An incomplete run fails.** When a paper's references could not be fetched, the
   run is incomplete and xref exits 1, unless you pass `--allow-incomplete`.
+- **A re-run fetches only what is missing.** Every completed reference list is
+  cached in `<out>.refs.json` (`--cache`), keyed by paper and DOI. A re-run after a
+  throttled pass fetches only the papers missing from the cache or whose DOI
+  changed. A fetch that did not complete is never cached. `--no-cache` refetches
+  everything.
 - **Four or more citations across about 40 papers is a strong signal**; three is
   borderline.
 - **CrossRef coverage varies by publisher.** Nature, Cell, OUP and J Neurosci
@@ -912,7 +1014,8 @@ python3 ../tools/merge_lanes.py --append xref_lane.json --into rows.json
 every source and score. `--decide` requires a `--reason`. `--export-included`
 writes a schema-2 lane file of the included papers not yet in the corpus, ready
 for `merge_lanes.py --append`. Send the appended batch back through Phases 3, 3f,
-5b and 5c. An included candidate that never reaches the table is a defect.
+5b and 5c. Its rows carry no summary, so write one for each from its abstract
+([§5.5](#55-phase-5c-check-each-summary-against-its-abstract)). An included candidate that never reaches the table is a defect.
 Excluded candidates are not discarded: the spreadsheet lists them, with their
 reasons, on its "Considered and excluded" sheet.
 
@@ -944,7 +1047,7 @@ python3 ../tools/families.py --rows rows.json --digest
 # 2. PITCH: the agent offers the timeline and shows the family definitions.
 #    You use them, change them, or skip the timeline (your decision #2).
 
-# 3. assign, validate and stamp
+# 3. assign (agents briefed from tools/family_prompt_template.md), validate and stamp
 python3 ../tools/families.py --rows rows.json --assign families_input.json \
         --out families.json
 
@@ -956,6 +1059,12 @@ python3 ../tools/families_figure.py --rows rows.json --families families.json \
 Step 2 is the only stop. Editing six definitions costs nothing; reassigning 300
 papers does not. If you skip the timeline, the phase ends there: no `Family` column
 and no figure. Otherwise steps 3 and 4 run without stopping.
+
+**Read the hard calls before rendering.** The assignment agents do not argue with
+the family definitions. Instead, they record each **hard call**, a paper that fits
+its family badly or fits two about equally, in the assignment's `hard_calls` field.
+`families.py` prints them, and warns when the assignment has no `hard_calls` field.
+A wrong family definition shows up only there.
 
 The render's defaults are the standard settings. Dots are sized by citation count,
 and `internal_citations.json` is read from beside `rows.json`. The exact arguments
@@ -1034,7 +1143,7 @@ reported but not failed; delete it.
 | `no-candidate-ledger` (under `*`) | there is no `candidates.json` |
 | `no-xref-run`, `no-forward-run` (under `*`) | the ledger records no run of that direction |
 | `incomplete-xref-run`, `incomplete-forward-run` (under `*`) | the last recorded run of that direction did not finish |
-| `partial-xref-run`, `partial-forward-run` (under `*`) | the last run read fewer papers than the table now has with a DOI or arXiv id |
+| `partial-xref-run`, `partial-forward-run` (under `*`) | the last run read fewer papers than the table now has with a DOI or arXiv id, not counting the candidates the passes themselves added |
 
 ### 5.9 Phase 5: build the spreadsheet (the release gate)
 
@@ -1144,16 +1253,16 @@ python3 ../tools/bib_viewer.py --rows rows.json --families families.json \
 The viewer can also be embedded in a page (`bib_viewer.render()`, plus
 `bib_viewer.CSS` and `bib_viewer.JS`). Pass `provenance=False` where the masthead
 already carries the disclosure. Verify the viewer's filter by running it, not by
-reading it: `node tools/checks/verify_bib_filter.mjs <page>.html` executes the
+reading it: `node ../tools/checks/verify_bib_filter.mjs <page>.html` executes the
 page's script against a stub DOM and checks what is visible. The same folder holds
-`verify_hover.mjs` and `verify_nav_order.mjs` for the timeline. They need Node.js
-and no browser.
+`verify_hover.mjs` (the lane-title hover) and `verify_nav_order.mjs` (the Next /
+Prev walk) for the timeline. They need Node.js and no browser.
 
 ### 6.3 Phase 8: hand off
 
 Deliver the `.xlsx` and the timeline (or note that it was skipped), plus the
-review if you ran Phase 7. Report the row count by source, the verification
-corrections made, and any pass run with `--allow-incomplete`. **Keep the JSON
+review if you ran Phase 7. Report the scale, the row count by source, the
+verification corrections made, and any pass run with `--allow-incomplete`. **Keep the JSON
 files with the deliverable.** They are the audit trail and the input to any later
 re-run.
 
@@ -1296,11 +1405,6 @@ Rerunning a search on an existing bibliography brings the WHOLE project up to th
 current standard, or redoes it if that is easier. It is never a lighter pass over
 only the new rows.
 
-**Or redo it, and measure the redo.** A fresh build in its own folder can be compared
-with the old one: `recall.py --rows rows.json --old ../<old>/rows.json` reports how
-many of the old papers the rerun found and writes the misses as input for one
-recovery lane.
-
 **What switches the gates on.** A table is gated once any row carries a verify
 stamp, or was built or canonicalized on or after 2026-09-25 (a `built_at` or
 `canonical_at` date). Every current row emitter stamps `built_at`. Once a table is
@@ -1346,6 +1450,19 @@ a DOI, or the rows lack the search lanes' claims (`search_*` fields), so
 the lanes are stale enough that a fresh search is simpler than reconciling one row
 at a time. Say which you chose, and why.
 
+**Measure a redo against the old build.** Build the redo in its own folder, then
+compare it with the old one:
+
+```bash
+python3 ../tools/recall.py --rows rows.json --old ../<old>/rows.json --where source=search
+```
+
+`recall.py` matches every old row against the new table, by DOI, then arXiv id,
+then title, and prints the recall. It writes the misses to `recovery_input.json`,
+the input for one recovery lane. That lane's agent decides each miss again, since
+the old reference is a pointer, not a claim. `--where source=search` limits the
+comparison to the old build's field papers.
+
 ---
 
 ## 9. When something goes wrong
@@ -1376,8 +1493,8 @@ Do not relax the gate.
 | `unverified (...)` | `verify.py --rows rows.json --only <refs>`, then re-canon those rows |
 | `hand-check-missing` | `handcheck.py --prepare`, the hand-check agent, `--ingest` ([§5.2](#52-phase-3-hand-check-the-references-with-no-doi)) |
 | `summary-unchecked`, `summary-flagged` | `summary_audit.py`; fix a flagged summary and check it again ([§5.5](#55-phase-5c-check-each-summary-against-its-abstract)) |
-| `no-summary` | write a summary from the abstract, then `summary_audit.py` (rows exported from the candidate ledger arrive without one) |
-| `abstract-wrong` | add the paper's real abstract as a landing-page entry (or an empty `text` if it has none), rewrite the summary, check it again ([§5.5](#55-phase-5c-check-each-summary-against-its-abstract)) |
+| `no-summary` | write a summary from the abstract, then check it ([§5.5](#55-phase-5c-check-each-summary-against-its-abstract)) |
+| `abstract-wrong` | add the real abstract as a landing-page entry, rewrite the summary, check it again ([§5.5](#55-phase-5c-check-each-summary-against-its-abstract)) |
 | `hand-fix-lost` | run `references.py` to re-apply `hand_fixes.json`, or update the fix if the row changed ([§5.3](#53-phase-3f-canonicalize-every-reference)) |
 | `candidates-pending` | `candidates.py --list pending`, then `--decide` each ([§5.6](#56-phase-6-cross-citation-pass-and-the-candidate-ledger)) |
 | `candidate ... is marked include but is not in the table` | `--export-included`, `merge_lanes.py --append`, then verify |
@@ -1424,7 +1541,7 @@ the S2 column. See [§5.4](#54-phase-5b-citation-counts).
 | API | Limit |
 |---|---|
 | OpenAlex | 1,000 credits a day per IP address without a key, shared by every client behind it; 10,000 with a key. A filter (batch) request costs 1 credit, a title search 10, a single-work lookup 0. Resets at midnight UTC. |
-| Semantic Scholar | a strict per-key limit whose 429s carry no Retry-After; the toolkit waits at least 1.1 s between requests, shared across every process using the key. |
+| Semantic Scholar | a strict per-key limit whose 429s carry no Retry-After; the toolkit waits at least 1.1 s between requests, counted across every toolkit process on the machine ([§2.2](#22-environment-variables)). |
 | arXiv | about 1 request per 3 s; bursts return 429 |
 | NCBI E-utilities | 3 requests/s without a key, 10 with; use a 0.4 s sleep |
 | CrossRef | polite pool (with `mailto:`) is unthrottled; otherwise about 50/s |
@@ -1441,7 +1558,7 @@ took these times:
 | `verify.py` | about 8 min |
 | `references.py` (canon) | about 11 min |
 | `citations.py` | about 3 min |
-| `xref.py` | 35 min or more, held back by Semantic Scholar's rate limit |
+| `xref.py` | 35 min or more, held back by Semantic Scholar's rate limit; a re-run reads its cache |
 
 An earlier 475-row build (2026-09-24) took about 4 hours in all, 53 minutes of
 them in canon, before canon batched its arXiv fetches. The rest of a build's time

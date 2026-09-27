@@ -67,7 +67,8 @@ Return ONLY:
   "hard_calls": [ {"ref": "<ref>", "assigned": "<key>", "also_fits": "<key or none>",
                    "why": "one sentence"} ] }
 ```
-(`families.py` ignores `hard_calls`; it is for the orchestrator.)
+(`families.py` prints every hard call for the orchestrator to read before rendering,
+and warns when `hard_calls` is missing.)
 
 Save that as `families_input.json`, then run:
 ```

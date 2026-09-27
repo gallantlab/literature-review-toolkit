@@ -11,8 +11,10 @@ with a placeholder or block marker left in it.
     python3 tools/lane_briefs.py --spec lanes.json
 
 It writes briefs/brief_<KEY>.md, lane_manifest.json (key, name, brief, out, target,
-kind) and an empty search_raw/ and scratch/<KEY>/ per lane, all beside the spec, and
-prints the one-line prompt to give each search agent.
+kind, capped, scale) and an empty search_raw/ and scratch/<KEY>/ per lane, all
+beside the spec, and prints the one-line prompt to give each search agent. Keep the
+spec in the project folder: merge_lanes.py reads lane_manifest.json beside its
+--out to fail a capped lane over its cap.
 
 The spec (JSON):
   {"title": "The Gallant lab in the context of its field",
@@ -32,12 +34,14 @@ The spec (JSON):
 
 The scale is how big a search the user asked for (common.SEARCH_SCALES): it sets
 each lane's target (a lane may set its own), whether lanes are capped, and the
-number of lanes allowed. A numeric scale is a capped total spread over the lanes.
-Every scale still needs at least one antecedent lane (contract rule 4). When the
-project's preflight.json records that the user chose to cap the search, an uncapped
-scale is refused. The tool prints the plan and the preflight command sized to it.
+number of lanes allowed. A numeric scale is a capped total spread over the lanes,
+and the lane targets may not add up to more than it. Every scale still needs at
+least one antecedent lane (contract rule 4). When the project's preflight.json
+records that the user chose to cap the search, an uncapped scale is refused. The
+tool prints the plan and the preflight command sized to it.
 
-Seeds are TITLES only: a seed that carries an author name is refused, because
+Lane keys are 1-4 capital letters or digits, since they prefix every ref. Seeds
+are TITLES only: a seed that carries an author name is refused, because
 remembered author names have injected fabricated attributions into past builds.
 Exit 1 on a spec error, naming every problem.
 """
@@ -94,6 +98,8 @@ def apply_scale(spec, preflight_record=None):
         errs.append("no antecedent lane: every review needs one (contract rule 4), at every scale")
     for ln in lanes:
         ln.setdefault("target", plan["lane_target"])
+    if str(spec.get("scale", "")).strip().isdigit():
+        spec["scale"] = int(str(spec["scale"]).strip())     # "300" and 300 are the same scale
     if plan["capped"] and isinstance(spec.get("scale"), int):
         total = sum(ln.get("target", 0) for ln in lanes if isinstance(ln.get("target"), int))
         if total > spec["scale"]:
@@ -217,7 +223,8 @@ def main():
     targets = ", ".join(f"{m['key']} {m['target']}" for m in manifest)
     print(f"  {len(manifest)} lanes, targets {targets}; "
           f"{'capped' if spec['capped'] else 'uncapped (targets are floors)'}; about {planned} papers")
-    print(f"  size the preflight to it: python3 tools/preflight.py --project {here} --papers {planned}")
+    print(f"  size the preflight to it: python3 tools/preflight.py --project {here} --scale {plan['name']} "
+          f"--lanes {len(manifest)}  (repeat any --accept the user chose)")
     print(f"wrote {len(manifest)} brief(s) to {briefs} (+ lane_manifest.json)")
     print("Launch one general-purpose agent per lane, all in one message, with the prompt:")
     print('  "Read the literature-search brief at <brief path> and carry it out exactly as written. '

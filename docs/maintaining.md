@@ -37,6 +37,17 @@ python3 tools/tests/test_formatting.py    # each case is a defect that once ship
 python3 tools/gen_docs.py --check         # fails if the tool index or a version stamp is stale
 ```
 
+CI does not test the interactive pages. After a change to the lineage figure
+(`families_figure.py`) or the bibliography viewer (`bib_viewer.py`), run the
+Node.js checkers in `tools/checks/` on a rendered page. Each one runs the page's
+own code, because these bugs have survived reading the source:
+
+```bash
+node tools/checks/verify_hover.mjs <figure>.html        # the family hover panels
+node tools/checks/verify_nav_order.mjs <figure>.html    # the Prev/Next order
+node tools/checks/verify_bib_filter.mjs <page>.html     # the viewer's filter
+```
+
 ## Build and deploy
 
 - **Engine:** MkDocs with the Material theme. Config:

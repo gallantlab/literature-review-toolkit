@@ -26,11 +26,14 @@ neither a DOI nor a pdf is skipped. --internal-out also writes {slug:
 internal_indegree}, how many OTHER corpus papers cite each corpus paper, which
 families_figure.py and forward.py use to pick landmarks.
 
-Every completed reference list is cached in <out>.refs.json (--cache), so a
-re-run after a throttled or interrupted pass fetches only what is missing
-(--no-cache refetches everything). Semantic Scholar needs S2_API_KEY to be
-reliable. xref, citations and abstracts share one key and take turns on it through
-a pacer shared across processes. Its reference lists are
+Every completed reference list is cached, by slug and DOI (or PDF), in
+<out>.refs.json or --cache. So a re-run after a throttled or interrupted pass
+fetches only the lists that are missing, incomplete or for an edited DOI;
+--no-cache refetches everything.
+
+Semantic Scholar needs S2_API_KEY to be reliable. xref, citations and abstracts
+share one key, and their requests take turns through a pacer shared across
+processes, so they may run at the same time. Semantic Scholar reference lists are
 fetched in chunks of 10, and a failed chunk gets one more try in half-size
 chunks. A CrossRef fetch that fails transiently gets a second try at the end of
 the run, after --retry-wait.

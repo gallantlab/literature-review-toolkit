@@ -5,7 +5,8 @@ candidates.json maps each DOI to {title, year, first_author, sources, decision,
 reason, at}. Keys that start with "_" are records, not candidates. `_runs` holds
 {source: {at, n, complete, n_papers}}, written by each --add. From it the audit
 can tell whether xref and forward citation were run, whether each run finished,
-and whether it read every row with a DOI or arXiv id. `complete` and `n_papers`
+and whether it read every row with a DOI or arXiv id (not counting the included
+candidates, which the run that proposed them cannot have read). `complete` and `n_papers`
 come from the <FILE>.run.json sidecar that xref.py and forward.py write beside
 their --out; a missing sidecar records complete=False. --add refuses a sidecar
 written by a different tool than --source names, and skips candidates the corpus

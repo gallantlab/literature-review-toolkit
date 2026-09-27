@@ -8,7 +8,8 @@ marker is these notes and is never sent.
 
 Blocks: `forward` / `antecedent` (the lane's kind: the antecedents variant flips the
 tier emphasis to classic, pre-modern work and tags papers `anteced`), `capped` /
-`uncapped` (whether the user capped the search at the Phase-0 preflight), `lab`
+`uncapped` (whether the spec's scale caps the lanes, `common.SEARCH_SCALES`; after a
+"cap" choice at the preflight, `lane_briefs.py` refuses an uncapped scale), `lab`
 (lab mode: the lab's own papers are deferred to the lab lane), `seeds` (the lane has
 landmark titles). Seeds are TITLES only, never author names: remembered author names
 have injected fabricated attributions, and about a third of remembered titles do not
@@ -91,7 +92,8 @@ with filler either.
 
 **This is a CAPPED search: the target is a hard cap of {TARGET_COUNT} papers.** Keep the
 most important papers, and list every on-topic paper over the cap in `excluded` with
-reason `over the capped-search limit`, so it is shown, not lost.
+reason `over the capped-search limit`, so it is shown, not lost. The merge fails a lane
+that returns more than {TARGET_COUNT} papers.
 <!-- ENDIF:capped -->
 
 ## How to search

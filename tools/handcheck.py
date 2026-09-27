@@ -22,10 +22,12 @@ row without a hand-check record. This tool does the work around the hand check:
                       input written before that binding existed), or when the
                       result's own `apa_sha` echo is missing or differs from the
                       input's (a result for an older --prepare).
-  --reject REF        the row's candidate DOIs (in --candidates) are all the wrong
-                      paper: record them on the row as `doi_rejected`, with the
-                      required --reason, so the next --prepare skips them and
-                      sends the row to the hand check. Repeat for several rows.
+  --reject REF        the row's candidate DOIs (in --candidates, default
+                      handcheck_doi_candidates.json beside --rows) are all the
+                      wrong paper: record them on the row as `doi_rejected`, with
+                      the required --reason, so the next --prepare skips them and
+                      sends the row to the hand check. Repeat for several rows;
+                      exit 1 when a ref is not in the table or has no candidates.
   --input FILE        the hand-check input that --ingest checks against
                       (default: handcheck_input.json beside --rows)
 

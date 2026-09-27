@@ -42,7 +42,8 @@ written there, so a generic word can lowercase while a named entity containing
 it does not.
 
 --apply writes in place (or to --out), and refuses a rows.json that changed since
-it was read.
+it was read. Before it writes, it re-applies every fix in hand_fixes.json beside
+--rows, so a recorded hand fix keeps its exact final text (see references.py).
 """
 import argparse
 import os

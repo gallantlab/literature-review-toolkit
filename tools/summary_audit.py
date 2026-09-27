@@ -20,7 +20,10 @@ echoes another) is refused. A manifest written before that binding existed (no
 `ids`/`abstract_sha` maps at all) refuses every ref in it, rather than treating
 each one as unchanged. --ingest exits 1 on any refused result, any ref with no
 result, or any summary judged "unsupported"; fix those summaries and --prepare
-again.
+again. It also exits 1 on a "wrong-abstract" verdict, which says the abstract on
+file is not this paper's: add the real one as a landing-page entry in
+abstracts.json (an empty text if it has none), rewrite the summary from it, and
+--prepare again. The audit fails both verdicts (summary-flagged, abstract-wrong).
 
     python3 tools/summary_audit.py --rows rows.json --prepare
     python3 tools/summary_audit.py --rows rows.json --ingest

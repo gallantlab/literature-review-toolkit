@@ -2,8 +2,8 @@
 //
 //   node verify_bib_filter.mjs <topic>/<topic>_review.html
 //
-// Shared harness for the bibliography viewer that tools/bib_viewer.py renders into
-// every review page.
+// Shared harness for the bibliography viewer that tools/bib_viewer.py renders, for a
+// page that has no timeline (a review page embeds the timeline instead).
 //
 // Written because filter logic survives code reading: a debounce that double-fires,
 // a per-family count that drifts from the global one, or a details block left open

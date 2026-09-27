@@ -34,16 +34,25 @@ Canon rewrites each rebuilt row's `apa` (and its `link` to the DOI URL), stamps
 nothing. On a gated table (any row verified, or built on or after the gates
 date), the audit also applies the reference gates: the verify stamp, the hand
 check, the summary check, the candidate ledger, and an acknowledgment in
-audit_acks.json for every warning. spreadsheet.py runs this same audit. Every
-mode needs --email or LITREVIEW_EMAIL.
+audit_acks.json for every warning. spreadsheet.py runs this same audit. Canon
+needs --email or LITREVIEW_EMAIL; --audit, --list-acks and --repair make no
+network request and do not.
+
+Some registry records are wrong in ways canon cannot fix (a split compound
+surname, two authors packed into one, a missing subtitle or year). Because canon
+re-fetches on every run, such a fix lives in hand_fixes.json beside --rows
+(--hand-fixes): {ref: [{"old", "new", "why"}]} (common.load_hand_fixes). Canon
+and --repair re-apply every fix after they write, and exit 1 on a fix that no
+longer matches its row. The audit fails a row whose fix is gone (hand-fix-lost).
 
 arXiv ids are fetched in batches of 50 (one request per 50 rows, 3 s apart, as
 arXiv asks), never one per row. A row whose fetch fails gets a second try at the
 end of the run, after --retry-wait. `--only A-01,B-02` rebuilds just those rows
 and leaves every other row as it is (the targeted re-canon).
 
-Exit 1 when the audit fails or any row was not rebuilt (not verified, a DOI no
-registry has, or a failed fetch), so a bad reference cannot ship.
+Exit 1 when the audit fails, any row was not rebuilt (not verified, a DOI no
+registry has, or a failed fetch), or a hand fix is stale, so a bad reference
+cannot ship.
 """
 import argparse
 import datetime

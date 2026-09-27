@@ -6,22 +6,24 @@ reports, a preprint and its published version as two works, and sometimes a
 namesake's papers. Classifying it from database tags mislabels papers, so agents
 read each item and decide; this tool does the mechanics around them.
 
-  --prepare   split lab_papers.json into batches (with any abstracts fetched by
-              abstracts.py) and write lab_check/brief.md for the checking agents,
-              who write lab_check/result_NN.json: per item is_gallant-style
-              authorship, kind, species, duplicate_of, include, theme, reason.
+  --prepare   split lab_papers.json into batches of --batch items (default 90),
+              with any abstracts fetched by abstracts.py, and write
+              lab_check/brief.md for the checking agents. They write
+              lab_check/result_NN.json: per item by_pi (authorship), kind,
+              species, duplicate_of, include, theme and reason.
   --build     join the record with every result into search_raw/0_L.json, a
               schema-2 lane (source "lab", the record's OpenAlex claim as the row's
-              claim), refusing a record with no check, an included duplicate, an
-              included item not by the PI, or a theme not in --themes. The file
+              claim). It refuses an item with no check, a result for an item not in
+              the record or checked twice, an included duplicate, an included item
+              not by the PI, and (with --themes) a theme not in that file. The file
               sorts first, so a lab paper a field lane also found keeps its lab row.
 
     python3 tools/lab_lane.py --prepare --papers lab_papers.json --abstracts lab_abstracts.json \\
-            --themes themes.json --pi "Jack L. Gallant"
-    python3 tools/lab_lane.py --build --papers lab_papers.json --themes themes.json
+            --pi "Jack L. Gallant"
+    python3 tools/lab_lane.py --build --papers lab_papers.json
 
-themes.json: [{"key": "V", "name": "...", "claim": "..."}] (the lab's approved
-themes, Phase L3). Field lanes defer the lab's papers to lane L, so the merge
+--themes themes.json (optional): [{"key": "V", "name": "...", "claim": "..."}],
+the lab's approved themes (Phase L3). Field lanes defer the lab's papers to lane L, so the merge
 then fails on any lab paper the record lacks: that is the completeness check.
 """
 import argparse
@@ -104,8 +106,9 @@ def prepare(papers, abstracts, themes, pi, outdir, batch):
     for i in range(0, len(items), batch):
         n += 1
         common.dump_json(items[i:i + batch], os.path.join(outdir, f"input_{n:02d}.json"))
-    lines = "\n".join(f"   - `{t['key']}` {t['name']}" + (f": {t['claim']}" if t.get("claim") else "")
-                      for t in themes)
+    lines = ("\n".join(f"   - `{t['key']}` {t['name']}" + (f": {t['claim']}" if t.get("claim") else "")
+                       for t in themes) if themes
+             else "   (no themes yet: leave `theme` empty; the lab's themes are set in Phase L3)")
     with open(os.path.join(outdir, "brief.md"), "w", encoding="utf-8") as f:
         f.write(BRIEF.format(PI=pi, KINDS=", ".join(f"`{k}`" for k in KINDS), THEMES=lines))
     return n, sum(1 for x in items if not x["abstract"])
@@ -114,7 +117,7 @@ def prepare(papers, abstracts, themes, pi, outdir, batch):
 def build(papers, checks, themes, lane="L"):
     """-> (lane file dict, problems). Refuses what the merge could not trust."""
     by = {p["ref"]: p for p in papers}
-    tkeys = {t["key"]: t["name"] for t in themes}
+    tkeys = {t["key"]: t["name"] for t in themes or []}
     problems = [f"{r}: no check result" for r in by if r not in checks]
     problems += [f"{r}: checked but not in the record" for r in checks if r not in by]
     kept = [c for r, c in checks.items() if r in by and c.get("include")]
@@ -123,7 +126,7 @@ def build(papers, checks, themes, lane="L"):
             problems.append(f"{c['ref']}: included but marked a duplicate of {c['duplicate_of']}")
         if c.get("by_pi", c.get("is_gallant")) is False:
             problems.append(f"{c['ref']}: included but not by the PI")
-        if c.get("theme") not in tkeys:
+        if tkeys and c.get("theme") not in tkeys:
             problems.append(f"{c['ref']}: theme {c.get('theme')!r} is not one of {sorted(tkeys)}")
     if problems:
         return None, problems
@@ -141,7 +144,8 @@ def build(papers, checks, themes, lane="L"):
             "link": p.get("link") or (f"https://doi.org/{doi}" if doi else ""),
             "first_author": first_author(p.get("apa", "")), "year": p.get("year"),
             "title": p.get("title", ""), "apa": "" if doi else p.get("apa", ""), "summary": "",
-            "tag": "lab", "topic": tkeys[c["theme"]], "source": "lab", "lane_fit": c["theme"],
+            "tag": "lab", "topic": tkeys.get(c.get("theme"), "Lab record"), "source": "lab",
+            "lane_fit": c.get("theme") if c.get("theme") in tkeys else "",
             "note": f"lab record {c['ref']} ({p.get('openalex', '')}); {c.get('kind')}, {c.get('species')}"
                     + ("; off program" if c.get("off_program") else "")
                     + (f"; {c['note']}" if c.get("note") else "")})
@@ -163,7 +167,8 @@ def main():
     ap.add_argument("--prepare", action="store_true")
     ap.add_argument("--build", action="store_true")
     ap.add_argument("--papers", required=True, help="lab_papers.json from lab_corpus.py")
-    ap.add_argument("--themes", required=True, help="the lab's themes: [{key, name, claim}]")
+    ap.add_argument("--themes", help="the lab's approved themes, [{key, name, claim}] (optional: they are "
+                    "set in Phase L3, after this check)")
     ap.add_argument("--abstracts", help="abstracts.json for the record (--prepare)")
     ap.add_argument("--pi", help="the PI's name as it appears on papers (--prepare)")
     ap.add_argument("--dir", default="lab_check", help="batch/brief/result folder (default: lab_check)")
@@ -173,7 +178,8 @@ def main():
     args = ap.parse_args()
     if args.prepare == args.build:
         ap.error("give exactly one of --prepare, --build")
-    papers, themes = common.load_json(args.papers), load_themes(args.themes)
+    papers = common.load_json(args.papers)
+    themes = load_themes(args.themes) if args.themes else []
     if args.prepare:
         if not args.pi:
             ap.error("--prepare needs --pi")

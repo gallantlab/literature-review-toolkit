@@ -17,7 +17,13 @@ INPUT (--assign FILE): the JSON the agent produced and the user approved:
   { "principle": "one line naming the organizing axis (orthogonal to Topic)",
     "families": [ {"key":"compress", "name":"Compress",
                    "claim":"one-line claim", "lineage":"A -> B -> C"}, ... ],
-    "assignments": { "<ref>": "<family key>", ... } }   # every rows.json ref, once
+    "assignments": { "<ref>": "<family key>", ... },    # every rows.json ref, once
+    "hard_calls": [ {"ref", "assigned", "also_fits", "why"}, ... ] }
+
+The hard calls are the papers the assignment agents found a poor fit, or a fit
+to two families. The agents do not argue with the spec, so these are the only
+place a wrong family definition shows. The tool prints each one to read before
+rendering, and warns when the input records no `hard_calls` at all.
 
 It stops with an error on a duplicate family key, fewer than 2 or more than 9
 families (3-8 recommended), an unassigned paper, a ref not in rows.json, or an

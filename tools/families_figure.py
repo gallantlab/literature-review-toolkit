@@ -64,6 +64,11 @@ OPTIONAL editorial overlay (--spec figure_spec.json), all keys optional:
     "subtitle":"..." }
 The arrows and notes are editorial: curate them with the user, and do not expect
 a good automatic set. See PLAYBOOK Phase 6b.
+
+Check the interactive layer by running it, never by reading it (Node.js):
+`node tools/checks/verify_hover.mjs <figure>.html` runs the page's own lane-hover
+handler for every lane, and `node tools/checks/verify_nav_order.mjs <figure>.html`
+checks that Prev/Next walks each year's column in order.
 """
 import argparse
 import base64

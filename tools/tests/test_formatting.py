@@ -2567,6 +2567,24 @@ check("lab_lane: a record item with no check result refuses the lane", (_lane2, 
 _lane3, _lpr3 = lab_lane.build(_lp, dict(_lc, L10=dict(_lc["L10"], theme="Q")), _lt)
 check_true("lab_lane: a theme outside the approved list refuses the lane", _lane3 is None and "theme 'Q'" in _lpr3[0])
 
+_lane4, _lpr4 = lab_lane.build(_lp, {k: dict(v, theme="") for k, v in _lc.items()}, [])
+check("lab_lane: with no themes yet (they come in L3), lane L is built with no theme",
+      (_lpr4, {p["lane_fit"] for p in _lane4["papers"]}, {p["topic"] for p in _lane4["papers"]}),
+      ([], {""}, {"Lab record"}))
+_old_junk = {"Q2": {"text": "PNAS, a peer reviewed journal of the NAS.", "source": "openalex", "doi": "10.1/q2", "arxiv": ""}}
+_abx2, _, _, _ = abstracts.collect(
+    [{"ref": "Q2", "doi": "10.1/q2", "summary": "x"}], "ref", _old_junk,
+    {"arxiv": lambda ids: ({}, set()), "openalex": lambda ids: ({}, set()),
+     "s2": lambda ids: ({"DOI:10.1/q2": "We mapped V4 shape tuning with natural images."}, set()),
+     "pubmed": lambda ids: ({}, set())})
+check("abstracts: junk fetched before the screen existed is refetched, not kept",
+      _abx2["Q2"]["source"], "s2")
+import lane_briefs  # noqa: E402
+
+_sn = {"scale": "30", "lanes": [{"key": "V", "kind": "forward", "target": 20}, {"key": "X", "kind": "antecedent", "target": 20}]}
+check_true("apply_scale: a numeric scale given as a string still checks the lane total",
+           any("over the scale's 30" in e for e in lane_briefs.apply_scale(_sn)))
+
 # ---- lane_briefs.py: every brief rendered from one spec (2026-09-27) -------
 import lane_briefs  # noqa: E402
 

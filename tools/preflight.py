@@ -20,7 +20,10 @@ It checks:
                      10,000. A probe reads the budget left right now.
   S2_API_KEY         without it, Semantic Scholar throttles hard: xref and the S2
                      counts take hours and leave gaps.
-It also estimates what a corpus of --papers N costs in OpenAlex credits.
+It also estimates what the planned corpus costs in OpenAlex credits. Size it with
+--scale, the search scale the user asked for (scan, focused, standard, exhaustive
+or a number of papers; common.scale_plan, with --lanes N if the lane count is
+known), or give the size directly with --papers N (default 500).
 
 Exit 0 when the build can run as planned. Exit 2 when the user must decide
 first: a newer toolkit is available (offer to install it), LITREVIEW_EMAIL is not
@@ -28,8 +31,16 @@ set, a key is missing or rejected, or the budget is short. For a missing key or 
 short budget, give the user the three choices it prints: get the keys, cap the
 search, or be prepared to wait. Ask before any lane is launched.
 
-    python3 tools/preflight.py --papers 600
-    python3 tools/preflight.py --papers 600 --offline      # environment only: no probes, no GitHub check
+Every run writes preflight.json into --project (default: the current directory;
+nothing is written when it is not a directory yet). merge_lanes.py refuses to
+build a table without a record under 14 days old that is cleared: everything
+passed, or the user's choice is recorded by rerunning with --accept (cap or wait
+after a key or budget stop, current-version to keep this toolkit). A missing
+email cannot be accepted. A cleared run exits 0.
+
+    python3 tools/preflight.py --project <topic>/ --scale focused
+    python3 tools/preflight.py --project <topic>/ --scale focused --accept wait   # the user's choice
+    python3 tools/preflight.py --project <topic>/ --papers 600 --offline   # environment only, no probes
 """
 import argparse
 import datetime
@@ -385,7 +396,9 @@ def main():
            "papers": args.papers, "ok": ok and not offer, "problems": problems,
            "update_offered": bool(offer), "accepted": sorted(set(args.accept)), "cleared": clear,
            "offline": args.offline, "scale": plan["name"] if plan else None}
-    if os.path.isdir(args.project):
+    if os.path.realpath(args.project) == ROOT:
+        where = " (not recorded: --project is the toolkit itself; point it at the review's folder)"
+    elif os.path.isdir(args.project):
         common.dump_json(rec, os.path.join(args.project, RECORD))
         where = f" (recorded in {os.path.join(args.project, RECORD)})"
     else:

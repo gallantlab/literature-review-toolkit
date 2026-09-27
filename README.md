@@ -5,7 +5,7 @@ fabricating references. The agent decides what to search, how to group the
 papers, and how to write them up. The scripts do the API calls, verification and
 bookkeeping.
 
-Version 1.28.0 · MIT license
+Version 1.29.0 · MIT license
 
 📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**, with the
 [operator manual](https://gallantlab.org/literature-review-toolkit/manual/),
@@ -18,23 +18,23 @@ A review has two modes. **Topic mode** starts from a question and searches
 outward. **Lab mode** starts from a lab's publications, derives its research
 themes, and places them in the field. Both then run the same pipeline:
 
-1. **Search** in parallel lanes, plus a required **antecedents** pass for the
+1. **Search** in parallel lanes, plus a required **antecedents** lane for the
    field's roots.
 2. **Verify** every citation against PubMed, PMC, CrossRef, DataCite and arXiv.
-   Search agents fabricate roughly 1 in 4.
+   Without a duty to verify, search agents got about 1 in 4 citations wrong.
 3. **Canonicalize** every reference from its verified DOI into APA-7.
-   References with no DOI get a hand check, and a checking agent compares every
-   summary with its abstract.
-4. **Count citations** (OpenAlex, checked against Semantic Scholar). Then mine
-   the corpus's reference lists, and the papers that cite its landmarks, for
-   papers the search missed.
-5. **Offer the lineage timeline** on every review. The agent proposes
+   References with no DOI get a hand check.
+4. **Count citations** (OpenAlex, checked against Semantic Scholar), and check
+   every summary against its paper's abstract.
+5. **Mine the corpus** for papers the search missed: its reference lists, and
+   the papers that cite its landmarks.
+6. **Offer the lineage timeline** on every review. The agent proposes
    **theoretical families**, and you use them, change them, or skip the
    timeline. If you keep it, the toolkit renders an interactive timeline of the
    families.
-6. **Build the spreadsheet.** It runs the full audit and refuses a table that
+7. **Build the spreadsheet.** It runs the full audit and refuses a table that
    fails it.
-7. Optionally, write an AI-authored **review article**.
+8. Optionally, write an AI-authored **review article**.
 
 Each topic gets an annotated `.xlsx` bibliography and, unless you skip it, the
 lineage timeline. PDF download is opt-in. Plan on hours, not minutes: in one
@@ -56,6 +56,8 @@ lineage timeline. PDF download is opt-in. Plan on hours, not minutes: in one
 
 ## Install
 
+In the directory that will hold your reviews:
+
 ```bash
 git clone https://github.com/gallantlab/literature-review-toolkit.git
 cd literature-review-toolkit
@@ -63,7 +65,6 @@ pip install -r requirements.txt
 export LITREVIEW_EMAIL=you@institution.edu
 export OPENALEX_API_KEY=...
 export S2_API_KEY=...
-python3 tools/preflight.py --project <topic>/ --papers 600   # newer version? keys? today's OpenAlex budget?
 ```
 
 To keep the variables across sessions, add the `export` lines to your shell
@@ -71,8 +72,8 @@ profile.
 
 ## Start a review
 
-Open Claude Code in the directory that holds your reviews, with this repo cloned
-inside it, and describe the review:
+Open Claude Code in the directory that holds your reviews and describe the
+review:
 
 ```text
 i want a literature review on the anatomical connections between the visual
@@ -80,18 +81,27 @@ system and the cerebellum. any anatomy papers from primate or human, using any
 tractography method. go back as far as the 1970s.
 ```
 
-Say how big a search you want, in your own words: "a quick look at the key
-papers" (a capped scan of about 15 papers per lane), "the core literature"
-(capped at about 30 per lane), "about 300 papers" (capped at that total), or
-"everything" (uncapped, as complete as the search can make it). Say nothing and
-you get the standard search, where each lane's target is a floor, not a cap. Every
-check runs at every size; a smaller search is only smaller.
+You can also say how big a search you want, in your own words:
 
-The agent first runs `tools/preflight.py`. If GitHub has a newer version of the
-toolkit, it offers to install it. If a key is missing or the OpenAlex budget is
-short, it stops and asks you to choose: get the API keys, cap the search, or be
-prepared to wait. It then follows [`PLAYBOOK.md`](./PLAYBOOK.md), creates one
-subdirectory per topic, and delivers the spreadsheet there. When the repo is
+| You say | You get |
+|---|---|
+| "a quick look at the key papers" | a scan, capped at about 15 papers per lane |
+| "the core literature" | a focused search, capped at about 30 per lane |
+| "about 300 papers" | a search capped at that total |
+| "everything" | an exhaustive search, uncapped |
+| nothing about size | the standard search: each lane's target is a floor, not a cap |
+
+Every check runs at every size, so a smaller search is only smaller. The full
+table is in [§4.1 of the manual](https://gallantlab.org/literature-review-toolkit/manual/#41-topic-mode).
+
+Before it searches, the agent runs `tools/preflight.py`. If GitHub has a newer
+version of the toolkit, the agent offers to install it. If a key is missing or
+the OpenAlex budget is short, it stops and asks you to choose: get the API keys,
+cap the search, or be prepared to wait. To run the same check yourself, see
+[§2.3 of the manual](https://gallantlab.org/literature-review-toolkit/manual/#23-phase-0-run-the-preflight-before-every-new-search).
+
+The agent then follows [`PLAYBOOK.md`](./PLAYBOOK.md). It creates one
+subdirectory per topic and delivers the spreadsheet there. When the repo is
 installed as a Claude Code plugin, its skill points the agent at the playbook.
 Without the plugin, name the playbook in your request.
 
@@ -104,7 +114,7 @@ Every phase is one script in [`tools/`](./tools).
 | Path | Contents |
 |---|---|
 | [`PLAYBOOK.md`](./PLAYBOOK.md) | the procedure the agent follows, with its accumulated lessons |
-| [`tools/`](./tools) | one script per phase, the shared `common.py`, and the search-lane and family prompt templates |
+| [`tools/`](./tools) | one script per phase, the shared `common.py`, the search-lane and family prompt templates, and Node.js checkers for the figure and the review page (`tools/checks/`) |
 | [`templates/`](./templates) | a starter script for building `rows.json` |
 | [`skills/`](./skills) | the Claude skill that points an agent at the playbook |
 | [`.claude-plugin/`](./.claude-plugin) | manifests that make the repo installable as a Claude Code plugin |

@@ -5,13 +5,17 @@ The summary check (summary_audit.py) compares each summary with its abstract, so
 each abstract comes from the most authoritative source that has it. The sources
 are tried in order: the arXiv API for arXiv papers, then OpenAlex (50 DOIs per
 request), then Semantic Scholar (500 ids per request), then PubMed for rows with
-a `pmid`.
+a `pmid`. A source's abstract field sometimes holds something else: a journal's
+self-description, JSTOR's terms of use, a citation line, or an author list and
+venue. not_an_abstract() refuses such a text, the next source is tried, and a
+text no later source replaced is reported.
 
 Each entry records the `doi` and `arxiv` it was fetched for. When a row's ids
 change, its entry is fetched again. An entry added by hand ("source":
-"landing-page") is never overwritten. When its ids no longer match the row, it is
-reported as stale: check that it is still this paper's abstract, then set its
-ids to the row's.
+"landing-page") is never overwritten; one with an empty `text` records that the
+paper has no abstract. When its ids no longer match the row, it is reported as
+stale: check that it is still this paper's abstract, then set its ids to the
+row's.
 
 abstracts_failed.json, written beside abstracts.json, maps each ref whose fetch
 could not complete to the reason ({} when none). A failed fetch is not "no
@@ -19,8 +23,8 @@ abstract", so summary_audit.py --prepare refuses those refs.
 
 Exit 1 when any fetch failed or any hand-added entry is stale; re-run to fill
 the gaps. A spent OpenAlex daily budget stops the run with OpenAlexBudgetError.
-Because one S2_API_KEY serves xref, citations and abstracts, run those tools in
-sequence, not in parallel.
+One S2_API_KEY serves xref, citations and abstracts; their requests take turns
+through a pacer shared across processes, so they may run at the same time.
 
     python3 tools/abstracts.py --rows rows.json --email you@inst.edu
 """
@@ -161,6 +165,8 @@ def collect(rows, keyf, existing, fetchers, rejected=None):
                 stale.append(k)
             else:
                 del ab[k]            # fetched for other ids: fetch it again for these
+        elif isinstance(e, dict) and e.get("source") != "landing-page" and not_an_abstract(e.get("text")):
+            del ab[k]                # fetched before the screen existed and is not an abstract: refetch
     todo = [r for r in rows if r.get(keyf) not in ab]
     by = {r.get(keyf): r for r in rows}
     failed_refs = {}

@@ -14,7 +14,7 @@ Columns added after Tag when the data carries them, in this order:
   - Family, when any row has `family` (families.py);
   - Cite (OpenAlex) | Cite (S2), when any row has `cite_openalex` or `cite_s2`.
     The counts come from citations.py (Phase 5b); attach them to the rows with
-    common.attach_counts. Google Scholar cannot be queried at scale (no API,
+    its --attach or --attach-only. Google Scholar cannot be queried at scale (no API,
     CAPTCHA), so these databases are the proxy. See PLAYBOOK.md;
   - Verify note, when any row has a `verify_note` (handcheck.py writes one);
   - Summary checked against, when any row has a `summary_check`
@@ -61,7 +61,9 @@ COLORS = {"source-doc": None, "search": "#FFF7E0", "xref": "#E2F0D9", "lab": "#D
           "forward": "#E2F0D9", "survey": "#E2F0D9",
           # Phase 2b antecedents (foundations pass): a distinct band. DOI'd classics
           # get the fill; no-DOI hand-cited classics ("anteced-nosrc") share it.
-          "anteced": "#F3E6F5", "anteced-nosrc": "#F3E6F5"}
+          "anteced": "#F3E6F5", "anteced-nosrc": "#F3E6F5",
+          # a forward lane's DOI-less item (a book, a report) keeps the search fill
+          "search-nosrc": "#FFF7E0"}
 
 
 def cite_val(row, key):

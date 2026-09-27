@@ -6,7 +6,9 @@ Every tool imports this one module, so each guarantee lives in one place:
   - HTTP: a polite User-Agent, gzip decoding, and a GET/POST with backoff on
     rate limits and timeouts. An OpenAlex request carries OPENALEX_API_KEY when it
     is set, and a spent OpenAlex daily budget raises OpenAlexBudgetError at once.
-    Semantic Scholar requests are paced and carry S2_API_KEY when it is set.
+    Semantic Scholar requests carry S2_API_KEY when it is set, and are paced
+    across every process on the machine (s2_wait_turn), so the tools that share
+    the key may run at the same time.
   - Sources: the CrossRef, DataCite and arXiv record readers, and batched arXiv
     and Semantic Scholar lookups.
   - References: DOI and arXiv-id parsing, the APA-7 name and reference formatter
@@ -14,7 +16,10 @@ Every tool imports this one module, so each guarantee lives in one place:
     APA parser every tool reads a reference back with, and title matching.
   - The live table: JSON load/dump that always reads and writes UTF-8
     (ensure_ascii=False), write guards that refuse to overwrite a canonical or
-    changed rows.json, and the stamps and hashes the reference gates check.
+    changed rows.json, the stamps and hashes the reference gates check, and the
+    hand fixes (hand_fixes.json) that every tool rewriting `apa` re-applies.
+  - Search scale: SEARCH_SCALES and scale_plan, which turn the size of search
+    the user asked for into lane targets, a cap and a lane-count range.
 
 Tools are run as `python3 tools/<tool>.py`, so `tools/` is on sys.path[0] and a
 plain `import common` resolves.
@@ -415,7 +420,8 @@ def load_optional_json(path, default):
 # The user says how big a search they want when they describe it ("a quick look",
 # "about 300 papers", "everything"); the agent maps that to one of these, and the
 # code carries the consequences: per-lane targets, whether lanes are capped, the
-# preflight's budget estimate, and a merge that fails a lane over its cap.
+# lane-count range lane_briefs.py enforces, the preflight's budget estimate, and a
+# merge that fails a capped lane over its cap.
 SEARCH_SCALES = {
     "scan": {"lane_target": 15, "capped": True, "lanes": (2, 4),
              "about": "a quick orientation: the landmark papers and the main recent work"},
@@ -433,8 +439,13 @@ UNCAPPED_YIELD = 3
 
 def scale_plan(scale, n_lanes=None):
     """{"name", "lane_target", "capped", "lanes", "planned_papers", "about"} for a
-    named scale, or for a number (a capped total spread over the lanes).
-    Raises ValueError for an unknown scale."""
+    named scale, or for a number of papers (or its digit string).
+
+    A named scale plans n_lanes lanes (default: the middle of its range) at its
+    lane target, times UNCAPPED_YIELD when uncapped. A number N is capped: N is
+    spread over n_lanes lanes (default N/35, held to 3-12), at least 5 per lane,
+    and planned_papers is N. Raises ValueError for an unknown or non-positive
+    scale."""
     if isinstance(scale, str) and scale.strip().isdigit():
         scale = int(scale)
     if isinstance(scale, int) and not isinstance(scale, bool):
@@ -466,7 +477,9 @@ def load_hand_fixes(path):
     Canon re-fetches on every run and would undo a fix typed into rows.json, so
     fixes live in this file and every tool that rewrites `apa` re-applies them.
     `old` is the damaged text canon produces ("" for an empty apa), `new` the
-    FINAL text (sentence case included), `why` the source that justifies it."""
+    FINAL text (sentence case included), `why` the source that justifies it.
+    A ref may map to one fix object instead of a list. Raises ValueError when
+    the file is not such a map, or a fix lacks `new` or `why`."""
     fixes = load_optional_json(path, {})
     if not isinstance(fixes, dict):
         raise ValueError(f"{path} must map ref -> list of {{old, new, why}}")
@@ -489,8 +502,9 @@ def apply_hand_fixes(rows, fixes, keyf=None):
 
     A fix already present is left alone; one present with only its case changed
     (sentence case lowercased it) is restored to its exact text; otherwise its
-    `old` text is replaced. A fix whose `old` and `new` are both absent is stale:
-    the row changed underneath it, so it needs a human look."""
+    `old` text is replaced, and an `old` of "" fills an empty apa. A fix whose
+    `old` and `new` are both absent is stale: the row changed underneath it, so
+    it needs a human look. So is every fix for a ref the table no longer has."""
     keyf = keyf or key_field(rows)
     by = {r.get(keyf): r for r in rows}
     applied, stale = [], []
@@ -518,7 +532,8 @@ def apply_hand_fixes(rows, fixes, keyf=None):
 
 
 def lost_hand_fixes(row, fs):
-    """The fixes (from load_hand_fixes) whose final text the row's apa no longer holds."""
+    """The fixes (from load_hand_fixes) whose final text the row's apa no longer
+    holds, compared case-insensitively. The audit fails each as hand-fix-lost."""
     apa = (row.get("apa") or "").lower()
     return [f for f in fs if f["new"].lower() not in apa]
 
@@ -1454,9 +1469,11 @@ def _s2_lock_path():
 
 
 def s2_wait_turn(interval=None):
-    """Sleep until S2_MIN_INTERVAL has passed since the last S2 request made by
-    ANY process on this machine, then record this request's time. Falls back to
-    per-process pacing where file locks are unavailable."""
+    """Sleep until `interval` (default S2_MIN_INTERVAL) has passed since the last
+    S2 request made by ANY process that shares the lock file, then record this
+    request's time. The lock file is litreview-s2-<uid>.lock in the temp
+    directory, or LITREVIEW_S2_LOCK, so one user's tools on one machine share a
+    pace. Falls back to per-process pacing where file locks are unavailable."""
     interval = S2_MIN_INTERVAL if interval is None else interval
     try:
         import fcntl

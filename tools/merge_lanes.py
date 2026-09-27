@@ -6,7 +6,10 @@ and:
   - dedups by DOI, then arXiv id, then normalized title + year, and records the
     other lanes that returned a paper (`also_lanes`). A title + year match with
     a conflicting author or year, or with two different journal DOIs, stays as
-    two rows and is reported as a possible pair;
+    two rows and is reported as a possible pair. Every other pair of similar
+    titles is reported too; a title of under four content words must match on
+    characters, since word containment alone paired one short title with 60
+    longer ones;
   - keeps each lane's claim as search_author / search_year / search_title,
     which verify.py checks the DOI against;
   - rejects a paper with no DOI, arXiv id or APA string, since it can be neither
@@ -20,10 +23,19 @@ and:
     sheet. An exclusion is a decision, not a hand-off, so it never has to match
     a row. The lane target is a floor, so an on-topic paper trimmed to meet it
     belongs back in `papers` (except in a capped search);
-  - flags thin lanes (under 60% of target, or out of search budget), to resume.
-A merge with a lost, unconfirmed or rejected paper writes merge_report.json but
-not rows.json, and exits 1. It refuses to overwrite a canonical rows.json unless
---force, and refuses a schema-1 lane file (a bare list) unless --allow-v1.
+  - flags thin lanes (under 60% of target, or out of search budget), to resume;
+  - in a capped search (lane_manifest.json from lane_briefs.py, beside --out),
+    fails a lane that returned more papers than its cap. Resume it to move the
+    rest to `excluded` with reason "over the capped-search limit".
+A merge with a lost, unconfirmed or rejected paper, or a lane over its cap,
+writes merge_report.json but not rows.json, and exits 1. It refuses to overwrite a
+canonical rows.json unless --force, and refuses a schema-1 lane file (a bare
+list) unless --allow-v1.
+
+Phase 0 is enforced here, at the first step that builds the table: the merge
+refuses to run without a recent, cleared preflight.json (preflight.py) in the
+folder of --out. --no-preflight "reason" merges anyway, and the reason is kept in
+merge_report.json.
 
     python3 tools/merge_lanes.py --raw search_raw --out rows.json
     python3 tools/merge_lanes.py --append recovery.json --into rows.json   # late rows
@@ -342,7 +354,7 @@ def main():
     _rec, why = preflight.read_record(project)
     if why and not (args.no_preflight or "").strip():
         sys.exit(f"✗ {why}.\n  Run the preflight first:  python3 tools/preflight.py --project {project} "
-                 "--papers <planned size>\n  (or pass --no-preflight \"reason\" to merge anyway)")
+                 "--scale <scale>\n  (or pass --no-preflight \"reason\" to merge anyway)")
     lanes = [load_lane(p, args.allow_v1) for p in sorted(glob.glob(os.path.join(args.raw, "*.json")))]
     if not lanes:
         ap.error(f"no lane files in {args.raw}")
