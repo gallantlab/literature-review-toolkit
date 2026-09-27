@@ -5740,6 +5740,12 @@ except ValueError as _e:
     _msg = str(_e)
 check_true("references --ack: a mistyped warning is refused", "not an unacknowledged warning" in _msg)
 
+
+# spreadsheet: a DOI-less item's "<source>-nosrc" takes its source's fill.
+check("spreadsheet color_key: -nosrc falls back to its base, unknown is None",
+      (spreadsheet.color_key("xref-nosrc"), spreadsheet.color_key("search"), spreadsheet.color_key("mystery")),
+      ("xref", "search", None))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

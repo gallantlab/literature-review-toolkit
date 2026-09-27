@@ -75,11 +75,20 @@ def cite_val(row, key):
     return v if isinstance(v, int) and not isinstance(v, bool) else None
 
 
+def color_key(src):
+    """The COLORS key for a `source`: itself, else the base of a "<source>-nosrc"
+    tag (a DOI-less item keeps its pass's fill), else None (unknown)."""
+    if src in COLORS:
+        return src
+    base = src[:-len("-nosrc")] if src.endswith("-nosrc") else ""
+    return base if base in COLORS else None
+
+
 def unknown_sources(rows):
     """`source` values with no color rule — a warning, not a crash: corpora
     already disagree on the tag vocabulary, and a new value must never abort a
     build. They render with the default (white) format."""
-    return sorted({r.get("source", "source-doc") for r in rows} - set(COLORS))
+    return sorted({s for s in {r.get("source", "source-doc") for r in rows} if color_key(s) is None})
 
 
 def draft_path(out):
@@ -180,9 +189,7 @@ def build(rows, out, sheet_name="References", banner=None, excluded=None):
     ws.freeze_panes(top + 1, 0)
 
     for i, r in enumerate(rows, start=top + 1):
-        src = r.get("source", "source-doc")
-        if src not in COLORS:
-            src = "source-doc"           # unknown tag -> default format (see unknown_sources)
+        src = color_key(r.get("source", "source-doc")) or "source-doc"   # unknown -> default format
         cf, lf, nf = fmts[src], fmts[("link", src)], fmts[("num", src)]
         for c, (_h, key, _w, kind) in enumerate(cols):
             if kind == "link":
