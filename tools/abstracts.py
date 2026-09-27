@@ -303,15 +303,17 @@ def collect(rows, keyf, existing, fetchers, rejected=None):
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "abstract_prompt_template.md")
 
 
-def missing_rows(rows, keyf, ab):
-    """Rows with a summary and no abstract entry at all (an empty landing-page
-    entry already records "none")."""
-    return [r for r in rows if (r.get("summary") or "").strip() and r.get(keyf) not in ab]
+def missing_rows(rows, keyf, ab, acks=None):
+    """Rows with a summary and no abstract entry at all. An empty landing-page
+    entry, or a no-abstract acknowledgment in `acks`, already records "none"."""
+    acks = acks or {}
+    return [r for r in rows if (r.get("summary") or "").strip() and r.get(keyf) not in ab
+            and "no-abstract" not in (acks.get(r.get(keyf)) or {})]
 
 
-def prepare_missing(rows, keyf, ab, outdir, per=20, project=None):
+def prepare_missing(rows, keyf, ab, outdir, per=20, project=None, acks=None):
     """Write the rows no source filled as outdir/need_NN.json plus outdir/BRIEF.md."""
-    todo = missing_rows(rows, keyf, ab)
+    todo = missing_rows(rows, keyf, ab, acks)
     if not todo:
         raise ValueError("no row is missing an abstract")
     if glob.glob(os.path.join(outdir, "need_*.json")) + glob.glob(os.path.join(outdir, "result_*.json")):
@@ -403,18 +405,18 @@ def main():
         here = os.path.dirname(os.path.abspath(args.rows))
         out = args.out or os.path.join(here, "abstracts.json")
         ab = common.load_optional_json(out, {})
+        acks_path = args.acks or os.path.join(here, "audit_acks.json")
+        acks = common.load_optional_json(acks_path, {})
         try:
             if args.prepare_missing:
-                paths = prepare_missing(rows, keyf, ab, args.prepare_missing, args.per, project=here)
-                print(f"{len(missing_rows(rows, keyf, ab))} row(s) -> {len(paths)} file(s) + BRIEF.md in "
+                paths = prepare_missing(rows, keyf, ab, args.prepare_missing, args.per, project=here, acks=acks)
+                print(f"{len(missing_rows(rows, keyf, ab, acks))} row(s) -> {len(paths)} file(s) + BRIEF.md in "
                       f"{args.prepare_missing}; then --ingest-missing "
                       f"'{os.path.join(args.prepare_missing, 'result_*.json')}'")
                 return
             files = sorted(glob.glob(args.ingest_missing))
             if not files:
                 ap.error(f"--ingest-missing {args.ingest_missing}: no files match")
-            acks_path = args.acks or os.path.join(here, "audit_acks.json")
-            acks = common.load_optional_json(acks_path, {})
             found, none = ingest_missing(rows, keyf, ab, acks, [(f, common.load_json(f)) for f in files])
         except ValueError as e:
             sys.exit(f"✗ {e}")
