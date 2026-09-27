@@ -5545,6 +5545,42 @@ check("candidate_floor: small corpus keeps the floor of 3", common.candidate_flo
 check("candidate_floor: 639 papers -> 8 (the alignment rerun's hand-picked value)", common.candidate_floor(639), 8)
 check("candidate_floor: 1,215 papers -> 15", common.candidate_floor(1215), 15)
 
+
+# candidates: same-title candidates are excluded at once; --prepare / --ingest frame the agent step.
+_cl = {}
+_crow = [{"ref": "V-01", "doi": "10.1/pub", "search_title": "Natural speech reveals the semantic maps"}]
+candidates.add(_cl, [{"doi": "10.1101/pre", "title": "Natural speech reveals the semantic maps", "n_citations": 20},
+                     {"doi": "10.1/new", "title": "Something else entirely about cortex", "n_citations": 20}],
+               "xref", candidates.corpus_dois(_crow), "2026-09-27", titles=candidates.row_titles(_crow, "ref"))
+check("candidates --add: a preprint of a table row is excluded at once, naming the row",
+      (_cl["10.1101/pre"]["decision"], "V-01" in _cl["10.1101/pre"]["reason"], _cl["10.1/new"]["decision"]),
+      ("exclude", True, "pending"))
+_cd = tempfile.mkdtemp()
+_scope = os.path.join(_cd, "scope.md")
+open(_scope, "w").write("scope")
+_paths = candidates.prepare(_cl, os.path.join(_cd, "cand"), _scope, [{"key": "V", "name": "Vision"}], per=1)
+_brief = open(os.path.join(_cd, "cand", "BRIEF.md")).read()
+check("candidates --prepare: one input per --per, pending only", [len(common.load_json(p)) for p in _paths], [1])
+check_true("candidates --prepare: brief names the scope file and lanes, nothing unfilled",
+           _scope in _brief and "`V`: Vision" in _brief and not re.search(r"\{[A-Z_]+\}", _brief))
+_bad = [("r1.json", [{"doi": "10.1/new", "decision": "include", "reason": "fits V", "title": "T"}])]
+try:
+    candidates.ingest(_cl, _bad, "2026-09-27", {"V"})
+    _msg = ""
+except ValueError as _e:
+    _msg = str(_e)
+check_true("candidates --ingest: an include without its landing-page claim refuses the batch",
+           "first_author" in _msg and _cl["10.1/new"]["decision"] == "pending", _msg)
+_good = [("r1.json", [{"doi": "10.1/new", "decision": "include", "reason": "fits V", "first_author": "Doe, J.",
+                       "year": 2020, "title": "Something else", "lane": "V", "summary": "It did x.",
+                       "arxiv": ""}])]
+check("candidates --ingest: a complete include is recorded", candidates.ingest(_cl, _good, "2026-09-27", {"V"}),
+      (1, 0))
+_lane = candidates.export_included(_cl, set(), "C")
+check("candidates --export-included: the lane carries the landing-page claim and summary",
+      {k: _lane["papers"][0][k] for k in ("ref", "first_author", "title", "summary", "lane_fit")},
+      {"ref": "C-01", "first_author": "Doe, J.", "title": "Something else", "summary": "It did x.", "lane_fit": "V"})
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

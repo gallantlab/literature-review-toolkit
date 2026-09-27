@@ -862,14 +862,17 @@ to record whether the run finished and how many papers it read.
 ```bash
 python3 tools/candidates.py --rows rows.json --add xref_<topic>.json --source xref
 python3 tools/candidates.py --rows rows.json --add forward_candidates.json --source forward
-python3 tools/candidates.py --rows rows.json --list pending
-python3 tools/candidates.py --rows rows.json --decide 10.1038/xxxxx \
-        --decision exclude --reason "methods paper, not on topic"
-python3 tools/candidates.py --rows rows.json --export-included xref_lane.json --lane X
+python3 tools/candidates.py --rows rows.json --prepare manual_check/cand --scope briefs/brief_<KEY>.md
+#   one agent per manual_check/cand/input_NN.json, given BRIEF.md, writes result_NN.json
+python3 tools/candidates.py --rows rows.json --ingest 'manual_check/cand/result_*.json'
+python3 tools/candidates.py --rows rows.json --export-included cand_lane.json
 ```
 
-- `--add` skips DOIs already in the corpus and records the run under `_runs`; a
-  missing sidecar records `complete: false`, and another tool's sidecar is refused.
+- `--add` skips DOIs already in the corpus, excludes a same-title copy of a row at
+  once, and records the run under `_runs`.
+- `--prepare` writes the agents' inputs and brief; `--ingest` refuses a batch with
+  a missing reason or an include without its landing-page claim. Use `--decide`
+  for a single decision.
 - `--reason` is required for every decision. Excluded candidates stay in the ledger
   and are listed on the spreadsheet's "Considered and excluded" sheet, so a missing
   paper is visibly one that was considered.
@@ -1559,7 +1562,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--attach` `--attach-only` `--email` `--key` `--out` `--rows` `--sources` |
 | `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--email` `--key` `--out` `--rows` |
 | `summary_audit.py` | 5c | Summary check: agents with no web access confirm each row's summary against its abstract. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
-| `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--export-included` `--lane` `--ledger` `--list` `--reason` `--rows` `--source` |
+| `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--export-included` `--ingest` `--lane` `--ledger` `--list` `--per` `--prepare` `--reason` `--rows` `--scope` `--source` |
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
 | `xref.py` | 6 | Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite. | `--allow-incomplete` `--cache` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--no-cache` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
 | `families.py` | 6b | Validate a family taxonomy, stamp `family` onto rows.json, and write families.json and families.md. | `--asof` `--assign` `--default-from-lanes` `--digest` `--md` `--out` `--results` `--rows` |

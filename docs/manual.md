@@ -1007,19 +1007,29 @@ partial run from a full one, and to know how many papers the run read.
 ```bash
 python3 ../tools/candidates.py --rows rows.json --add xref_my_topic.json --source xref
 python3 ../tools/candidates.py --rows rows.json --add forward_candidates.json --source forward
-python3 ../tools/candidates.py --rows rows.json --list pending
-python3 ../tools/candidates.py --rows rows.json --decide 10.1038/xxxxx \
-        --decision exclude --reason "methods paper, not on topic"
-python3 ../tools/candidates.py --rows rows.json --export-included xref_lane.json --lane X
-python3 ../tools/merge_lanes.py --append xref_lane.json --into rows.json
+python3 ../tools/candidates.py --rows rows.json --prepare manual_check/cand \
+        --scope briefs/brief_A.md
+python3 ../tools/candidates.py --rows rows.json --ingest 'manual_check/cand/result_*.json'
+python3 ../tools/candidates.py --rows rows.json --export-included cand_lane.json
+python3 ../tools/merge_lanes.py --append cand_lane.json --into rows.json
 ```
 
 `candidates.py` merges both directions' output into one ledger by DOI, keeping
-every source and score. `--decide` requires a `--reason`. `--export-included`
-writes a schema-2 lane file of the included papers not yet in the corpus, ready
-for `merge_lanes.py --append`. Send the appended batch back through Phases 3, 3f,
-5b and 5c. Its rows carry no summary, so write one for each from its abstract
-([§5.5](#55-phase-5c-check-each-summary-against-its-abstract)). An included candidate that never reaches the table is a defect.
+every source and score. A candidate with the same title as a row is that row
+under another DOI, usually its preprint, and is excluded at once.
+
+The rest are decided by agents. `--prepare` splits the pending candidates into
+input files and writes the brief the agents follow. `--scope` names the file that
+defines the bibliography, such as one lane's brief. Each agent decides include or
+exclude, with a reason. For an include, it also reads the landing page and records
+the first author, year, title, lane and a summary from the abstract. `--ingest`
+records the decisions, and refuses the whole batch if any entry lacks a reason or
+an include lacks that claim. `--decide` records a single decision by hand.
+
+`--export-included` writes the included papers not yet in the corpus as a
+schema-2 lane file, with their claims and summaries, ready for `merge_lanes.py
+--append`. Its lane key (default `C`) must be one no row uses. Send the appended
+batch back through Phases 3, 3f, 5b and 5c. An included candidate that never reaches the table is a defect.
 Excluded candidates are not discarded: the spreadsheet lists them, with their
 reasons, on its "Considered and excluded" sheet.
 
@@ -1500,7 +1510,7 @@ Do not relax the gate.
 | `no-summary` | write a summary from the abstract, then check it ([§5.5](#55-phase-5c-check-each-summary-against-its-abstract)) |
 | `abstract-wrong` | add the real abstract as a landing-page entry, rewrite the summary, check it again ([§5.5](#55-phase-5c-check-each-summary-against-its-abstract)) |
 | `hand-fix-lost` | run `references.py` to re-apply `hand_fixes.json`, or update the fix if the row changed ([§5.3](#53-phase-3f-canonicalize-every-reference)) |
-| `candidates-pending` | `candidates.py --list pending`, then `--decide` each ([§5.6](#56-phase-6-cross-citation-pass-and-the-candidate-ledger)) |
+| `candidates-pending` | `candidates.py --prepare`, the agents, then `--ingest` ([§5.6](#56-phase-6-cross-citation-pass-and-the-candidate-ledger)) |
 | `candidate ... is marked include but is not in the table` | `--export-included`, `merge_lanes.py --append`, then verify |
 | `link-doi-mismatch` | make the row's `link` the DOI URL of its `doi` |
 | an unacknowledged warning | fix the row, or acknowledge it ([§5.8](#58-acknowledge-what-needs-a-human-verdict)) |

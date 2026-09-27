@@ -44,7 +44,7 @@ and CI fails if any copy is stale.
 | `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--attach` `--attach-only` `--email` `--key` `--out` `--rows` `--sources` |
 | `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--email` `--key` `--out` `--rows` |
 | `summary_audit.py` | 5c | Summary check: agents with no web access confirm each row's summary against its abstract. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
-| `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--export-included` `--lane` `--ledger` `--list` `--reason` `--rows` `--source` |
+| `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--export-included` `--ingest` `--lane` `--ledger` `--list` `--per` `--prepare` `--reason` `--rows` `--scope` `--source` |
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
 | `xref.py` | 6 | Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite. | `--allow-incomplete` `--cache` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--no-cache` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
 | `families.py` | 6b | Validate a family taxonomy, stamp `family` onto rows.json, and write families.json and families.md. | `--asof` `--assign` `--default-from-lanes` `--digest` `--md` `--out` `--results` `--rows` |
@@ -862,7 +862,22 @@ candidates, which the run that proposed them cannot have read). `complete` and `
 come from the <FILE>.run.json sidecar that xref.py and forward.py write beside
 their --out; a missing sidecar records complete=False. --add refuses a sidecar
 written by a different tool than --source names, and skips candidates the corpus
-already holds.
+already holds. A candidate whose title matches a table row (common.title_match)
+is the same paper under another DOI, usually a preprint of a published paper:
+--add excludes it at once, naming the row.
+
+Deciding the rest is agent work, and the tool frames it:
+
+  --prepare DIR --scope FILE   writes the pending candidates as DIR/input_NN.json
+                               (--per per file, default 60) and DIR/BRIEF.md, from
+                               tools/candidate_prompt_template.md. FILE defines the
+                               bibliography (a lane brief or topic definition); the
+                               lanes come from lane_manifest.json beside --rows.
+  --ingest 'DIR/result_*.json' records the agents' decisions. It refuses the whole
+                               batch if any entry lacks a reason, names a DOI not in
+                               the ledger, or includes a paper without the claim
+                               read off its landing page (first_author, year,
+                               title, lane, summary).
 
 The audit fails while any candidate is pending, or while an included candidate is
 not in the table. A missing ledger, or a missing, incomplete or partial xref or
@@ -872,12 +887,17 @@ so a paper left out of the review was visibly considered and set aside.
 
     python3 tools/candidates.py --rows rows.json --add xref.json --source xref
     python3 tools/candidates.py --rows rows.json --add forward_candidates.json --source forward
+    python3 tools/candidates.py --rows rows.json --prepare manual_check/cand --scope briefs/brief_V.md
+    #   one agent per manual_check/cand/input_NN.json writes result_NN.json
+    python3 tools/candidates.py --rows rows.json --ingest 'manual_check/cand/result_*.json'
     python3 tools/candidates.py --rows rows.json --list pending
     python3 tools/candidates.py --rows rows.json --decide 10.1/x --decision exclude --reason "methods paper"
-    python3 tools/candidates.py --rows rows.json --export-included xref_lane.json --lane X
+    python3 tools/candidates.py --rows rows.json --export-included cand_lane.json --lane C
 
 --decide needs --decision and a --reason. --export-included writes the included
-candidates that are not yet in the table as a schema-2 lane file. Add it with
+candidates that are not yet in the table as a schema-2 lane file, carrying each
+include's landing-page claim and summary. Its --lane (default C) must be a key no
+table row uses. Add it with
 `merge_lanes.py --append xref_lane.json --into rows.json`, then verify the new
 rows.
 ```
@@ -1373,6 +1393,8 @@ Run its tests before changing any of them.
 - **`search_prompt_template.md`**: the brief for a Phase 2 search agent, rendered
   by `lane_briefs.py` (never filled by hand). It defines the schema-2 lane file
   that `merge_lanes.py` reads.
+- **`candidate_prompt_template.md`**: the brief for the agents that decide the
+  candidate ledger, rendered by `candidates.py --prepare` (never filled by hand).
 - **`family_prompt_template.md`**: the two-step propose-then-assign prompt for
   Phase 6b, including the hard calls.
 - **`checks/`**: the Node.js checkers that execute a page's own script, for the

@@ -10,7 +10,22 @@ candidates, which the run that proposed them cannot have read). `complete` and `
 come from the <FILE>.run.json sidecar that xref.py and forward.py write beside
 their --out; a missing sidecar records complete=False. --add refuses a sidecar
 written by a different tool than --source names, and skips candidates the corpus
-already holds.
+already holds. A candidate whose title matches a table row (common.title_match)
+is the same paper under another DOI, usually a preprint of a published paper:
+--add excludes it at once, naming the row.
+
+Deciding the rest is agent work, and the tool frames it:
+
+  --prepare DIR --scope FILE   writes the pending candidates as DIR/input_NN.json
+                               (--per per file, default 60) and DIR/BRIEF.md, from
+                               tools/candidate_prompt_template.md. FILE defines the
+                               bibliography (a lane brief or topic definition); the
+                               lanes come from lane_manifest.json beside --rows.
+  --ingest 'DIR/result_*.json' records the agents' decisions. It refuses the whole
+                               batch if any entry lacks a reason, names a DOI not in
+                               the ledger, or includes a paper without the claim
+                               read off its landing page (first_author, year,
+                               title, lane, summary).
 
 The audit fails while any candidate is pending, or while an included candidate is
 not in the table. A missing ledger, or a missing, incomplete or partial xref or
@@ -20,17 +35,23 @@ so a paper left out of the review was visibly considered and set aside.
 
     python3 tools/candidates.py --rows rows.json --add xref.json --source xref
     python3 tools/candidates.py --rows rows.json --add forward_candidates.json --source forward
+    python3 tools/candidates.py --rows rows.json --prepare manual_check/cand --scope briefs/brief_V.md
+    #   one agent per manual_check/cand/input_NN.json writes result_NN.json
+    python3 tools/candidates.py --rows rows.json --ingest 'manual_check/cand/result_*.json'
     python3 tools/candidates.py --rows rows.json --list pending
     python3 tools/candidates.py --rows rows.json --decide 10.1/x --decision exclude --reason "methods paper"
-    python3 tools/candidates.py --rows rows.json --export-included xref_lane.json --lane X
+    python3 tools/candidates.py --rows rows.json --export-included cand_lane.json --lane C
 
 --decide needs --decision and a --reason. --export-included writes the included
-candidates that are not yet in the table as a schema-2 lane file. Add it with
+candidates that are not yet in the table as a schema-2 lane file, carrying each
+include's landing-page claim and summary. Its --lane (default C) must be a key no
+table row uses. Add it with
 `merge_lanes.py --append xref_lane.json --into rows.json`, then verify the new
 rows.
 """
 import argparse
 import datetime
+import glob
 import os
 import re
 import sys
@@ -38,6 +59,8 @@ import sys
 import common
 
 PHASE = "6"   # pipeline phase, read by tools/gen_docs.py for the tool index
+TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candidate_prompt_template.md")
+CLAIM = ("first_author", "year", "title", "lane", "summary")    # an include must carry these
 
 
 def _doi(d):
@@ -103,12 +126,24 @@ def run_record(sidecar, source):
     return bool(sidecar.get("complete")), (n if isinstance(n, int) else None)
 
 
-def add(ledger, found, source, corpus, asof=None, complete=True, n_papers=None):
+def row_titles(rows, keyf):
+    """[(key, title)] for every row with a title (the search claim, else the apa's)."""
+    out = []
+    for r in rows:
+        t = r.get("search_title") or ((common.parse_apa(r.get("apa") or "") or {}).get("title") or "")
+        if t.strip():
+            out.append((r.get(keyf, "?"), t))
+    return out
+
+
+def add(ledger, found, source, corpus, asof=None, complete=True, n_papers=None, titles=()):
     """Record `found` (xref / forward output) as candidates, and the run itself
     under ledger["_runs"][source]. `complete` records whether the run that
     produced `found` finished, and `n_papers` how many sourced papers it read
     (both from its <out>.run.json sidecar, via run_record); main() passes
-    complete=False when the sidecar says so or is missing."""
+    complete=False when the sidecar says so or is missing. A new candidate
+    whose title matches one in `titles` ([(key, title)], row_titles) is
+    excluded at once as that row under another DOI."""
     runs = ledger.setdefault("_runs", {})
     runs[source] = {"at": asof or datetime.date.today().isoformat(), "n": len(found),
                     "complete": bool(complete)}
@@ -128,6 +163,11 @@ def add(ledger, found, source, corpus, asof=None, complete=True, n_papers=None):
             ledger[d] = {"title": e.get("title") or "", "year": str(e.get("year") or ""),
                          "first_author": e.get("first_author") or e.get("author") or "",
                          "sources": {source: score}, "decision": "pending", "reason": "", "at": ""}
+            t = ledger[d]["title"]
+            same = next((k for k, rt in titles if t and common.title_match(t, rt)), None)
+            if same:
+                ledger[d].update(decision="exclude", at=asof or datetime.date.today().isoformat(),
+                                 reason=f"already in the table as {same} under another DOI (same title)")
             added += 1
         else:
             c["sources"][source] = score
@@ -148,16 +188,99 @@ def decide(ledger, doi, decision, reason, asof):
     ledger[d].update(decision=decision, reason=reason.strip(), at=asof)
 
 
+def prepare(ledger, outdir, scope, manifest, per=60, project=None):
+    """Write the pending candidates as outdir/input_NN.json, `per` to a file, and
+    outdir/BRIEF.md rendered from TEMPLATE. Returns the input paths."""
+    pending = [{"doi": d, "title": c.get("title", ""), "year": c.get("year", ""),
+                "first_author": c.get("first_author", ""), "sources": c.get("sources", {})}
+               for d, c in entries(ledger) if c.get("decision") == "pending"]
+    if not pending:
+        raise ValueError("no pending candidates to prepare")
+    if not os.path.isfile(scope):
+        raise ValueError(f"--scope {scope} does not exist")
+    os.makedirs(outdir, exist_ok=True)
+    stale = glob.glob(os.path.join(outdir, "input_*.json")) + glob.glob(os.path.join(outdir, "result_*.json"))
+    if stale:
+        raise ValueError(f"{outdir} already holds input or result files; ingest or move them first")
+    paths = []
+    for i in range(0, len(pending), per):
+        p = os.path.join(outdir, f"input_{i // per + 1:02d}.json")
+        common.dump_json(pending[i:i + per], p)
+        paths.append(p)
+    runs = ledger.get("_runs") or {}
+    floor = {src: min((c["sources"][src] for _, c in entries(ledger) if src in (c.get("sources") or {})
+                       and isinstance(c["sources"][src], int)), default="?") for src in ("xref", "forward")}
+    lanes = "\n".join(f"- `{m['key']}`: {m.get('name', '')}" for m in manifest) or "(see the scope file)"
+    with open(TEMPLATE, encoding="utf-8") as fh:
+        text = fh.read().split("<!-- BRIEF STARTS -->", 1)[1].lstrip()
+    fills = {"SCOPE_FILE": os.path.abspath(scope), "LANE_TABLE": lanes, "INPUT_DIR": os.path.abspath(outdir),
+             "PROJECT_DIR": os.path.abspath(project or os.path.dirname(os.path.abspath(outdir))),
+             "XREF_FLOOR": str(floor["xref"]) if "xref" in runs else "?",
+             "FORWARD_FLOOR": str(floor["forward"]) if "forward" in runs else "?"}
+    for k, v in fills.items():
+        text = text.replace("{" + k + "}", v)
+    left = re.findall(r"\{[A-Z_]+\}", text)
+    if left:
+        raise ValueError(f"template placeholders left unfilled: {sorted(set(left))}")
+    with open(os.path.join(outdir, "BRIEF.md"), "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return paths
+
+
+def ingest(ledger, results, asof, lanes=None):
+    """Apply agent decision lists to the ledger. Checks every entry first and
+    raises ValueError listing each problem, so a bad file changes nothing.
+    Returns (included, excluded)."""
+    problems, todo = [], []
+    for path, items in results:
+        if not isinstance(items, list):
+            problems.append(f"{path}: not a JSON list")
+            continue
+        for e in items:
+            d = _doi((e or {}).get("doi"))
+            where = f"{os.path.basename(path)} {d or '?'}"
+            if d not in ledger or d.startswith("_"):
+                problems.append(f"{where}: not in the ledger")
+                continue
+            if e.get("decision") not in ("include", "exclude"):
+                problems.append(f"{where}: decision must be include or exclude")
+            if not str(e.get("reason") or "").strip():
+                problems.append(f"{where}: no reason")
+            if e.get("decision") == "include":
+                miss = [f for f in CLAIM if not str(e.get(f) or "").strip()]
+                if miss:
+                    problems.append(f"{where}: include without {', '.join(miss)} from the landing page")
+                elif lanes and e["lane"] not in lanes:
+                    problems.append(f"{where}: lane {e['lane']!r} is not a lane of this bibliography")
+            todo.append((d, e))
+    if problems:
+        raise ValueError("refusing the whole batch:\n  " + "\n  ".join(problems))
+    n_in = n_out = 0
+    for d, e in todo:
+        ledger[d].update(decision=e["decision"], reason=str(e["reason"]).strip(), at=asof)
+        if e["decision"] == "include":
+            ledger[d]["claim"] = {f: e.get(f) or "" for f in CLAIM + ("arxiv",)}
+            n_in += 1
+        else:
+            ledger[d].pop("claim", None)
+            n_out += 1
+    return n_in, n_out
+
+
 def export_included(ledger, corpus, lane):
     papers = []
     for d, c in entries(ledger):
         if c.get("decision") == "include" and d not in corpus:
             srcs = sorted(c.get("sources") or {}) or ["xref"]
             src = "xref" if "xref" in srcs else srcs[0]      # the pass that found it
-            papers.append({"ref": f"{lane}-{len(papers) + 1:02d}", "doi": d, "arxiv": "",
-                           "link": f"https://doi.org/{d}", "first_author": c.get("first_author", ""),
-                           "year": c.get("year", ""), "title": c.get("title", ""), "apa": "", "summary": "",
-                           "tag": src, "topic": "", "source": src, "note": "", "lane_fit": ""})
+            cl = c.get("claim") or {}
+            papers.append({"ref": f"{lane}-{len(papers) + 1:02d}", "lane": lane, "doi": d,
+                           "arxiv": cl.get("arxiv", ""), "link": f"https://doi.org/{d}",
+                           "first_author": cl.get("first_author") or c.get("first_author", ""),
+                           "year": cl.get("year") or c.get("year", ""),
+                           "title": cl.get("title") or c.get("title", ""), "apa": "",
+                           "summary": cl.get("summary", ""), "tag": src, "topic": "", "source": src,
+                           "note": c.get("reason", ""), "lane_fit": cl.get("lane", "")})
     return {"schema": 2, "lane": lane, "status": {"target": len(papers), "returned": len(papers),
                                                   "websearch_exhausted": False, "notes": "candidate ledger"},
             "papers": papers, "deferred": [], "could_not_confirm": []}
@@ -185,7 +308,12 @@ def main():
     ap.add_argument("--decision", choices=("include", "exclude"))
     ap.add_argument("--reason")
     ap.add_argument("--export-included", metavar="OUT")
-    ap.add_argument("--lane", default="X", help="lane key for --export-included refs (default X)")
+    ap.add_argument("--lane", default="C", help="lane key for --export-included refs (default C; "
+                    "must be a key no row uses)")
+    ap.add_argument("--prepare", metavar="DIR", help="write pending candidates and BRIEF.md for agents")
+    ap.add_argument("--scope", metavar="FILE", help="with --prepare: the file that defines the bibliography")
+    ap.add_argument("--per", type=int, default=60, help="with --prepare: candidates per input file")
+    ap.add_argument("--ingest", metavar="GLOB", help="record the agents' result files")
     ap.add_argument("--asof", default=datetime.date.today().isoformat())
     args = ap.parse_args()
     rows = common.load_json(args.rows)
@@ -196,6 +324,8 @@ def main():
     except ValueError as e:
         ap.error(str(e))
     corpus = corpus_dois(rows)
+    keyf = common.key_field(rows, None)
+    here = os.path.dirname(os.path.abspath(args.rows))
     if args.add:
         if not args.source:
             ap.error("--add needs --source")
@@ -204,10 +334,37 @@ def main():
                                             args.source)
         except ValueError as e:
             ap.error(f"{args.add}.run.json: {e}")
+        before = sum(1 for _, c in entries(ledger) if c.get("decision") == "exclude")
         a, s = add(ledger, common.load_json(args.add), args.source, corpus, args.asof,
-                   complete=complete, n_papers=n_papers)
+                   complete=complete, n_papers=n_papers, titles=row_titles(rows, keyf))
         common.dump_json(ledger, path)
-        print(f"added {a} candidate(s), skipped {s} already in the corpus -> {path}")
+        dup = sum(1 for _, c in entries(ledger) if c.get("decision") == "exclude") - before
+        print(f"added {a} candidate(s) ({dup} excluded at once: same title as a row), "
+              f"skipped {s} already in the corpus -> {path}")
+    elif args.prepare:
+        if not args.scope:
+            ap.error("--prepare needs --scope FILE (the file that defines the bibliography)")
+        manifest = common.load_optional_json(os.path.join(here, "lane_manifest.json"), [])
+        try:
+            paths = prepare(ledger, args.prepare, args.scope, manifest, args.per, project=here)
+        except ValueError as e:
+            ap.error(str(e))
+        print(f"{len(paths)} input file(s) + BRIEF.md -> {args.prepare}; one agent per input file, "
+              f"then --ingest '{os.path.join(args.prepare, 'result_*.json')}'")
+    elif args.ingest:
+        files = sorted(glob.glob(args.ingest))
+        if not files:
+            ap.error(f"--ingest {args.ingest}: no files match")
+        manifest = common.load_optional_json(os.path.join(here, "lane_manifest.json"), [])
+        lanes = {m["key"] for m in manifest if m.get("key")} or {r.get("lane") for r in rows} - {None, ""}
+        try:
+            n_in, n_out = ingest(ledger, [(f, common.load_json(f)) for f in files], args.asof, lanes)
+        except ValueError as e:
+            sys.exit(f"✗ {e}")
+        common.dump_json(ledger, path)
+        left = sum(1 for _, c in entries(ledger) if c.get("decision") == "pending")
+        print(f"recorded {n_in} include(s) and {n_out} exclude(s) from {len(files)} file(s); "
+              f"{left} still pending")
     elif args.decide:
         try:
             decide(ledger, args.decide, args.decision, args.reason, args.asof)
@@ -216,6 +373,9 @@ def main():
         common.dump_json(ledger, path)
         print(f"{args.decide}: {args.decision}")
     elif args.export_included:
+        used = {str(r.get(keyf, "")).split("-")[0] for r in rows}
+        if args.lane in used:
+            ap.error(f"--lane {args.lane} is already a lane key in the table; pick another")
         lane = export_included(ledger, corpus, args.lane)
         common.dump_json(lane, args.export_included)
         print(f"{len(lane['papers'])} included paper(s) -> {args.export_included}; "
@@ -226,7 +386,7 @@ def main():
                 print(f"{d}\t{c.get('decision')}\t{c.get('year')}\t{c.get('first_author')}\t{c.get('title')}\t"
                       f"{c.get('sources')}\t{c.get('reason')}")
     else:
-        ap.error("give one of --add, --decide, --export-included, --list")
+        ap.error("give one of --add, --prepare, --ingest, --decide, --export-included, --list")
     for x in candidate_defects(ledger, corpus):
         print(f"  · {x}", file=sys.stderr)
 
