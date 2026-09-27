@@ -830,7 +830,11 @@ Scholar** instead (`paper/batch` with reference ids, chunked; `paper/{id}/refere
 paged for long lists) — set `S2_API_KEY`. A cited arXiv id is normalized to
 `10.48550/arxiv.<id>` so it matches a corpus DOI. A probe on 2026-09-25 found
 reference lists for 16 of 20 sampled arXiv papers this way (OpenAlex had 4 of
-39). A paper whose references could not be fetched makes the run **incomplete**
+39). The batch requests carry whole reference lists, so they go 10 papers at a
+time, with one half-size retry of a failed batch: on a 677-row build, 100-paper
+batches drew a 429 or a truncated body and failed 400 papers even with the key
+to itself. Run xref, citations.py and abstracts.py one after another, not side by
+side: they share the one S2 key, and each paces only its own requests. A paper whose references could not be fetched makes the run **incomplete**
 and xref exits 1, same as a genuine fetch failure — pass `--allow-incomplete`
 to accept a partial table (it says so in its output) rather than re-running
 immediately. Either way, xref writes `<out>.run.json` (`{complete, incomplete,
