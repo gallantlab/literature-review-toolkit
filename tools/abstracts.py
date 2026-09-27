@@ -5,7 +5,9 @@ The summary check (summary_audit.py) compares each summary with its abstract, so
 each abstract comes from the most authoritative source that has it. The sources
 are tried in order: the arXiv API for arXiv papers, then OpenAlex (50 DOIs per
 request), then Semantic Scholar (500 ids per request), then PubMed for rows with
-a `pmid`. A source's abstract field sometimes holds something else: a journal's
+a `pmid`, then PubMed by DOI (50 per request), then Europe PMC by DOI (20 per
+request). The last two found 150 of the 194 abstracts the others missed on one
+1,215-row build, which a landing-page agent had to collect before. A source's abstract field sometimes holds something else: a journal's
 self-description, JSTOR's terms of use, a citation line, or an author list and
 venue. not_an_abstract() refuses such a text, the next source is tried, and a
 text no later source replaced is reported.
@@ -108,6 +110,72 @@ def fetch_pubmed(pmids):
     return out, failed
 
 
+def _pubmed_articles(root):
+    """(doi, pmid, abstract) for every PubmedArticle in an efetch reply."""
+    for art in root.findall(".//PubmedArticle"):
+        pmid = art.findtext(".//PMID") or ""
+        doi = ""
+        for aid in art.findall(".//ArticleIdList/ArticleId"):
+            if aid.get("IdType") == "doi" and aid.text:
+                doi = aid.text.strip().lower()
+        text = " ".join("".join(t.itertext()).strip() for t in art.findall(".//Abstract/AbstractText"))
+        yield doi, pmid, " ".join(text.split())
+
+
+def fetch_pubmed_by_doi(dois, batch=50):
+    """PubMed abstracts looked up by DOI, for rows with no PMID: one esearch per
+    batch of DOIs (term "a[doi] OR b[doi]"), then one efetch for the PMIDs it
+    returns, matched back to each DOI by the article's own DOI record. On
+    gallant_lab_v2 the landing-page agents found most of 171 missing abstracts in
+    PubMed and Europe PMC; this and fetch_europepmc do that step in the tool."""
+    base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+    out, failed = {}, set()
+    for i in range(0, len(dois), batch):
+        part = dois[i:i + batch]
+        term = " OR ".join(f"{d}[doi]" for d in part)
+        try:
+            ids = common.http_json(f"{base}esearch.fcgi?db=pubmed&retmode=json&retmax={2 * len(part)}&term="
+                                   + urllib.parse.quote(term)).get("esearchresult", {}).get("idlist", [])
+            if not ids:
+                continue
+            root = ET.fromstring(common.http(f"{base}efetch.fcgi?db=pubmed&retmode=xml&id="
+                                             + ",".join(ids)))
+        except Exception as e:
+            print(f"  PubMed-by-DOI batch {i}: {type(e).__name__}: {e}", file=sys.stderr)
+            failed.update(part)
+            continue
+        want = set(part)
+        for doi, _pmid, text in _pubmed_articles(root):
+            if doi in want and text:
+                out[doi] = text
+    return out, failed
+
+
+EUROPEPMC = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+
+
+def fetch_europepmc(dois, batch=20):
+    """Europe PMC abstracts by DOI (query DOI:"a" OR DOI:"b", core results)."""
+    out, failed = {}, set()
+    for i in range(0, len(dois), batch):
+        part = dois[i:i + batch]
+        q = " OR ".join(f'DOI:"{d}"' for d in part)
+        try:
+            res = common.http_json(f"{EUROPEPMC}?format=json&resultType=core&pageSize={2 * len(part)}"
+                                   "&query=" + urllib.parse.quote(q))
+        except Exception as e:
+            print(f"  Europe PMC batch {i}: {type(e).__name__}: {e}", file=sys.stderr)
+            failed.update(part)
+            continue
+        want = set(part)
+        for r in (res.get("resultList") or {}).get("result", []):
+            d = (r.get("doi") or "").lower()
+            text = re.sub(r"<[^>]+>", " ", r.get("abstractText") or "")
+            if d in want and text.strip() and d not in out:
+                out[d] = " ".join(text.split())
+    return out, failed
+
+
 def _s2_id(row):
     aid = common.arxiv_id_of(row)
     if aid:
@@ -194,6 +262,13 @@ def collect(rows, keyf, existing, fetchers, rejected=None):
     take("openalex", lambda r: common.doi_of(r, lower=True) or "", fetchers["openalex"])
     take("s2", _s2_id, fetchers["s2"])
     take("pubmed", lambda r: str(r.get("pmid") or ""), fetchers["pubmed"])
+    def doi_key(r):                   # arXiv DOIs are not in PubMed or Europe PMC
+        d = common.doi_of(r, lower=True) or ""
+        return "" if common.ARXIV_DOI.match(d) else d
+    if "pubmed-doi" in fetchers:
+        take("pubmed", doi_key, fetchers["pubmed-doi"])
+    if "europepmc" in fetchers:
+        take("europepmc", doi_key, fetchers["europepmc"])
     # a later source may still have found it
     failed = {r.get(keyf): f"{'/'.join(failed_refs[r.get(keyf)])} lookup could not complete"
               for r in rows if r.get(keyf) in failed_refs and r.get(keyf) not in ab}
@@ -219,7 +294,8 @@ def main():
     out = args.out or os.path.join(os.path.dirname(os.path.abspath(args.rows)), "abstracts.json")
     existing = common.load_optional_json(out, {})
     fetchers = {"arxiv": fetch_arxiv, "openalex": make_fetch_openalex(re.sub(r"\s", "", args.email)),
-                "s2": fetch_s2, "pubmed": fetch_pubmed}
+                "s2": fetch_s2, "pubmed": fetch_pubmed, "pubmed-doi": fetch_pubmed_by_doi,
+                "europepmc": fetch_europepmc}
     rejected = {}
     ab, missing, failed, stale = collect(rows, keyf, existing, fetchers, rejected)
     common.dump_json(ab, out)

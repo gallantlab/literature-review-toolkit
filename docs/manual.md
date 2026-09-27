@@ -890,7 +890,8 @@ python3 ../tools/summary_audit.py --rows rows.json --ingest
 
 **Fetching the abstracts.** `abstracts.py` fetches every row's abstract once, into
 `abstracts.json`. It uses the most authoritative source that has one: the arXiv
-API for arXiv papers, then OpenAlex, then Semantic Scholar, then PubMed. Each
+API for arXiv papers, then OpenAlex, then Semantic Scholar, then PubMed (by PMID, then by
+DOI), then Europe PMC. Each
 entry records the `doi` and `arxiv` it was fetched for, and is fetched again when
 the row's ids change. A hand-added entry (`"source": "landing-page"`, carrying the
 row's `doi` and `arxiv`) is never overwritten. One whose ids no longer match is

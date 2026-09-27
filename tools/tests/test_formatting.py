@@ -5411,6 +5411,26 @@ check_true("a comma glued outside parentheses still is",
                "Doe, J. (2001). Neurons of the marine mollusc,Tritonia diomedea. Journal of Things, 1, 1-2.", True)[0]))
 
 
+# abstracts: PubMed by DOI and Europe PMC fill what the other sources lack
+def _epmc_json(url, *a, **k):
+    return {"resultList": {"result": [{"doi": "10.1/E", "abstractText": "<h4>Aim</h4>We tested <i>V4</i> tuning."},
+                                      {"doi": "10.1/other", "abstractText": "not asked for"}]}}
+
+
+with _patched(common, http_json=_epmc_json):
+    _ep, _ef = abstracts.fetch_europepmc(["10.1/e"])
+check("fetch_europepmc: matches by DOI, strips markup, ignores unasked records", (_ep, _ef),
+      ({"10.1/e": "Aim We tested V4 tuning."}, set()))
+_PMX = (b"<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>9</PMID><Article><Abstract>"
+        b"<AbstractText>Place cells fire in place fields.</AbstractText></Abstract></Article></MedlineCitation>"
+        b"<PubmedData><ArticleIdList><ArticleId IdType=\"doi\">10.1/P</ArticleId></ArticleIdList></PubmedData>"
+        b"</PubmedArticle></PubmedArticleSet>")
+with _patched(common, http_json=lambda url, *a, **k: {"esearchresult": {"idlist": ["9"]}},
+              http=lambda url, *a, **k: _PMX):
+    _pm, _pf = abstracts.fetch_pubmed_by_doi(["10.1/p", "10.1/q"])
+check("fetch_pubmed_by_doi: one esearch + efetch per batch, matched back by the article's DOI",
+      (_pm, _pf), ({"10.1/p": "Place cells fire in place fields."}, set()))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

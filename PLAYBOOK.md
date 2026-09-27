@@ -764,7 +764,7 @@ python3 tools/summary_audit.py --rows rows.json --ingest
 
 **`abstracts.py`** fetches each row's abstract once, from the most authoritative
 source that has it (the arXiv API for arXiv papers, then OpenAlex, then Semantic
-Scholar, then PubMed for rows with a PMID), into `abstracts.json`. Each entry
+Scholar, PubMed by PMID, then PubMed and Europe PMC by DOI), into `abstracts.json`. Each entry
 records the `doi` and `arxiv` it was fetched for, so when a row's ids change its
 entry is fetched again. A fetch that could not complete goes to
 `abstracts_failed.json` and makes the run exit 1: that is not "no abstract", so

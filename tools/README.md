@@ -528,7 +528,7 @@ summary check.
 python3 tools/abstracts.py --rows rows.json
 ```
 
-It tries the arXiv API, then OpenAlex, then Semantic Scholar, then PubMed. A text
+It tries the arXiv API, then OpenAlex, then Semantic Scholar, then PubMed (by PMID, then by DOI), then Europe PMC. A text
 that is boilerplate, a citation line, or an author list and venue is not an
 abstract (`abstracts.not_an_abstract`). It is refused and reported, and the next
 source is tried.
