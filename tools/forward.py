@@ -116,6 +116,8 @@ def main():
             continue
         try:
             by_landmark[r.get(keyf)] = citing(wid, args.per_landmark, args.email)
+        except common.OpenAlexBudgetError:
+            raise
         except Exception as e:
             print(f"  ✗ {r.get(keyf)}: {type(e).__name__}: {e}", file=sys.stderr)
             failed.append(r.get(keyf))

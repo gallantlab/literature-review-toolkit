@@ -122,6 +122,8 @@ def find_doi(row, searchers=(search_crossref, search_openalex)):
     for fn in searchers:
         try:
             cands = fn(title)
+        except common.OpenAlexBudgetError:
+            raise
         except Exception as e:
             print(f"  [search-fail] {fn.__name__}: {type(e).__name__}: {e}", file=sys.stderr)
             continue

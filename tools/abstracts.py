@@ -53,6 +53,8 @@ def make_fetch_openalex(email):
                     t = reconstruct(w.get("abstract_inverted_index"))
                     if d and t:
                         out[d] = t
+            except common.OpenAlexBudgetError:
+                raise
             except Exception as e:
                 print(f"  OpenAlex batch {i}: {type(e).__name__}: {e}", file=sys.stderr)
                 failed.update(batch)

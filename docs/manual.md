@@ -139,10 +139,12 @@ meant to be read and adapted. Run any with `--help`.
 |---|---|---|
 | `LITREVIEW_EMAIL` | yes | Contact email that NCBI and CrossRef require; it buys polite rate limits. Or pass `--email` to each tool. |
 | `S2_API_KEY` | no | Avoids Semantic Scholar rate limits (HTTP 429) on large corpora. An id S2 rejects (HTTP 400) is isolated by bisecting its batch and named, so it no longer fails the other ids. Without it, S2 coverage is partial and OpenAlex undercounts go uncaught. `xref.py` also uses it to fetch arXiv papers' reference lists (CrossRef has none); without a fetch it exits 1 unless `--allow-incomplete`. |
+| `OPENALEX_API_KEY` | effectively yes | Without a key, OpenAlex gives every client on one IP address a single shared free daily budget, and a full build can spend it. Once it is spent, every OpenAlex request (citation counts, abstracts, forward citations, hand-check DOI search, `lab_corpus.py`) is refused until midnight UTC; the tools stop at once with `OpenAlexBudgetError` rather than backing off. Keys are free (help.openalex.org/api/authentication) and have their own budget. `common.http` sends it as an `Authorization` header, never in the URL. |
 | `LITREVIEW_LAB_AUTHOR` | no | Comma-separated surnames whose papers the figure stars as home-lab work. Off by default. See [§7.2](#72-the-lineage-figure). |
 
 ```bash
 export LITREVIEW_EMAIL=you@institution.edu
+export OPENALEX_API_KEY=...   # free key from openalex.org
 ```
 
 ### 2.3 Where things live
@@ -1064,6 +1066,7 @@ the first.
 | Symptom | Cause | Fix |
 |---|---|---|
 | HTTP 429s, spread across many URLs, easing with delay | throttling | raise `--sleep`; set `S2_API_KEY` |
+| Every OpenAlex request 429s with a Retry-After of hours (`OpenAlexBudgetError`) | the IP's free daily budget is spent | set `OPENALEX_API_KEY` |
 | `IncompleteRead` on particular large records, failing at the same byte count every time | truncated uncompressed response | request gzip; `common.http` already does |
 | One URL fails under `urllib` but works under `curl` | client incompatibility | `common.curl_get`, which the tools try automatically |
 

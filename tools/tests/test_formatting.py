@@ -287,6 +287,60 @@ with open(os.path.join(os.path.dirname(common.__file__), "common.py"), encoding=
 check_true("http() falls back to curl after exhausting retries",
            "curl_get" in _CSRC.split("def http(")[1].split("def http_json")[0])
 
+# OpenAlex: a key rides in an Authorization header (never the URL), only to
+# OpenAlex; and a spent daily budget (429, Retry-After to midnight UTC, 63160 s
+# on 2026-09-27) raises at once instead of backing off row after row.
+import email.message as _em  # noqa: E402
+import urllib.error as _ue  # noqa: E402
+import urllib.request as _ur  # noqa: E402
+
+_old_key = os.environ.pop("OPENALEX_API_KEY", None)
+check("no OpenAlex key, headers unchanged",
+      common._openalex_headers("https://api.openalex.org/works?search=x", {"A": "1"}), {"A": "1"})
+os.environ["OPENALEX_API_KEY"] = "k123"
+check("an OpenAlex request carries the key as a Bearer header",
+      common._openalex_headers("https://api.openalex.org/works?search=x", {"A": "1"}),
+      {"A": "1", "Authorization": "Bearer k123"})
+check("the key is never sent to another host",
+      common._openalex_headers("https://api.crossref.org/works?query=api.openalex.org", {"A": "1"}),
+      {"A": "1"})
+
+
+def _fake_429(retry):
+    def urlopen(req, timeout=None):
+        h = _em.Message()
+        h["Retry-After"] = retry
+        raise _ue.HTTPError(req.full_url, 429, "Too Many Requests", h, None)
+    return urlopen
+
+
+_real_urlopen, _real_sleep = _ur.urlopen, common.time.sleep
+_calls = []
+try:
+    _ur.urlopen = _fake_429("63160")
+    common.time.sleep = lambda s: _calls.append(s)
+    try:
+        common.http("https://api.openalex.org/works?filter=doi:10.1/x")
+        _got = "returned"
+    except common.OpenAlexBudgetError as e:
+        _got = str(e)
+    check_true("a spent OpenAlex budget raises OpenAlexBudgetError", "budget spent" in _got)
+    check_true("... without sleeping first", _calls == [])
+    check_true("... and never prints the key", "k123" not in _got)
+    _ur.urlopen = _fake_429("5")
+    check_true("a short OpenAlex 429 is still an ordinary throttle (backoff, then HTTPError)",
+               _raises(lambda: common.http("https://api.openalex.org/works?x=1", retries=2))
+               and _calls == [5.0])
+finally:
+    _ur.urlopen, common.time.sleep = _real_urlopen, _real_sleep
+    if _old_key is None:
+        os.environ.pop("OPENALEX_API_KEY", None)
+    else:
+        os.environ["OPENALEX_API_KEY"] = _old_key
+for _f in ("citations.py", "abstracts.py", "forward.py", "handcheck.py"):
+    with open(os.path.join(os.path.dirname(common.__file__), _f), encoding="utf-8") as _fh:
+        check_true(f"{_f} lets a spent OpenAlex budget abort the run", "OpenAlexBudgetError" in _fh.read())
+
 # ---- audit gate -----------------------------------------------------------
 def defects(apa, has_source=True):
     return references.audit(apa, has_source)[0]

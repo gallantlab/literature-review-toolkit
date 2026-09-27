@@ -31,7 +31,7 @@ import time
 import urllib.parse
 
 import common
-from common import ARXIV_DOI, doi_of, http_json
+from common import ARXIV_DOI, OpenAlexBudgetError, doi_of, http_json
 
 PHASE = "5b"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
@@ -50,6 +50,8 @@ def openalex_single(doi, email):
         w = http_json(f"https://api.openalex.org/works/doi:{urllib.parse.quote(doi, safe='/.:')}"
                       f"?mailto={email}&select=cited_by_count")
         return w.get("cited_by_count")
+    except OpenAlexBudgetError:
+        raise
     except Exception:
         return None
 
@@ -71,6 +73,8 @@ def fetch_openalex(items, email):
                     # OpenAlex can return several works for one DOI (a merged primary
                     # plus stub duplicates); keep the highest count, never last-wins.
                     by_doi[doi] = max(by_doi.get(doi, 0), c)
+        except OpenAlexBudgetError:
+            raise
         except Exception as e:
             print(f"  OpenAlex batch {i}: {type(e).__name__}: {e}", file=sys.stderr)
         time.sleep(0.4)

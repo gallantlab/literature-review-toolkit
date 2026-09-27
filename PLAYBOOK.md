@@ -1854,7 +1854,7 @@ about Content-Encoding degrades to a JSON parse error instead of killing the run
 | PMC esummary | `...?db=pmc&id=<numeric_pmc>` | Same, for PMC |
 | Unpaywall | `https://api.unpaywall.org/v2/<doi>?email=<email>` | OA PDF URLs |
 | CrossRef metadata | `https://api.crossref.org/works/<doi>` | Title, authors, references |
-| OpenAlex (counts) | `https://api.openalex.org/works?filter=doi:<d1>\|<d2>...&mailto=<email>` | `cited_by_count`, batchable 50/req |
+| OpenAlex (counts) | `https://api.openalex.org/works?filter=doi:<d1>\|<d2>...&mailto=<email>` | `cited_by_count`, batchable 50/req; set `OPENALEX_API_KEY` (a keyless IP shares one daily budget, and a spent budget raises `OpenAlexBudgetError`) |
 | Semantic Scholar (counts) | `POST https://api.semanticscholar.org/graph/v1/paper/batch?fields=citationCount,influentialCitationCount` body `{"ids":["DOI:..","ARXIV:.."]}` | citation + influential counts; 429s without `S2_API_KEY` |
 | EuropePMC search | `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=<q>&format=json` | Full search |
 | EuropePMC PDF | `https://europepmc.org/articles/<PMCID>?pdf=render` | PDF (often) |

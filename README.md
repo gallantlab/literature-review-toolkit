@@ -5,7 +5,7 @@ fabricating references. The agent decides what to search, how to group the
 papers, and how to write them up. The scripts do the API calls, verification and
 bookkeeping.
 
-Version 1.20.1 · MIT license
+Version 1.21.0 · MIT license
 
 📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**, with the
 [operator manual](https://gallantlab.org/literature-review-toolkit/manual/),
@@ -40,6 +40,7 @@ git clone https://github.com/gallantlab/literature-review-toolkit.git
 cd literature-review-toolkit
 pip install -r requirements.txt
 export LITREVIEW_EMAIL=you@institution.edu   # NCBI and CrossRef require a contact email
+export OPENALEX_API_KEY=...                   # free; a keyless IP shares one daily budget
 ```
 
 `brew install poppler` (or `apt-get install poppler-utils`) is needed only for

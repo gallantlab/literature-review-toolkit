@@ -22,6 +22,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zlib
 
@@ -153,13 +154,43 @@ def request_count():
     return _REQUESTS
 
 
+OPENALEX_HOST = "api.openalex.org"
+# A 429 asking for a longer wait than this is a spent daily budget, not a throttle.
+BUDGET_WAIT = 600
+
+
+class OpenAlexBudgetError(RuntimeError):
+    """OpenAlex refused the request because the daily budget is spent.
+
+    Without a key, every client on the same IP address shares one free daily
+    budget; once it is spent, each request gets a 429 whose Retry-After runs to
+    the next midnight UTC (63160 s in the one we saw). Backing off cannot help,
+    and a capped backoff hangs every row of a run. So http() raises this at
+    once, and the message says how to get past it."""
+
+
+def _openalex_headers(url, hdrs):
+    """hdrs plus the OpenAlex API key (OPENALEX_API_KEY) when url is OpenAlex.
+
+    Sent as an Authorization header, not an api_key= query parameter, so the key
+    never appears in a URL that a log line or error message prints."""
+    key = os.environ.get("OPENALEX_API_KEY", "").strip()
+    if not key or urllib.parse.urlsplit(url).hostname != OPENALEX_HOST:
+        return hdrs
+    return {**hdrs, "Authorization": f"Bearer {key}"}
+
+
 def http(url, retries=5, timeout=30, data=None, headers=None):
     """GET (or POST if `data` given) with backoff on rate-limits (429/503) and
     timeouts, so a throttled fetch retries instead of failing hard. A server's
     Retry-After is honored; otherwise the wait doubles from 3 s. Requests a
-    gzip/deflate body and decodes it. Returns raw bytes; raises on exhaustion."""
+    gzip/deflate body and decodes it. Returns raw bytes; raises on exhaustion.
+
+    An OpenAlex request carries OPENALEX_API_KEY when it is set, and a spent
+    OpenAlex daily budget raises OpenAlexBudgetError at once instead of
+    backing off."""
     global _REQUESTS
-    hdrs = headers or HDRS
+    hdrs = _openalex_headers(url, headers or HDRS)
     tried_curl = False
     for attempt in range(retries):
         try:
@@ -168,6 +199,13 @@ def http(url, retries=5, timeout=30, data=None, headers=None):
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return decompress(r.read(), r.headers.get("Content-Encoding", ""))
         except urllib.error.HTTPError as e:
+            if (e.code == 429 and urllib.parse.urlsplit(url).hostname == OPENALEX_HOST
+                    and (retry_after(e, cap=float("inf")) or 0) > BUDGET_WAIT):
+                how = ("the key's own budget is spent too" if "Authorization" in hdrs else
+                       "set OPENALEX_API_KEY (free key: https://help.openalex.org/api/authentication)")
+                raise OpenAlexBudgetError(
+                    f"OpenAlex daily budget spent (Retry-After {e.headers.get('Retry-After')} s); "
+                    f"{how}") from None
             if e.code in TRANSIENT_HTTP and attempt < retries - 1:
                 wait = retry_after(e)
                 time.sleep(wait if wait is not None else 3 * 2 ** attempt)   # 3, 6, 12, 24s
