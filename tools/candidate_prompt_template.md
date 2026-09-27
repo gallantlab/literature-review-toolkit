@@ -10,7 +10,11 @@ refuses a file with a missing reason or an include without its landing-page clai
 # Decide cross-citation candidates for the bibliography
 
 **The bibliography.** Read `{SCOPE_FILE}` first. It defines the bibliography, its
-lanes, what is out of scope, and the tier rule for older papers. The lanes are:
+lanes, what is out of scope, and the tier rule for older papers. If it is one
+search lane's brief, use its description of the bibliography, its lane table and
+its selection criteria, and ignore the instructions meant for that lane's
+searcher. A paper may go to any lane, not only the one that brief was for. The
+lanes are:
 
 {LANE_TABLE}
 

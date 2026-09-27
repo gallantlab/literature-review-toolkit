@@ -209,7 +209,7 @@ def decide(ledger, doi, decision, reason, asof):
     ledger[d].update(decision=decision, reason=reason.strip(), at=asof)
 
 
-def prepare(ledger, outdir, scope, manifest, per=60, project=None):
+def prepare(ledger, outdir, scope, manifest, per=60, project=None, lab_lane=None):
     """Write the pending candidates as outdir/input_NN.json, `per` to a file, and
     outdir/BRIEF.md rendered from TEMPLATE. Returns the input paths."""
     pending = [{"doi": d, "title": c.get("title", ""), "year": c.get("year", ""),
@@ -232,6 +232,8 @@ def prepare(ledger, outdir, scope, manifest, per=60, project=None):
     floor = {src: min((c["sources"][src] for _, c in entries(ledger) if src in (c.get("sources") or {})
                        and isinstance(c["sources"][src], int)), default="?") for src in ("xref", "forward")}
     lanes = "\n".join(f"- `{m['key']}`: {m.get('name', '')}" for m in manifest) or "(see the scope file)"
+    if lab_lane:
+        lanes += f"\n- `{lab_lane}`: the lab's own papers (lab mode)"
     with open(TEMPLATE, encoding="utf-8") as fh:
         text = fh.read().split("<!-- BRIEF STARTS -->", 1)[1].lstrip()
     fills = {"SCOPE_FILE": os.path.abspath(scope), "LANE_TABLE": lanes, "INPUT_DIR": os.path.abspath(outdir),
@@ -367,7 +369,9 @@ def main():
             ap.error("--prepare needs --scope FILE (the file that defines the bibliography)")
         manifest = common.load_optional_json(os.path.join(here, "lane_manifest.json"), [])
         try:
-            paths = prepare(ledger, args.prepare, args.scope, manifest, args.per, project=here)
+            lab = next((r.get("lane") or str(r.get(keyf, "")).split("-")[0] for r in rows
+                        if r.get("source") == "lab"), None)
+            paths = prepare(ledger, args.prepare, args.scope, manifest, args.per, project=here, lab_lane=lab)
         except ValueError as e:
             ap.error(str(e))
         print(f"{len(paths)} input file(s) + BRIEF.md -> {args.prepare}; one agent per input file, "
@@ -377,7 +381,9 @@ def main():
         if not files:
             ap.error(f"--ingest {args.ingest}: no files match")
         manifest = common.load_optional_json(os.path.join(here, "lane_manifest.json"), [])
-        lanes = {m["key"] for m in manifest if m.get("key")} or {r.get("lane") for r in rows} - {None, ""}
+        # the search lanes, plus every lane the table holds (a lab lane is not in the manifest)
+        lanes = ({m["key"] for m in manifest if m.get("key")}
+                 | {str(r.get(keyf, "")).split("-")[0] for r in rows})
         try:
             n_in, n_out = ingest(ledger, [(f, common.load_json(f)) for f in files], args.asof, lanes)
         except ValueError as e:
