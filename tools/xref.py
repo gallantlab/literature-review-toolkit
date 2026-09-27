@@ -6,7 +6,8 @@ fetch its reference list from CrossRef, or from Semantic Scholar for an arXiv
 paper or one CrossRef holds no list for. A paper with no DOI but a
 `pdf` has the DOIs in its PDF read with pdftotext instead. Then count, for each
 cited DOI, how many input papers cite it, and rank those cited by at least
---min-cites (default 3). --exclude drops DOIs the table already has, and
+--min-cites (default: the corpus size / 80, at least 3; common.candidate_floor).
+--exclude drops DOIs the table already has, and
 --resolve-unknown looks up missing titles in CrossRef (slow).
 
 Input format (JSON list):
@@ -22,7 +23,7 @@ Input format (JSON list):
   python3 tools/xref.py --papers list.json --out xref.json --min-cites 3
   python3 tools/xref.py --rows rows.json --out xref.json     # slug = row key, DOI from doi/link
   python3 tools/xref.py --rows rows.json --out xref.json --exclude existing_dois.json \\
-          --min-cites 4 --resolve-unknown --internal-out internal_citations.json
+          --resolve-unknown --internal-out internal_citations.json
 
 With --rows, an arXiv-only row is looked up by its arXiv DOI, and a row with
 neither a DOI nor a pdf is skipped. --internal-out also writes {slug:
@@ -365,7 +366,8 @@ def main():
                     "corpus papers cite each corpus paper. Feeds families_figure.py auto-landmark "
                     "selection (a paper cited by many of its own siblings is foundational within "
                     "the review).")
-    ap.add_argument("--min-cites", type=int, default=3)
+    ap.add_argument("--min-cites", type=int, default=None,
+                    help="keep DOIs cited by at least this many papers (default: papers / 80, at least 3)")
     ap.add_argument("--resolve-unknown", action="store_true",
                     help="Look up titles for top-cited DOIs via CrossRef")
     ap.add_argument("--sleep", type=float, default=0.4,
@@ -439,6 +441,9 @@ def main():
               f"(top: {', '.join(f'{s}:{n}' for s, n in top if n)})", file=sys.stderr)
 
     # Filter excludes and threshold
+    if args.min_cites is None:
+        args.min_cites = common.candidate_floor(len(papers))
+        print(f"--min-cites {args.min_cites} (default for {len(papers)} papers)", file=sys.stderr)
     ranked = sorted(
         ((d, slugs) for d, slugs in counts.items()
          if len(slugs) >= args.min_cites and d not in excludes),

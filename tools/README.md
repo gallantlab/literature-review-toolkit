@@ -893,7 +893,8 @@ within-corpus in-degree (internal_citations.json, from xref.py --internal-out),
 then by citation count. For each landmark it asks OpenAlex for the most-cited
 papers that cite it (up to --per-landmark, default and maximum 200). Each citing
 paper is scored by how many corpus papers it cites. Those that cite at least
---min-shared corpus papers (default 3) and have a DOI become candidates for
+--min-shared corpus papers (default: the corpus size / 80, at least 3;
+common.candidate_floor) and have a DOI become candidates for
 candidates.py.
 
 A citing paper is recognized as already in the corpus by its OpenAlex id or its
@@ -921,7 +922,8 @@ fetch its reference list from CrossRef, or from Semantic Scholar for an arXiv
 paper or one CrossRef holds no list for. A paper with no DOI but a
 `pdf` has the DOIs in its PDF read with pdftotext instead. Then count, for each
 cited DOI, how many input papers cite it, and rank those cited by at least
---min-cites (default 3). --exclude drops DOIs the table already has, and
+--min-cites (default: the corpus size / 80, at least 3; common.candidate_floor).
+--exclude drops DOIs the table already has, and
 --resolve-unknown looks up missing titles in CrossRef (slow).
 
 Input format (JSON list):
@@ -937,7 +939,7 @@ Input format (JSON list):
   python3 tools/xref.py --papers list.json --out xref.json --min-cites 3
   python3 tools/xref.py --rows rows.json --out xref.json     # slug = row key, DOI from doi/link
   python3 tools/xref.py --rows rows.json --out xref.json --exclude existing_dois.json \
-          --min-cites 4 --resolve-unknown --internal-out internal_citations.json
+          --resolve-unknown --internal-out internal_citations.json
 
 With --rows, an arXiv-only row is looked up by its arXiv DOI, and a row with
 neither a DOI nor a pdf is skipped. --internal-out also writes {slug:

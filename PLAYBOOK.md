@@ -818,14 +818,13 @@ incomplete CrossRef fetch is retried once at the end (`--retry-wait`, default
 only the lists that are missing or incomplete (`--no-cache` refetches everything).
 
 ```bash
-python3 tools/xref.py --rows rows.json --out xref_<topic>.json --min-cites 4 \
+python3 tools/xref.py --rows rows.json --out xref_<topic>.json \
         --resolve-unknown --internal-out internal_citations.json
 ```
 
-- The output ranks every DOI cited by at least `--min-cites` corpus papers (default
-  3). On a ~40-paper topic, 4 is a strong signal and 3 borderline (take a 3 only if
-  clearly foundational); raise it for a large corpus, since every entry becomes a
-  pending candidate.
+- The output ranks every DOI cited by at least `--min-cites` corpus papers. The
+  default is `common.candidate_floor`: one per 80 papers, never below 3, so a
+  large corpus does not flood the ledger. Override it only with a reason.
 - `--resolve-unknown` looks up titles for ranked DOIs CrossRef returned bare.
 - `--internal-out` writes each corpus paper's within-corpus in-degree. Always emit
   it: `forward.py` and the figure's landmark criterion (2) read it from beside
@@ -839,7 +838,7 @@ python3 tools/xref.py --rows rows.json --out xref_<topic>.json --min-cites 4 \
 **Forward: `forward.py`.** Picks the landmarks (top `--landmarks` 30 by
 within-corpus in-degree, then `cite_openalex`), asks OpenAlex for the most-cited
 papers citing each (up to `--per-landmark` 200), and keeps a citing paper that cites
-at least `--min-shared` 3 corpus papers.
+at least `--min-shared` corpus papers (the same corpus-scaled default).
 
 ```bash
 python3 tools/forward.py --rows rows.json --out forward_candidates.json

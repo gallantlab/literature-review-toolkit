@@ -463,6 +463,19 @@ SEARCH_SCALES = {
 UNCAPPED_YIELD = 3
 
 
+# Papers per unit of candidate floor. A paper cited by (xref) or citing (forward)
+# 1 in 80 corpus papers is worth a decision; below that the ledger floods. The
+# alignment rerun hand-picked 8 for 639 papers, and a fixed floor of 3 gave a
+# 1,215-paper corpus 4,500 xref and 2,600 forward candidates to decide.
+CANDIDATE_RATE = 80
+
+
+def candidate_floor(n_papers):
+    """Default --min-cites (xref.py) and --min-shared (forward.py) for a corpus of
+    n_papers: n_papers / CANDIDATE_RATE, rounded, and never below 3."""
+    return max(3, round(n_papers / CANDIDATE_RATE))
+
+
 def scale_plan(scale, n_lanes=None):
     """{"name", "lane_target", "capped", "lanes", "planned_papers", "about"} for a
     named scale, or for a number of papers (or its digit string).

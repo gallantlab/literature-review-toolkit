@@ -7,7 +7,8 @@ within-corpus in-degree (internal_citations.json, from xref.py --internal-out),
 then by citation count. For each landmark it asks OpenAlex for the most-cited
 papers that cite it (up to --per-landmark, default and maximum 200). Each citing
 paper is scored by how many corpus papers it cites. Those that cite at least
---min-shared corpus papers (default 3) and have a DOI become candidates for
+--min-shared corpus papers (default: the corpus size / 80, at least 3;
+common.candidate_floor) and have a DOI become candidates for
 candidates.py.
 
 A citing paper is recognized as already in the corpus by its OpenAlex id or its
@@ -101,7 +102,9 @@ def main():
     ap.add_argument("--out", help="default: forward_candidates.json beside --rows")
     ap.add_argument("--landmarks", type=int, default=30)
     ap.add_argument("--per-landmark", type=int, default=200)
-    ap.add_argument("--min-shared", type=int, default=3)
+    ap.add_argument("--min-shared", type=int, default=None,
+                    help="keep citing papers that cite at least this many corpus papers "
+                         "(default: papers / 80, at least 3)")
     ap.add_argument("--allow-incomplete", action="store_true",
                     help="exit 0 even when some landmark pulls failed (said in the output)")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"))
@@ -136,6 +139,9 @@ def main():
             print(f"  ✗ {r.get(keyf)}: {type(e).__name__}: {e}", file=sys.stderr)
             failed.append(r.get(keyf))
         time.sleep(0.2)
+    if args.min_shared is None:
+        args.min_shared = common.candidate_floor(len(rows))
+        print(f"  --min-shared {args.min_shared} (default for {len(rows)} papers)", file=sys.stderr)
     cands, n_nodoi = score(by_landmark, set(wids.values()), set(dois), args.min_shared)
     out = args.out or os.path.join(here, "forward_candidates.json")
     common.dump_json(cands, out)

@@ -955,7 +955,7 @@ fails while any candidate is still pending.
 
 ```bash
 python3 ../tools/xref.py --rows rows.json --out xref_my_topic.json \
-        --min-cites 4 --resolve-unknown --internal-out internal_citations.json
+        --resolve-unknown --internal-out internal_citations.json
 python3 ../tools/forward.py --rows rows.json --out forward_candidates.json
 ```
 
@@ -990,7 +990,9 @@ row's `cite_openalex`. So run it after `xref.py`, and after the counts
 are attached ([§5.4](#54-phase-5b-citation-counts)). For each landmark, it asks
 OpenAlex for the most-cited papers citing it, up to `--per-landmark` (default
 200). It then scores each citing paper by how many corpus papers it cites. A paper
-citing at least `--min-shared` (default 3) becomes a candidate. Because each pull
+citing at least `--min-shared` corpus papers becomes a candidate. The default
+grows with the corpus: one per 80 papers, never below 3 (the same rule sets
+xref's `--min-cites`). Because each pull
 is ordered by citation count, very recent papers are under-represented, and the
 output says so. A citing paper is recognized as already in the corpus by its
 OpenAlex id or DOI, so a corpus row with no DOI can come back as a candidate. A

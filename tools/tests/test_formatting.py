@@ -5539,6 +5539,12 @@ check_true("gen_docs: the whole docstring is carried", "A does x.\n\nMore." in _
 check("gen_docs: splice keeps markers and outside text",
       gen_docs.splice("x\nB\nold\nE\ny", "new", "B", "E"), "x\nB\nnew\nE\ny")
 
+
+# The candidate floor grows with the corpus, so a big corpus does not flood the ledger.
+check("candidate_floor: small corpus keeps the floor of 3", common.candidate_floor(100), 3)
+check("candidate_floor: 639 papers -> 8 (the alignment rerun's hand-picked value)", common.candidate_floor(639), 8)
+check("candidate_floor: 1,215 papers -> 15", common.candidate_floor(1215), 15)
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
