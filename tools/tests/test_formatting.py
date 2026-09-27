@@ -1457,8 +1457,18 @@ with _patched(common, s2_request=_s2_batch_stub([[{"referenceCount": 1, "referen
 check("s2_refs maps references; a paper S2 lacks is complete and empty",
       ([r["doi"] for r in _got["10.48550/arXiv.2301.00001"]], _got["10.1/notins2"]),
       (["10.48550/arxiv.2301.00002"], []))
-with _patched(common, s2_request=_s2_batch_stub([urllib.error.HTTPError("u", 500, "x", {}, None)])):
+with _patched(common, s2_request=_s2_batch_stub([urllib.error.HTTPError("u", 500, "x", {}, None)])), \
+        _ctx.redirect_stderr(open(os.devnull, "w")):
     check("s2_refs marks a failed batch incomplete", xref.s2_refs(["10.1/a"]), {"10.1/a": None})
+# 2026-09-26: a chunk that fails is retried once, in half-size chunks
+with _patched(common, s2_request=_s2_batch_stub([
+        urllib.error.HTTPError("u", 500, "x", {}, None),
+        [{"referenceCount": 1, "references": [{"externalIds": {"DOI": "10.1/ra"}}]}],
+        [{"referenceCount": 1, "references": [{"externalIds": {"DOI": "10.1/rb"}}]}]])), \
+        _ctx.redirect_stderr(open(os.devnull, "w")):
+    _got = xref.s2_refs(["10.1/a", "10.1/b"], chunk=2)
+check("s2_refs retries a failed chunk in halves",
+      ([r["doi"] for r in _got["10.1/a"]], [r["doi"] for r in _got["10.1/b"]]), (["10.1/ra"], ["10.1/rb"]))
 with _patched(common, s2_request=_s2_batch_stub([
         [{"paperId": "P1", "referenceCount": 3, "references": [{"externalIds": {"DOI": "10.1/r1"}}]}],
         {"data": [{"citedPaper": {"externalIds": {"DOI": "10.1/r1"}}},
@@ -1468,16 +1478,16 @@ with _patched(common, s2_request=_s2_batch_stub([
 check("s2_refs pages a list longer than the batch returned",
       [r["doi"] for r in _got["10.1/long"]], ["10.1/r1", "10.1/r2", "10.1/r3"])
 _asked = []
-with _patched(xref, http_json=_no_network, s2_refs=lambda dois: (_asked.extend(dois), {d: [] for d in dois})[1]), \
+with _patched(xref, http_json=_no_network, s2_refs=lambda dois, **kw: (_asked.extend(dois), {d: [] for d in dois})[1]), \
         _sleeps() as _sl:
     _refs, _inc = xref.fetch_all([{"slug": "A", "doi": "10.48550/arXiv.2301.00001"}], sleep=0.4, retry_wait=0)
 check("xref sends an arXiv DOI to S2, never CrossRef, with no per-paper sleep",
       (_asked, _refs["A"], _inc, _sl), (["10.48550/arXiv.2301.00001"], [], [], []))
 with _patched(xref, crossref_refs=lambda d: [],
-              s2_refs=lambda dois: {d: [{"doi": "10.1/z"}] for d in dois}), _sleeps():
+              s2_refs=lambda dois, **kw: {d: [{"doi": "10.1/z"}] for d in dois}), _sleeps():
     _refs, _inc = xref.fetch_all([{"slug": "J", "doi": "10.1/j"}], sleep=0, retry_wait=0)
 check("an empty CrossRef list falls back to S2", _refs["J"], [{"doi": "10.1/z"}])
-with _patched(xref, s2_refs=lambda dois: {d: None for d in dois}), _sleeps():
+with _patched(xref, s2_refs=lambda dois, **kw: {d: None for d in dois}), _sleeps():
     _refs, _inc = xref.fetch_all([{"slug": "A", "doi": "10.48550/arXiv.2301.00001"}], sleep=0, retry_wait=0)
 check("an S2 failure is incomplete, not 'cites nothing'", _inc, ["A"])
 

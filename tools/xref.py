@@ -148,13 +148,25 @@ def _s2_all_refs(pid):
         offset = page["next"]
 
 
-def s2_refs(dois, chunk=100):
+def s2_refs(dois, chunk=10, retry_wait=0):
     """Reference lists from Semantic Scholar -> {doi: [refs] | None}. None = the
     fetch could not complete; [] = S2 has no such paper, rejects its id (named
-    on stderr), or has no list (complete). Batched through common.s2_batch."""
+    on stderr), or has no list (complete). Batched through common.s2_batch.
+
+    Chunks are small because every record carries its whole reference list: on
+    2026-09-26 a 100-paper chunk drew a 429 (or a truncated body) even alone on
+    the key, failing all 100, while 5-15 papers per request went through. Ids a
+    chunk still failed get one more try, in half-size chunks, after `retry_wait`."""
     out = {}
-    res, failed, rejected = common.s2_batch(f"paper/batch?fields={S2_REF_FIELDS}",
-                                            [s2_id_for(d) for d in dois], chunk)
+    path = f"paper/batch?fields={S2_REF_FIELDS}"
+    res, failed, rejected = common.s2_batch(path, [s2_id_for(d) for d in dois], chunk)
+    if failed:
+        print(f"  [retry] S2 references failed for {len(failed)} id(s); cooling down {retry_wait:.0f}s…",
+              file=sys.stderr)
+        time.sleep(retry_wait)
+        res2, failed, rej2 = common.s2_batch(path, sorted(failed), max(1, chunk // 2))
+        res.update(res2)
+        rejected |= rej2
     if rejected:
         print(f"  S2 rejected {len(rejected)} id(s) as invalid (treated as not in S2, no references): "
               f"{', '.join(sorted(rejected))}", file=sys.stderr)
@@ -219,7 +231,7 @@ def fetch_all(papers, sleep=0.4, retry_wait=60.0):
             time.sleep(sleep)
         incomplete = still
     if to_s2:
-        got = s2_refs([p["doi"] for p in to_s2])
+        got = s2_refs([p["doi"] for p in to_s2], retry_wait=retry_wait)
         for p in to_s2:
             refs = got.get(p["doi"])
             if refs is None:
