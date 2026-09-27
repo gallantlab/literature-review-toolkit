@@ -681,6 +681,9 @@ def main():
     # which under --size-by-citations is anywhere from 4.5px to 11px.
     big_dots = [(pos[r][0], pos[r][1], rad_of(r, True)) for r in big]
     loff, placed_lbl = {}, []                     # placed_lbl: label bounding boxes
+    lx_of = {}                                     # label x, pulled in from the figure's edges
+    HEAD = 84           # the title and subtitle end here; a label above it covers them
+    # and below H - PADB it covers the year axis
     for name in order:
         # (x, ref) again: `labeled` is keyed off a set, so sorting on x alone let
         # two labels at the same x swap places between runs, and greedy tier
@@ -688,8 +691,12 @@ def main():
         # label offsets each render.
         lane = sorted(((ref, pos[ref]) for ref in labeled if papers[ref]["family"] == name),
                       key=lambda t: (t[1][0], t[0]))
-        for ref, (x, dy) in lane:
+        for ref, (x0, dy) in lane:
             w = len(labeled[ref]) * 6.2 + 8
+            # a label near the right or left edge is pulled in so it is not cut off;
+            # its leader stays on the dot
+            x = min(max(x0, w / 2 + 4), W - w / 2 - 4)
+            lx_of[ref] = x
             # Track the least-bad tier as we go: in a crowded lane every slot can
             # be taken, and falling back to a fixed tier drops the label on top of
             # one already placed. Rank the misses by overlap area instead.
@@ -698,8 +705,10 @@ def main():
                 ly = dy + o
                 box = (x - w / 2, x + w / 2, ly - 8, ly + 6)
                 pen = sum(_overlap_area(box, b) for b in placed_lbl)
+                if box[2] < HEAD or box[3] > H - PADB:
+                    pen += 1e6          # never over the title or the year axis, whatever else it costs
                 pen += sum(60.0 for bx, by, br in big_dots
-                           if not (abs(bx - x) < 0.5 and abs(by - dy) < 0.5)
+                           if not (abs(bx - x0) < 0.5 and abs(by - dy) < 0.5)
                            and _box_hits_dot(box, bx, by, margin=max(11.0, br + 3)))
                 if pen == 0:
                     pick = o
@@ -842,7 +851,7 @@ def main():
                         else (y + edge, y + off - 9))
             leader = (f'<line x1="{x:.0f}" y1="{ly1:.0f}" x2="{x:.0f}" y2="{ly2:.0f}" '
                       f'stroke="{COLOR[p["family"]]}" stroke-width="1" opacity="0.65"/>')
-            label = (f'<text class="lbl" x="{x:.0f}" y="{y+off:.0f}" text-anchor="middle" '
+            label = (f'<text class="lbl" x="{lx_of.get(ref, x):.0f}" y="{y+off:.0f}" text-anchor="middle" '
                      f'font-size="11" font-weight="bold" fill="{LAB_INK if is_lab else "#222"}">'
                      f'{esc(labeled[ref])}</text>')
         s.append(f'{leader}<g class="node spine" data-key="{esc(ref)}" tabindex="0">'
