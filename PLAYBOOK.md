@@ -14,9 +14,11 @@ detail that elaborates them; when in doubt, obey this list. Section pointers are
 parentheses. Treat bold emphasis elsewhere in this file as ordinary guidance — the
 genuinely inviolable rules are *only* the ten here.
 
-0. **Check API access before any search** (Phase 0). The first thing to do when
-   someone asks for a search is `tools/preflight.py --papers <planned size>`. Exit 0:
-   proceed. Exit 2 (a key missing, or the OpenAlex budget short): stop, and put its
+0. **Check for a newer toolkit and for API access before any search** (Phase 0). The
+   first thing to do when someone asks for a new search is `tools/preflight.py --papers
+   <planned size>`. Exit 0: proceed. Exit 2: stop and ask. If GitHub has a newer version,
+   offer to install it (the preflight prints the command; install only on a yes, then
+   rerun the preflight). If a key is missing or the OpenAlex budget is short, put its
    three choices to the user — **get the API keys**, **cap the search**, or **be
    prepared to wait** — and let them pick before any lane is launched. Keyless
    OpenAlex is one daily budget shared by every client on the same IP address, so a
@@ -77,7 +79,7 @@ The repo is **public** (that's what enables free Pages); `site_url` uses the org
 
 ---
 
-## Phase 0 — check API access, then choose the mode (do this first)
+## Phase 0 — check the toolkit and API access, then choose the mode (do this first)
 
 **Step 0 — preflight (contract rule 0).** Before anything else, run
 
@@ -85,7 +87,15 @@ The repo is **public** (that's what enables free Pages); `site_url` uses the org
 python3 tools/preflight.py --papers <lanes x target + lab papers>
 ```
 
-It checks `LITREVIEW_EMAIL`, `OPENALEX_API_KEY` and `S2_API_KEY`, probes both services
+**First, the version.** The toolkit is updated often. The preflight reads the version
+stamped on GitHub's `main` and compares it with this copy. When GitHub is newer it prints
+the install command — `git -C <toolkit> pull --ff-only` for a clone (warning about
+uncommitted changes or another branch), the Claude Code `/plugin` menu or a fresh download
+otherwise. Offer it to the user and install only on a yes; then rerun the preflight. A
+build already under way keeps the version it started with (`--no-update-check`); only a
+new search is offered an update.
+
+It then checks `LITREVIEW_EMAIL`, `OPENALEX_API_KEY` and `S2_API_KEY`, probes both services
 (one OpenAlex credit), reads the OpenAlex budget left today, and estimates what the
 planned corpus needs. Exit 0: go on. Exit 2: stop and give the user its three choices,
 in its words, and wait for their pick:
@@ -1921,7 +1931,7 @@ it is stale); the per-tool detail is in `tools/README.md` and `docs/tools.md`.
 <!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
 | Script | Phase | Purpose | Flags |
 |---|---|---|---|
-| `preflight.py` | 0 | Phase 0 preflight: before any search, check the API keys and the OpenAlex budget. | `--email` `--offline` `--papers` |
+| `preflight.py` | 0 | Phase 0 preflight: before any search, check for a newer toolkit, the API keys, and the OpenAlex budget. | `--email` `--no-update-check` `--offline` `--papers` |
 | `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--out` `--raw` `--report` |
 | `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / DataCite / arXiv. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
 | `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--email` `--ingest` `--input` `--key` `--prepare` `--rows` |
@@ -2020,8 +2030,9 @@ default is no (Phase 4 is opt-in only). Then the pipeline, in order:
 
 ```
  0. python3 tools/preflight.py --papers <planned size>                 (Phase 0)
-    Exit 2: stop and give the user its three choices (get the keys, cap the
-    search, or be prepared to wait) before launching anything.
+    Exit 2: stop and ask before launching anything: offer the newer toolkit
+    version if it found one, and give its three choices (get the keys, cap
+    the search, or be prepared to wait) if access is short.
 
  1. Scope the topic (Phase 1, your decision). Write the lane briefs with the
     schema-2 output format (tools/search_prompt_template.md); launch the

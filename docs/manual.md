@@ -80,8 +80,9 @@ skip it.</small>
 ### 1.1a The pipeline as commands
 
 ```
- 0. preflight.py --papers <planned size>               — exit 2: stop and let
-    the user choose: get the API keys, cap the search, or be prepared to wait.
+ 0. preflight.py --papers <planned size>               — exit 2: stop and ask:
+    offer a newer toolkit version if there is one; if access is short, get the
+    API keys, cap the search, or be prepared to wait.
  1. Scope the topic (human decision). Write lane briefs with the schema-2
     output format; launch the forward and antecedent lanes together.
  2. merge_lanes.py --raw search_raw --out rows.json     — fails on a lost
@@ -150,13 +151,16 @@ export OPENALEX_API_KEY=...   # free key from openalex.org
 export S2_API_KEY=...         # free key from semanticscholar.org
 ```
 
-Then check them, before every search:
+Then run the preflight before every new search:
 
 ```bash
 python3 tools/preflight.py --papers 600
 ```
 
-It probes OpenAlex and Semantic Scholar, reports the OpenAlex budget left today, and
+It first compares this copy with the version on GitHub; the toolkit is updated often, so
+when GitHub is newer it prints the command that installs it (`git pull --ff-only` for a
+clone) and exits 2 so the agent offers it before the search starts. It then probes
+OpenAlex and Semantic Scholar, reports the OpenAlex budget left today, and
 estimates what a build of that size needs. Exit 2 means a key is missing or the budget is
 short, and it prints three choices: **get the API keys** (free, each with its own budget),
 **cap the search** (fewer lanes and a hard per-lane cap; papers over the cap are listed
@@ -225,7 +229,7 @@ Ten rules. The rest of this manual elaborates them.
 
 | # | Rule | Phase |
 |---|---|---|
-| 0 | **Check API access before any search**: `preflight.py`. If it exits 2, stop and let the user choose: get the keys, cap the search, or be prepared to wait. | 0 |
+| 0 | **Check for a newer toolkit and for API access before any search**: `preflight.py`. If it exits 2, stop: offer the newer version if there is one, and let the user choose (get the keys, cap the search, or be prepared to wait) if access is short. | 0 |
 | 1 | **Verify every citation** before it enters a deliverable, preprints included. `verify.py --rows` stamps each row; canon and the audit refuse one without an OK stamp for its current ids. | 3 |
 | 2 | **Every reference is canonical**: rebuilt from its verified DOI, never typed by an agent or copied from a database. Canon's refusal to rebuild an unverified row is unconditional, on every table. `--audit` is a hard gate. | 3f |
 | 3 | **One row per DOI.** A paper appears once in `rows.json`. | all |

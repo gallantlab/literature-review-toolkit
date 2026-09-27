@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 0 preflight: before any search, check the API keys and the OpenAlex budget.
+"""Phase 0 preflight: before any search, check for a newer toolkit, the API keys, and the OpenAlex budget.
 
 Run it FIRST, before writing a single lane brief. A build runs for hours, and two
 of its services ration keyless use: OpenAlex (citation counts, abstracts, forward
@@ -8,6 +8,10 @@ second citation count, abstracts). Finding that out halfway through a build cost
 hours; finding it out here costs one request to each.
 
 It checks:
+  the toolkit        the version on GitHub (main) against this copy; this project is
+                     updated often, so a newer one is offered with the command that
+                     installs it (git pull for a clone, the plugin menu otherwise).
+                     A build already under way keeps the version it started with.
   LITREVIEW_EMAIL    required by NCBI/CrossRef (or pass --email to every tool)
   OPENALEX_API_KEY   without it, ONE free daily budget is shared by every client on
                      the same IP address -- a campus network can have spent it before
@@ -16,18 +20,21 @@ It checks:
                      counts take hours and leave gaps.
 and estimates what a corpus of --papers N costs in OpenAlex credits.
 
-Exit 0 when the build can run as planned. Exit 2 when a key is missing or the
-budget is short: then STOP and give the user the three choices it prints -- get
-the keys, cap the search, or be prepared to wait -- and let them pick before any
-lane is launched.
+Exit 0 when the build can run as planned. Exit 2 when the user must decide
+first: a newer toolkit is available (offer to install it), or a key is missing or
+the budget is short (give them the three choices it prints -- get the keys, cap
+the search, or be prepared to wait). Ask before any lane is launched.
 
     python3 tools/preflight.py --papers 600
     python3 tools/preflight.py --papers 600 --offline      # keys only, no probes
 """
 import argparse
 import datetime
+import json
 import math
 import os
+import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -38,6 +45,10 @@ PHASE = "0"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 OPENALEX_PROBE = "https://api.openalex.org/works?filter=doi:10.1038/nature06713&select=id"
 S2_PROBE = "https://api.semanticscholar.org/graph/v1/paper/DOI:10.1038/nature06713?fields=title"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MANIFEST = os.path.join(".claude-plugin", "plugin.json")      # stamped with the version every commit
+REMOTE_MANIFEST = ("https://raw.githubusercontent.com/gallantlab/literature-review-toolkit/main/"
+                   ".claude-plugin/plugin.json")
 OPENALEX_KEY_URL = "https://help.openalex.org/api/authentication"
 S2_KEY_URL = "https://www.semanticscholar.org/product/api#api-key-form"
 
@@ -118,6 +129,66 @@ def _reset_text(seconds):
         return "at midnight UTC"
     when = datetime.datetime.now() + datetime.timedelta(seconds=seconds)
     return f"in {seconds / 3600:.1f} h (about {when:%H:%M} local time; it resets at midnight UTC)"
+
+
+def parse_version(text):
+    """(major, minor, patch) from '1.22.0', else None."""
+    m = re.fullmatch(r"\s*v?(\d+)\.(\d+)\.(\d+)\s*", text or "")
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def local_version(root=ROOT):
+    try:
+        with open(os.path.join(root, MANIFEST), encoding="utf-8") as f:
+            return json.load(f).get("version")
+    except (OSError, ValueError):
+        return None
+
+
+def remote_version(timeout=10):
+    """The version stamped on GitHub's main branch, or None if it cannot be read."""
+    try:
+        req = urllib.request.Request(REMOTE_MANIFEST, headers=dict(common.HDRS))
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = common.decompress(r.read(), r.headers.get("Content-Encoding", ""))
+        return json.loads(body).get("version")
+    except Exception:
+        return None
+
+
+def install_kind(root=ROOT):
+    """How this copy was installed, for the update command: 'git' with its state, else 'copy'."""
+    if not os.path.isdir(os.path.join(root, ".git")):
+        return {"kind": "copy"}
+
+    def git(*a):
+        p = subprocess.run(["git", "-C", root, *a], capture_output=True, text=True, timeout=20)
+        return p.stdout.strip() if p.returncode == 0 else None
+    return {"kind": "git", "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+            "dirty": bool(git("status", "--porcelain"))}
+
+
+def update_offer(local, remote, inst, root=ROOT):
+    """Lines offering the newer version, or [] when this copy is current (or either
+    version is unreadable). A local copy AHEAD of GitHub (unpushed work) is current."""
+    lv, rv = parse_version(local), parse_version(remote)
+    if not lv or not rv or rv <= lv:
+        return []
+    out = ["", f"A newer toolkit is available: {remote} on GitHub (this copy is {local}).",
+           "Offer to install it before the search starts (a build already under way keeps its version):"]
+    if inst.get("kind") == "git":
+        out.append(f"    git -C {root} pull --ff-only")
+        if inst.get("dirty"):
+            out.append("    (this checkout has uncommitted changes: commit or stash them first, or the pull "
+                       "may refuse)")
+        if inst.get("branch") not in (None, "main"):
+            out.append(f"    (this checkout is on branch {inst['branch']!r}, not main: switch first)")
+    else:
+        out.append("    update the plugin from Claude Code's /plugin menu, or download the new release from")
+        out.append("    https://github.com/gallantlab/literature-review-toolkit")
+    out.append("  Then rerun this preflight. See what changed: "
+               "https://github.com/gallantlab/literature-review-toolkit/commits/main")
+    return out
 
 
 def assess(env, papers, oa=None, s2=None):
@@ -212,6 +283,8 @@ def main():
                     help="planned corpus size (lanes x target, plus lab papers); default 500")
     ap.add_argument("--offline", action="store_true", help="check the environment only; no probes")
     ap.add_argument("--email", help="contact email (else LITREVIEW_EMAIL)")
+    ap.add_argument("--no-update-check", action="store_true",
+                    help="skip the GitHub version check (a build already under way)")
     args = ap.parse_args()
     env = {k: os.environ.get(k, "") for k in ("LITREVIEW_EMAIL", "OPENALEX_API_KEY", "S2_API_KEY")}
     if args.email:
@@ -222,13 +295,25 @@ def main():
     if not args.offline:
         oa, s2 = probe_openalex(), probe_s2()
     ok, problems, lines = assess(env, args.papers, oa, s2)
-    print(f"preflight for a ~{args.papers}-paper build:")
+    local = local_version()
+    print(f"preflight for a ~{args.papers}-paper build (toolkit {local or '?'}):")
+    offer = []
+    if not (args.offline or args.no_update_check):
+        remote = remote_version()
+        if remote is None:
+            print("  toolkit           could not read the version on GitHub; check by hand if it matters")
+        else:
+            offer = update_offer(local, remote, install_kind())
+            print(f"  toolkit           {local or '?'} here, {remote} on GitHub"
+                  + ("  -> NEWER VERSION AVAILABLE" if offer else "  (current)"))
     print("\n".join(lines))
-    if ok:
-        print("\nOK: keys set and the OpenAlex budget covers the build.")
-        return 0
+    if offer:
+        print("\n".join(offer))
     if problems:
         print("\n".join(choices(problems, args.papers, oa)))
+    if ok and not offer:
+        print("\nOK: toolkit current, keys set, and the OpenAlex budget covers the build.")
+        return 0
     return 2
 
 

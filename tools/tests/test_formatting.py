@@ -363,6 +363,23 @@ check_true("preflight: need grows with corpus size, and fits() inverts it",
            and preflight.openalex_need(preflight.openalex_fits(1000)) <= 1000
            < preflight.openalex_need(preflight.openalex_fits(1000) + 1))
 
+# preflight also offers a newer toolkit from GitHub, with the command that fits
+# how this copy was installed; a copy ahead of GitHub (unpushed work) is current.
+check("parse_version reads a stamped version", preflight.parse_version("1.22.0"), (1, 22, 0))
+check("parse_version refuses junk", preflight.parse_version("main"), None)
+check_true("no offer when GitHub is not newer",
+           preflight.update_offer("1.22.0", "1.22.0", {"kind": "git"}) == []
+           and preflight.update_offer("1.23.0", "1.22.0", {"kind": "git"}) == [])
+check_true("no offer when a version is unreadable", preflight.update_offer(None, "9.9.9", {"kind": "git"}) == [])
+_off = "\n".join(preflight.update_offer("1.9.0", "1.10.0", {"kind": "git", "branch": "main", "dirty": True}))
+check_true("a newer version (compared numerically, 1.10 > 1.9) is offered with git pull",
+           "1.10.0" in _off and "pull --ff-only" in _off)
+check_true("... and a dirty checkout is warned about", "uncommitted changes" in _off)
+check_true("a non-git copy is pointed at the plugin menu / GitHub",
+           "/plugin" in "\n".join(preflight.update_offer("1.0.0", "1.1.0", {"kind": "copy"})))
+check_true("the local version is read from the stamped manifest",
+           preflight.parse_version(preflight.local_version()) is not None)
+
 for _f in ("citations.py", "abstracts.py", "forward.py", "handcheck.py"):
     with open(os.path.join(os.path.dirname(common.__file__), _f), encoding="utf-8") as _fh:
         check_true(f"{_f} lets a spent OpenAlex budget abort the run", "OpenAlexBudgetError" in _fh.read())

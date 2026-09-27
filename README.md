@@ -5,7 +5,7 @@ fabricating references. The agent decides what to search, how to group the
 papers, and how to write them up. The scripts do the API calls, verification and
 bookkeeping.
 
-Version 1.22.0 · MIT license
+Version 1.23.0 · MIT license
 
 📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**, with the
 [operator manual](https://gallantlab.org/literature-review-toolkit/manual/),
@@ -42,7 +42,7 @@ pip install -r requirements.txt
 export LITREVIEW_EMAIL=you@institution.edu   # NCBI and CrossRef require a contact email
 export OPENALEX_API_KEY=...                   # free; a keyless IP shares one daily budget
 export S2_API_KEY=...                         # free; keyless Semantic Scholar is heavily throttled
-python3 tools/preflight.py --papers 600       # checks both keys and today's OpenAlex budget
+python3 tools/preflight.py --papers 600       # newer toolkit on GitHub? keys? today's OpenAlex budget?
 ```
 
 `brew install poppler` (or `apt-get install poppler-utils`) is needed only for
@@ -59,9 +59,10 @@ system and the cerebellum. any anatomy papers from primate or human, using any
 tractography method. go back as far as the 1970s.
 ```
 
-The agent first runs `tools/preflight.py`. If a key is missing or the OpenAlex budget
-is short, it stops and asks you to choose: get the API keys, cap the search, or be
-prepared to wait. It then follows [`PLAYBOOK.md`](./PLAYBOOK.md), creates one subdirectory per
+The agent first runs `tools/preflight.py`. If GitHub has a newer version of the
+toolkit, it offers to install it. If a key is missing or the OpenAlex budget is short,
+it stops and asks you to choose: get the API keys, cap the search, or be prepared to
+wait. It then follows [`PLAYBOOK.md`](./PLAYBOOK.md), creates one subdirectory per
 topic, and delivers the spreadsheet there. To run the phases by hand, see
 [§5 of the manual](https://gallantlab.org/literature-review-toolkit/manual/#5-the-shared-backbone);
 every phase is one script in [`tools/`](./tools).
