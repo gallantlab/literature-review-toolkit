@@ -5658,6 +5658,9 @@ import sentence_case as _sc  # noqa: E402
 
 check("sentence_case: the pronoun I stays capital", _sc.sentence_case("Where Am I Now", set(_sc.PROPER), []),
       "Where am I now")
+check("sentence_case: a deposit's lowercased acronym is restored, an ordinary word is not",
+      _sc.sentence_case("Resting Brain Using Echo-Planar mri in March", set(_sc.PROPER) | {"MRI"}, []),
+      "Resting brain using echo-planar MRI in March")
 check("sentence_case: MATLAB keeps its case", _sc.sentence_case("A Matlab Toolbox", set(_sc.PROPER), []),
       "A Matlab toolbox")
 

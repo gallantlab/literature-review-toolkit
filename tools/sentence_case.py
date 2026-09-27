@@ -89,7 +89,15 @@ def protect_part(p, words):
     return core in words
 
 
-def case_token(tok, clause_initial, words):
+def acronyms(words):
+    """{lowercase: form} for allowlisted words with two or more capitals (MRI,
+    fMRI, EEG, MATLAB). A deposit that lowercased one ("echo-planar mri") gets it
+    back. Only these: restoring 'march' or 'octave' would capitalize an ordinary
+    word, and a two-letter form ('US') would capitalize the pronoun 'us'."""
+    return {w.lower(): w for w in words if sum(c.isupper() for c in w) >= 2 and len(w) >= 3}
+
+
+def case_token(tok, clause_initial, words, acr=None):
     # Check the WHOLE token against the allowlist before splitting it: a hyphenated
     # entry ('Age-Well', 'Lempel-Ziv', 'Medit-Ageing') has parts that are not
     # themselves allowlisted, so a parts-only check silently lowercases it.
@@ -103,6 +111,10 @@ def case_token(tok, clause_initial, words):
             out.append(p)
             continue
         core = p.strip(WRAP)
+        if acr and core in acr:                    # keys are lowercase: only a lowercased form matches
+            out.append(p.replace(core, acr[core.lower()]))
+            seen_alpha = True
+            continue
         # a lone capital inside a compound is an acronym part (ACAM-J), not a word
         if protect_part(p, words) or (compound and len(core) == 1 and core.isupper()):
             out.append(p)
@@ -172,13 +184,13 @@ def sentence_case(title, words, phrases):
                     bare = toks[i + j].strip(WRAP)
                     if bare:
                         toks[i + j] = toks[i + j].replace(bare, phrase.split(" ")[j])
-    out = []
+    out, acr = [], acronyms(words)
     for i, tok in enumerate(toks):
         if i in protected:
             out.append(tok)
             continue
         prev = toks[i - 1] if i else ""
-        out.append(case_token(tok, (i == 0) or prev.endswith((":", "?", "!", ".", ";")), words))
+        out.append(case_token(tok, (i == 0) or prev.endswith((":", "?", "!", ".", ";")), words, acr))
     return " ".join(out)
 
 
