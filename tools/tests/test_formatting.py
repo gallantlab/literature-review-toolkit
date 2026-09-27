@@ -5552,9 +5552,17 @@ _crow = [{"ref": "V-01", "doi": "10.1/pub", "search_title": "Natural speech reve
 candidates.add(_cl, [{"doi": "10.1101/pre", "title": "Natural speech reveals the semantic maps", "n_citations": 20},
                      {"doi": "10.1/new", "title": "Something else entirely about cortex", "n_citations": 20}],
                "xref", candidates.corpus_dois(_crow), "2026-09-27", titles=candidates.row_titles(_crow, "ref"))
+_up = {}
+candidates.add(_up, [{"doi": "10.1523/pub", "title": "Multidimensional feature tuning in category areas", "year": 2026,
+                      "n_citations": 20}], "xref", set(), "2026-09-27",
+               titles=candidates.row_titles([{"ref": "S-125", "doi": "10.1101/2025.06.17.659578", "search_year": 2025,
+                                              "search_title": "Multidimensional feature tuning in category areas"}],
+                                            "ref"))
+check("candidates --add: a row citing the preprint of a published candidate is marked for upgrade",
+      _up["10.1523/pub"].get("upgrade_row"), "S-125")
 check("candidates: a matching title years apart is a different paper",
       candidates.same_paper("A toolbox for representational similarity analysis", 2025,
-                            [("M-15", "A toolbox for representational similarity analysis", 2014)]), None)
+                            [("M-15", "A toolbox for representational similarity analysis", 2014, "")]), None)
 check("candidates --add: a preprint of a table row is excluded at once, naming the row",
       (_cl["10.1101/pre"]["decision"], "V-01" in _cl["10.1101/pre"]["reason"], _cl["10.1/new"]["decision"]),
       ("exclude", True, "pending"))

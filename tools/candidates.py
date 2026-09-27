@@ -13,6 +13,9 @@ written by a different tool than --source names, and skips candidates the corpus
 already holds. A candidate whose title matches a table row (common.title_match),
 with years no more than DUP_YEARS apart, is the same paper under another DOI,
 usually a preprint of a published paper: --add excludes it at once, naming the row.
+When it is the other way round (the row cites the preprint and the candidate is
+the published version), --add says so and marks the entry `upgrade_row`: move that
+row to the published DOI, then re-verify it.
 
 Deciding the rest is agent work, and the tool frames it:
 
@@ -136,19 +139,25 @@ def run_record(sidecar, source):
 DUP_YEARS = 3
 
 
+# Preprint servers' DOI prefixes: bioRxiv/medRxiv, OSF and PsyArXiv, arXiv,
+# Research Square, Preprints.org, TechRxiv, Authorea.
+PREPRINT_DOI = re.compile(r"^10\.(1101|31234|31219|48550|21203|20944|36227|22541)/", re.I)
+
+
 def _year(v):
     m = re.search(r"\d{4}", str(v or ""))
     return int(m.group(0)) if m else None
 
 
 def row_titles(rows, keyf):
-    """[(key, title, year)] for every row with a title (the search claim, else the apa's)."""
+    """[(key, title, year, doi)] for every row with a title (the search claim, else the apa's)."""
     out = []
     for r in rows:
         apa = common.parse_apa(r.get("apa") or "") or {}
         t = r.get("search_title") or apa.get("title") or ""
         if t.strip():
-            out.append((r.get(keyf, "?"), t, _year(r.get("search_year") or apa.get("year"))))
+            out.append((r.get(keyf, "?"), t, _year(r.get("search_year") or apa.get("year")),
+                        common.doi_of(r, lower=True) or ""))
     return out
 
 
@@ -156,7 +165,7 @@ def same_paper(title, year, titles):
     """The key of the row in `titles` that is this candidate under another DOI:
     a matching title, and years (when both known) within DUP_YEARS. Else None."""
     y = _year(year)
-    for k, rt, ry in titles:
+    for k, rt, ry, *_ in titles:
         if title and common.title_match(title, rt) and (y is None or ry is None or abs(y - ry) <= DUP_YEARS):
             return k
     return None
@@ -193,6 +202,11 @@ def add(ledger, found, source, corpus, asof=None, complete=True, n_papers=None, 
             if same:
                 ledger[d].update(decision="exclude", at=asof or datetime.date.today().isoformat(),
                                  reason=f"already in the table as {same} under another DOI (same title)")
+                row_doi = next((t[3] for t in titles if t[0] == same), "")
+                if PREPRINT_DOI.match(row_doi) and not PREPRINT_DOI.match(d):
+                    ledger[d]["upgrade_row"] = same
+                    ledger[d]["reason"] = (f"the published version of {same}, which cites its preprint "
+                                           f"{row_doi}: move {same} to this DOI")
             added += 1
         else:
             c["sources"][source] = score
@@ -414,6 +428,10 @@ def main():
         dup = sum(1 for _, c in entries(ledger) if c.get("decision") == "exclude") - before
         print(f"added {a} candidate(s) ({dup} excluded at once: same title as a row), "
               f"skipped {s} already in the corpus -> {path}")
+        for d, c in entries(ledger):
+            if c.get("upgrade_row") and c["upgrade_row"] in {r.get(keyf) for r in rows} and d not in corpus:
+                print(f"  ✗ {c['upgrade_row']} cites a preprint; its published version is {d}. Set the row's "
+                      "doi to it, then verify.py --only and references.py --canon --only it", file=sys.stderr)
     elif args.prepare:
         if not args.scope:
             ap.error("--prepare needs --scope FILE (the file that defines the bibliography)")
