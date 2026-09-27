@@ -732,6 +732,7 @@ def main():
         ap.error("--email or LITREVIEW_EMAIL required (CrossRef/arXiv polite pool)")
     if args.email:
         common.set_user_agent(args.email)
+    common.enable_record_cache(args.rows)                         # the records verify fetched
 
     rows = common.load_json(args.rows)
     loaded = os.path.getmtime(args.rows)         # the write-back refuses a file changed since

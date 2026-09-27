@@ -282,6 +282,7 @@ and reach the scripts as `../tools/`. To make that path work, link the toolkit's
 │   ├── citation_counts.json                (Phase 5b, cached)
 │   ├── abstracts.json, summary_audit/      (Phase 5c summary checks)
 │   ├── xref_visual_cerebellum.json         (Phase 6 frequency table, + .run.json, .refs.json)
+│   ├── .record_cache/                      (registry records verify fetched; canon reuses them)
 │   ├── forward_candidates.json             (Phase 6 forward citations, + .run.json)
 │   ├── internal_citations.json             (Phase 6, within-corpus in-degree)
 │   ├── candidates.json                     (Phase 6 candidate ledger)

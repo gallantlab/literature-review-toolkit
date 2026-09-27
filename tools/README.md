@@ -259,6 +259,12 @@ A malformed row becomes `ERROR` without aborting the batch. When a PMC or PubMed
 lookup fails and the fallback title search returns a paper that does not match,
 the verdict is also `ERROR`, not `MISMATCH`.
 
+**Record cache.** verify and canon keep every CrossRef, DataCite and arXiv record they
+fetch in `.record_cache/` beside `rows.json` for 14 days, so canon reuses what verify
+fetched and a targeted re-run makes almost no requests. Only successful records are
+cached, so a missing or failed lookup still reads as NOT-FOUND or ERROR.
+`LITREVIEW_RECORD_CACHE=off` turns it off; any other value is used as its folder.
+
 ## Phase 3e: `handcheck.py`
 
 No API can verify a row with no DOI or arXiv id (a book, report or essay). So on

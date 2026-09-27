@@ -11,6 +11,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+os.environ["LITREVIEW_RECORD_CACHE"] = "off"   # no test may see a record cached by another
 
 import bib_viewer  # noqa: E402
 import cite_check  # noqa: E402
@@ -5430,6 +5431,31 @@ with _patched(common, http_json=lambda url, *a, **k: {"esearchresult": {"idlist"
     _pm, _pf = abstracts.fetch_pubmed_by_doi(["10.1/p", "10.1/q"])
 check("fetch_pubmed_by_doi: one esearch + efetch per batch, matched back by the article's DOI",
       (_pm, _pf), ({"10.1/p": "Place cells fire in place fields."}, set()))
+
+# the record cache: canon reuses the registry records verify fetched
+_rc = _tf.mkdtemp()
+_rc_calls = []
+
+
+def _rc_http_json(url, *a, **k):
+    _rc_calls.append(url)
+    return {"message": {"DOI": "10.1/rc", "title": ["A title"], "author": [{"family": "Smith", "given": "J."}],
+                        "issued": {"date-parts": [[2020]]}, "type": "journal-article", "container-title": ["J X"]}}
+
+
+common.set_record_cache(_rc)
+try:
+    with _patched(common, http_json=_rc_http_json):
+        common.crossref_work("10.1/RC")
+        common.crossref_work("10.1/rc")
+    check("record cache: a second lookup of the same DOI (any case) makes no request", len(_rc_calls), 1)
+    common.RECORD_CACHE_DAYS, _saved_days = -1, common.RECORD_CACHE_DAYS
+    with _patched(common, http_json=_rc_http_json):
+        common.crossref_work("10.1/rc")
+    check("record cache: an expired entry is fetched again", len(_rc_calls), 2)
+    common.RECORD_CACHE_DAYS = _saved_days
+finally:
+    common.set_record_cache(None)
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

@@ -1087,12 +1087,72 @@ def crossref_record(msg, fallback_venue=""):
             "book": book, "publisher": msg.get("publisher") or ""}
 
 
+# ---- record cache: verify and canon read the same registry records ----------
+# verify.py fetches every row's CrossRef / DataCite / arXiv record, then canon
+# (references.py) fetched each one again: 11 minutes on a 1,215-row build, and
+# again on every targeted re-run. With a cache directory set, a record fetched
+# once is reused for RECORD_CACHE_DAYS. Only a successful record is cached: a 404
+# or a failed fetch always goes back to the network, so NOT-FOUND vs ERROR is
+# unchanged.
+RECORD_CACHE = [None]
+RECORD_CACHE_DAYS = 14
+
+
+def set_record_cache(path):
+    """Cache registry records under `path` (None turns the cache off)."""
+    RECORD_CACHE[0] = path
+
+
+def enable_record_cache(near):
+    """Cache records in `.record_cache/` beside the file `near` (the rows.json).
+    LITREVIEW_RECORD_CACHE=off disables it; any other value is used as the path."""
+    env = os.environ.get("LITREVIEW_RECORD_CACHE", "").strip()
+    if env.lower() == "off":
+        set_record_cache(None)
+    else:
+        set_record_cache(env or os.path.join(os.path.dirname(os.path.abspath(near or ".")), ".record_cache"))
+
+
+def _cache_file(kind, key):
+    return os.path.join(RECORD_CACHE[0], kind, hashlib.sha1(key.lower().encode()).hexdigest() + ".json")
+
+
+def cache_get(kind, key):
+    """A cached record, or None (no cache set, absent, unreadable, or too old)."""
+    if not RECORD_CACHE[0]:
+        return None
+    try:
+        with open(_cache_file(kind, key), encoding="utf-8") as fh:
+            ent = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    stale = time.time() - ent.get("at", 0) > RECORD_CACHE_DAYS * 86400
+    if stale or ent.get("key", "").lower() != key.lower():
+        return None
+    return ent.get("data")
+
+
+def cache_put(kind, key, data):
+    if not RECORD_CACHE[0]:
+        return
+    path = _cache_file(kind, key)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump({"key": key, "at": time.time(), "data": data}, fh, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
 def crossref_work(doi, fallback_venue=""):
     """Fetch one DOI from CrossRef -> crossref_record(). Raises on a transient
     failure (so callers can tell ERROR from NOT-FOUND); a 404 propagates too —
-    callers that want None on a clean miss check is_transient()."""
+    callers that want None on a clean miss check is_transient(). Served from the
+    record cache when one is set (set_record_cache)."""
     import urllib.parse
-    msg = http_json(f"{CROSSREF_API}{urllib.parse.quote(doi)}")["message"]
+    msg = cache_get("crossref", doi)
+    if msg is None:
+        msg = http_json(f"{CROSSREF_API}{urllib.parse.quote(doi)}")["message"]
+        cache_put("crossref", doi, msg)
     return crossref_record(msg, fallback_venue)
 
 
@@ -1375,8 +1435,12 @@ def datacite_work(doi, fallback_venue=""):
     crossref_work); a 404 propagates too, as urllib.error.HTTPError, whether
     urllib or the curl fallback got it (_datacite_get)."""
     import urllib.parse
-    data = json.loads(_datacite_get(f"{DATACITE_API}{urllib.parse.quote(doi)}"))["data"]
-    return datacite_record(data.get("attributes") or {}, fallback_venue)
+    attrs = cache_get("datacite", doi)
+    if attrs is None:
+        data = json.loads(_datacite_get(f"{DATACITE_API}{urllib.parse.quote(doi)}"))["data"]
+        attrs = data.get("attributes") or {}
+        cache_put("datacite", doi, attrs)
+    return datacite_record(attrs, fallback_venue)
 
 
 def norm_arxiv(aid):
@@ -1417,10 +1481,19 @@ def arxiv_fetch(ids):
     on failure; the caller decides whether that is transient."""
     import urllib.parse
     ids = list(dict.fromkeys(norm_arxiv(a) for a in ids if a))
-    if not ids:
-        return {}
-    url = f"{ARXIV_API}?max_results={len(ids)}&id_list={urllib.parse.quote(','.join(ids))}"
-    return {e["id"]: e for e in arxiv_entries(http(url))}
+    got = {}
+    for a in ids:
+        e = cache_get("arxiv", a)
+        if e is not None:
+            got[a] = e
+    todo = [a for a in ids if a not in got]
+    if not todo:
+        return got
+    url = f"{ARXIV_API}?max_results={len(todo)}&id_list={urllib.parse.quote(','.join(todo))}"
+    for e in arxiv_entries(http(url)):
+        got[e["id"]] = e
+        cache_put("arxiv", e["id"], e)
+    return got
 
 
 def arxiv_batch(ids, chunk=50, sleep=3.0):

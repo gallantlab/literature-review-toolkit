@@ -973,6 +973,7 @@ def main():
         ap.error("--email or LITREVIEW_EMAIL required "
                  "(NCBI/CrossRef expect a contact email in the User-Agent)")
     set_user_agent(args.email)
+    common.enable_record_cache(args.rows or args.citations)       # canon reuses what verify fetches
 
     if args.citations:
         cits = common.load_json(args.citations)
