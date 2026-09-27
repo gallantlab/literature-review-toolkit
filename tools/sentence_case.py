@@ -239,10 +239,15 @@ def main():
               f"{' ...' if len(foreign) > 12 else ''}\n"
               f"  (pass --include-foreign to case them anyway)")
     if args.apply:
+        # a recorded hand fix holds FINAL text; casing must not change it
+        fixes = common.load_hand_fixes(os.path.join(os.path.dirname(os.path.abspath(args.rows)),
+                                                    common.HAND_FIXES))
+        restored, _ = common.apply_hand_fixes(rows, fixes, keyf)
         out = args.out or args.rows
         same = os.path.abspath(out) == os.path.abspath(args.rows)
         common.save_rows(out, rows, loaded if same else None)
-        print(f"applied {len(changes)} title changes to {out}")
+        print(f"applied {len(changes)} title changes to {out}"
+              + (f"; kept {len(set(restored))} hand fix(es) exactly as recorded" if restored else ""))
     elif args.vocab:
         for k, v in sorted(vocab.items(), key=lambda x: -x[1]):
             print(f"{v:4d}  {k}")

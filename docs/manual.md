@@ -102,14 +102,14 @@ straight to the spreadsheet is taken only when you skip it.</small>
       --override. Meanwhile, run handcheck.py --prepare and the hand-check
       agent for the DOI-less rows; run --ingest after verify finishes.
  4. Pitch the proposed families to the user (families.py --digest).
- 5. In parallel with references.py (canon), run ONE sequence: citations.py
-      (then attach the counts to rows.json), xref.py, forward.py,
-      abstracts.py. Three of them share one Semantic Scholar key, and
-      forward.py ranks its landmarks by xref's output and the counts.
+ 5. In parallel with references.py (canon), run citations.py, xref.py and
+      abstracts.py (they share the Semantic Scholar key's pace on their own).
+      After canon, attach the counts; then run forward.py, which ranks its
+      landmarks by xref's output and the counts.
  6. candidates.py --add the xref and forward results; decide each one with
       a reason; --export-included, merge_lanes.py --append, then verify
       (or hand-check), canon and citation counts for the new rows.
- 7. sentence_case.py in a reviewed pass, plus any hand fixes after canon.
+ 7. sentence_case.py in a reviewed pass; record hand fixes in hand_fixes.json.
  8. summary_audit.py --prepare, the checking agents, --ingest. Fix each
       flagged summary and check it again.
  9. families.py --assign, then families_figure.py (unless skipped at 4).
@@ -168,18 +168,18 @@ export S2_API_KEY=...         # free key from semanticscholar.org
 
 The toolkit sends the OpenAlex key as an `Authorization` header, and only to
 `api.openalex.org`, so it never appears in a URL or a log line. One Semantic
-Scholar key serves `citations.py`, `xref.py` and `abstracts.py`. Each tool paces
-its own requests to stay under the key's limit, but it cannot see the others.
-Because one key serves all three, run them in sequence, not in parallel.
+Scholar key serves `citations.py`, `xref.py` and `abstracts.py`. Their requests
+take turns through a pacer shared across processes, so the three may run at the
+same time without drawing each other's 429s.
 
 ### 2.3 Phase 0: run the preflight before every new search
 
 A build runs for hours, and two of its services ration keyless use. To find out
-before the build starts whether it can finish, run the preflight from the toolkit
-folder:
+before the build starts whether it can finish, run the preflight and point it at
+the project folder:
 
 ```bash
-python3 tools/preflight.py --papers 600
+python3 tools/preflight.py --project <topic>/ --papers 600
 ```
 
 `--papers` is the planned corpus size: lanes times target, plus any lab papers
@@ -216,6 +216,14 @@ is missing or the budget is short, the preflight prints three choices:
   that runs out of budget stops with `OpenAlexBudgetError`; rerun it after the
   budget resets at midnight UTC. A large build can need more than one day.
   Semantic Scholar steps back off on every 429 and can take hours on a large corpus.
+
+**The record, and the gate.** Every run writes `preflight.json` into the project.
+`merge_lanes.py`, the step that first builds the table, refuses to run without one
+that is under 14 days old and cleared. A record is cleared when everything passed, or
+when you have recorded your choice: rerun with `--accept cap` or `--accept wait` after
+a key or budget stop, or `--accept current-version` to keep this toolkit instead of
+updating. A missing email can never be accepted. To merge without a record, pass
+`merge_lanes.py --no-preflight "reason"`; the reason is kept in `merge_report.json`.
 
 **The OpenAlex budget.** Without a key, OpenAlex gives each IP address 1,000
 credits a day, shared by every client behind it. A key has its own 10,000. The
@@ -335,9 +343,17 @@ they are identical.
 species or method restrictions, and how far back. Write it to
 `topic_definition.md`, which anchors every later search.
 
-**Phase 2: search.** Each search lane is an agent briefed from
-[`tools/search_prompt_template.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/search_prompt_template.md).
-It writes one JSON lane file (schema 2) into `search_raw/`. Links must be DOI
+**Phase 2: search.** Each search lane is an agent with its own brief. To make the
+briefs, describe the lanes in a spec (`lanes.json`) and run
+`python3 tools/lane_briefs.py --spec lanes.json`. The spec holds the bibliography's
+title and scope, whether the search is capped, the lab in lab mode, and each lane's
+key, kind (forward or antecedent), target, definition, exclusions, queries and seed
+titles. The tool fills
+[`tools/search_prompt_template.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/tools/search_prompt_template.md)
+for every lane. It refuses a spec with a missing field, a repeated key, or a seed that
+names an author, and it refuses a brief with anything left unfilled. So every brief
+carries the verification duty and the other rules. Each lane agent writes one JSON
+lane file (schema 2) into `search_raw/`. Links must be DOI
 URLs. By default, papers older than about five years need to be highly cited or
 foundational. Newer papers have no citation threshold, because they have not had
 time to accrue citations. Move the boundary forward as the calendar moves.
@@ -691,6 +707,14 @@ the gate passes. On a gated table, an unacknowledged warning fails the audit too
 re-fetching or undoing hand fixes. It stamps `canonical_at` only on a legacy
 table, never on a gated one.
 
+**Hand fixes.** Some records are wrong at the registry: a compound surname split in
+two, two authors packed into one, a missing subtitle or year. Record each fix in
+`hand_fixes.json` beside `rows.json`, as `{"<ref>": [{"old": "<the damaged text>",
+"new": "<the final text>", "why": "<the source>"}]}`. Write `new` in its final form,
+sentence case included. Canon and `sentence_case.py --apply` re-apply every fix after
+they write, so a re-canon cannot undo one. The audit fails a row whose fix is missing
+(`hand-fix-lost`), and canon exits 1 on a fix that no longer matches its row.
+
 **Sentence case.** `--vocab` lists each distinct word change for review, and
 `--apply` writes the changes. `proper_nouns.json` lists the words and phrases to
 keep capitalized, as `{"words": [...], "phrases": [...]}`.
@@ -762,8 +786,12 @@ API for arXiv papers, then OpenAlex, then Semantic Scholar, then PubMed. Each
 entry records the `doi` and `arxiv` it was fetched for, and is fetched again when
 the row's ids change. A hand-added entry (`"source": "landing-page"`, carrying the
 row's `doi` and `arxiv`) is never overwritten; one whose ids no longer match is
-reported as stale. A fetch that fails is reported separately from a paper with no
-abstract, and written to `abstracts_failed.json`.
+reported as stale; one with an empty `text` records that the paper has no abstract.
+A fetch that fails is reported separately from a paper with no abstract, and
+written to `abstracts_failed.json`. A source text that is not an abstract
+(boilerplate such as a journal's self-description or JSTOR's terms of use, a citation
+line, an author list and venue) is refused and reported, and the next source is
+tried.
 
 **Preparing the batches.** `summary_audit.py --prepare` splits the rows that need
 a check into batches (`--batch`, default 40), each with its summaries and
@@ -775,7 +803,9 @@ already passed.
 
 **The checking agents.** Dispatch one agent per batch, with no web access. It
 judges only whether the abstract supports the summary. Its verdict is "supported",
-or "unsupported" with the unsupported clause quoted exactly. It writes
+"unsupported" with the unsupported clause quoted exactly, or "wrong-abstract" when
+the abstract on file is not this paper's. A wrong abstract is an audit defect: add
+the real one as a landing-page entry, rewrite the summary, and check it again. It writes
 `summary_audit/result_NN.json`, echoing each entry's `summary_sha`.
 
 **Ingesting the results.** `--ingest` records each verdict on its row as
@@ -1300,7 +1330,7 @@ the first.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| HTTP 429s, spread across many URLs, easing with delay | throttling | raise `--sleep`; set `S2_API_KEY`; run the Semantic Scholar tools in sequence |
+| HTTP 429s, spread across many URLs, easing with delay | throttling | raise `--sleep`; set `S2_API_KEY` |
 | Every OpenAlex request 429s with a Retry-After of hours (`OpenAlexBudgetError`) | the free daily budget is spent | set `OPENALEX_API_KEY`, or wait for the reset ([§2.3](#23-phase-0-run-the-preflight-before-every-new-search)) |
 | `IncompleteRead` on particular large records, failing at the same byte count every time | truncated uncompressed response | request gzip; `common.http` already does |
 | One URL fails under `urllib` but works under `curl` | client incompatibility | `common.curl_get`, which the tools try automatically |
@@ -1320,6 +1350,8 @@ Do not relax the gate.
 | `hand-check-missing` | `handcheck.py --prepare`, the hand-check agent, `--ingest` ([§5.2](#52-phase-3-hand-check-the-references-with-no-doi)) |
 | `summary-unchecked`, `summary-flagged` | `summary_audit.py`; fix a flagged summary and check it again ([§5.5](#55-phase-5c-check-each-summary-against-its-abstract)) |
 | `no-summary` | write a summary from the abstract, then `summary_audit.py` (rows exported from the candidate ledger arrive without one) |
+| `abstract-wrong` | add the paper's real abstract as a landing-page entry (or an empty `text` if it has none), rewrite the summary, check it again ([§5.5](#55-phase-5c-check-each-summary-against-its-abstract)) |
+| `hand-fix-lost` | run `references.py` to re-apply `hand_fixes.json`, or update the fix if the row changed ([§5.3](#53-phase-3f-canonicalize-every-reference)) |
 | `candidates-pending` | `candidates.py --list pending`, then `--decide` each ([§5.6](#56-phase-6-cross-citation-pass-and-the-candidate-ledger)) |
 | `candidate ... is marked include but is not in the table` | `--export-included`, `merge_lanes.py --append`, then verify |
 | `link-doi-mismatch` | make the row's `link` the DOI URL of its `doi` |
@@ -1365,7 +1397,7 @@ the S2 column. See [§5.4](#54-phase-5b-citation-counts).
 | API | Limit |
 |---|---|
 | OpenAlex | 1,000 credits a day per IP address without a key, shared by every client behind it; 10,000 with a key. A filter (batch) request costs 1 credit, a title search 10, a single-work lookup 0. Resets at midnight UTC. |
-| Semantic Scholar | a strict per-key limit whose 429s carry no Retry-After; the toolkit waits at least 1.1 s between requests. One key serves xref, citations and abstracts, so run them in sequence. |
+| Semantic Scholar | a strict per-key limit whose 429s carry no Retry-After; the toolkit waits at least 1.1 s between requests, shared across every process using the key. |
 | arXiv | about 1 request per 3 s; bursts return 429 |
 | NCBI E-utilities | 3 requests/s without a key, 10 with; use a 0.4 s sleep |
 | CrossRef | polite pool (with `mailto:`) is unthrottled; otherwise about 50/s |

@@ -269,8 +269,10 @@ def _raises(fn):
 # cortical-layers xref pass. When urllib has exhausted its retries, one curl
 # attempt recovers them. Exercised offline here through file://, which curl
 # supports, so the suite still needs no network.
+import datetime  # noqa: E402
 import subprocess as _sp  # noqa: E402
 import tempfile as _tf  # noqa: E402
+import time  # noqa: E402
 
 if _sp.run(["which", "curl"], capture_output=True).returncode == 0:
     with _tf.NamedTemporaryFile("wb", suffix=".json", delete=False) as _fh:
@@ -381,6 +383,55 @@ check_true("the local version is read from the stamped manifest",
            preflight.parse_version(preflight.local_version()) is not None)
 
 import handcheck  # noqa: E402
+
+# hand fixes: kept in hand_fixes.json and re-applied by every tool that rewrites apa,
+# so a re-canon can no longer undo a compound-surname or subtitle correction.
+_hfx = {"A1": [{"old": "Ralph, M. A. L., & Doe", "new": "Lambon Ralph, M. A., & Doe", "why": "compound surname"}],
+        "B1": [{"old": "", "new": "Doe, J. (2018). The film editor. J Neurosci, 38, 1-2.", "why": "no record"}],
+        "C1": [{"old": "gone text", "new": "Also gone.", "why": "x"}]}
+_hrows = [{"ref": "A1", "apa": "Ralph, M. A. L., & Doe, J. (2017). A title. Nat Rev Neurosci, 18, 42-55."},
+          {"ref": "B1", "apa": ""}, {"ref": "C1", "apa": "Smith, J. (2020). Unrelated. J X, 1, 1."}]
+_ap, _st = common.apply_hand_fixes(_hrows, _hfx, "ref")
+check("hand fixes: the damaged text is replaced and an empty apa is filled", (sorted(_ap), _st),
+      (["A1", "B1"], [("C1", "Also gone.")]))
+check_true("hand fixes: the fixed text is in place", _hrows[0]["apa"].startswith("Lambon Ralph, M. A., & Doe"))
+_hrows[1]["apa"] = _hrows[1]["apa"].lower()           # a casing pass lowercases the fixed text
+common.apply_hand_fixes(_hrows, _hfx, "ref")
+check("hand fixes: a case-only change is restored to the recorded text", _hrows[1]["apa"], _hfx["B1"][0]["new"])
+check("hand fixes: already-applied fixes are left alone",
+      common.apply_hand_fixes(_hrows[:2], {k: _hfx[k] for k in ("A1", "B1")}, "ref")[0], [])
+_hrows[0]["apa"] = "Ralph, M. A. L., & Doe, J. (2017). A title. Nat Rev Neurosci, 18, 42-55."   # a re-canon
+check("audit: a hand fix undone by a re-canon is a defect (hand-fix-lost)",
+      [d.split(" ")[0] for d in references.audit_rows(_hrows[:1], "ref", hand_fixes=_hfx)["defects"].get("A1", [])],
+      ["hand-fix-lost"])
+_hbad = os.path.join(_tf.mkdtemp(), "hfx_bad.json")
+common.dump_json({"A1": [{"old": "a", "new": "b"}]}, _hbad)
+check_true("load_hand_fixes refuses a fix with no reason", _raises(lambda: common.load_hand_fixes(_hbad)))
+
+# abstracts: a source's "abstract" that is boilerplate or a citation line is refused
+import abstracts  # noqa: E402
+
+check_true("not_an_abstract: journal self-description", bool(abstracts.not_an_abstract(
+    "Proceedings of the National Academy of Sciences (PNAS), a peer reviewed journal of the NAS.")))
+check_true("not_an_abstract: JSTOR terms", bool(abstracts.not_an_abstract(
+    "you may not download an entire issue of a journal, and you may use content in the JSTOR archive only")))
+check_true("not_an_abstract: a citation line for another item", bool(abstracts.not_an_abstract(
+    "Patricia S. Goldman-Rakic, Pasko Rakic; Preface: Cerebral Cortex Has Come of Age, Cerebral Cortex, "
+    "Volume 1, Issue 1, January 1991, Pages 1")))
+check_true("not_an_abstract: an author list and venue", bool(abstracts.not_an_abstract(
+    "Anna Bavaresco, Marianne De Heer Kloots, Sandro Pezzelle, Raquel Fernandez. Proceedings of the 19th "
+    "Conference of the European Chapter of the ACL. 2026.")))
+check("not_an_abstract: a short real abstract passes", abstracts.not_an_abstract(
+    "A recent study has put forward a physiologically plausible population model that implements a "
+    "parts-based shape-coding scheme for macaque visual area V4."), "")
+_rj = {}
+_abx, _m, _f, _s = abstracts.collect(
+    [{"ref": "Q1", "doi": "10.1/q1", "summary": "x"}], "ref", {},
+    {"arxiv": lambda ids: ({}, set()), "openalex": lambda ids: ({"10.1/q1": "PNAS, a peer reviewed journal."}, set()),
+     "s2": lambda ids: ({"DOI:10.1/q1": "We recorded V4 neurons during natural vision and fit encoding models."}, set()),
+     "pubmed": lambda ids: ({}, set())}, _rj)
+check("collect: boilerplate from one source is refused and the next source's abstract used",
+      (_abx.get("Q1", {}).get("source"), _rj), ("s2", {}))
 
 # merge_lanes possible-pair scan: a short title must match on characters, not by containment
 import merge_lanes  # noqa: E402
@@ -1684,7 +1735,32 @@ def _s2_ok(url, retries=5, timeout=30, data=None, headers=None):
 
 
 _items = [(f"k{n}", f"10.1/{n}") for n in range(1200)]
-common._S2_LAST[0] = 0.0
+# The S2 pacer shares its pace across processes through a lock file; the suite
+# uses its own, so a live S2 tool on this machine cannot change what it measures.
+os.environ["LITREVIEW_S2_LOCK"] = os.path.join(_tf.mkdtemp(), "s2.lock")
+
+
+def _s2_reset():
+    common._S2_LAST[0] = 0.0
+    with open(os.environ["LITREVIEW_S2_LOCK"], "w") as _fh:
+        _fh.write("0")
+
+
+# another process's request, recorded in the shared lock file, makes this one wait its turn
+_s2_reset()
+with open(os.environ["LITREVIEW_S2_LOCK"], "w") as _fh:
+    _fh.write(f"{time.time():.3f}")
+with _sleeps() as _sl:
+    common.s2_wait_turn()
+check_true("s2_wait_turn waits for another process's recent S2 request", len(_sl) == 1 and _sl[0] > 0.9, str(_sl))
+_s2_reset()
+with _sleeps() as _sl:
+    common.s2_wait_turn()
+check("s2_wait_turn does not wait when the key has been idle", _sl, [])
+_s2_reset()
+
+
+_s2_reset()
 with _patched(common, http_json=_s2_ok), _sleeps():
     _got = citations.fetch_s2(_items)
 check("s2: 1200 ids go out in chunks of <=500", _bodies, [500, 500, 200])
@@ -1697,7 +1773,7 @@ def _s2_400(url, retries=5, timeout=30, data=None, headers=None):
     raise urllib.error.HTTPError("u", 400, "bad", {}, None)
 
 
-common._S2_LAST[0] = 0.0
+_s2_reset()
 with _patched(common, http_json=_s2_400), _sleeps() as _sl:
     citations.fetch_s2(_items[:10])
 # final fixes I5: a 400 is bisected to find the rejected ids (10 ids -> 19 requests),
@@ -1722,32 +1798,32 @@ def _s2_seq(*codes):
     return f
 
 
-common._S2_LAST[0] = 0.0
+_s2_reset()
 with _patched(common, http_json=_s2_seq()), _sleeps() as _sl:
     common.s2_request("paper/batch?fields=title", {"ids": ["DOI:10.1/a"]})
     common.s2_request("paper/batch?fields=title", {"ids": ["DOI:10.1/b"]})
 check_true("s2_request paces consecutive requests >= ~1.1 s", len(_sl) == 1 and 1.0 < _sl[0] <= 1.1, str(_sl))
 check("s2_request lets common.http make exactly one attempt", _s2calls[-1][1], 1)
-common._S2_LAST[0] = 0.0
+_s2_reset()
 with _patched(common, http_json=_s2_seq(429, 429)), _sleeps() as _sl:
     common.s2_request("paper/batch", {"ids": []})
 check_true("s2_request backs off 20 s then 40 s after 429s", 20 in _sl and 40 in _sl, str(_sl))
-common._S2_LAST[0] = 0.0
+_s2_reset()
 with _patched(common, http_json=_s2_seq(429, 429, 429)), _sleeps():
     check_true("s2_request gives up after the backoff", _raises(lambda: common.s2_request("paper/batch", {"ids": []})))
 with _patched(os, environ=dict(os.environ, S2_API_KEY="k-test")), _patched(common, http_json=_s2_seq()), _sleeps():
-    common._S2_LAST[0] = 0.0
+    _s2_reset()
     common.s2_request("paper/x")
 check("s2_request sends the key when set", _s2calls[-1][2].get("x-api-key"), "k-test")
-common._S2_LAST[0] = 0.0
+_s2_reset()
 with _patched(common, http_json=_s2_seq(503, 200)), _sleeps() as _sl:
     _got = common.s2_request("paper/x")
 check_true("s2_request retries a 503 and returns", _got == {"ok": True} and 20 in _sl, str(_sl))
-common._S2_LAST[0] = 0.0
+_s2_reset()
 with _patched(common, http_json=_s2_seq(urllib.error.URLError("reset"), 200)), _sleeps():
     _got = common.s2_request("paper/x")
 check("s2_request retries a network error (URLError) and returns", _got, {"ok": True})
-common._S2_LAST[0] = 0.0
+_s2_reset()
 with _patched(common, http_json=_s2_seq(400)), _sleeps() as _sl:
     _raised = _raises(lambda: common.s2_request("paper/x"))
 check_true("s2_request raises a 400 at once with no backoff sleep",
@@ -2044,6 +2120,10 @@ check("an ack tied to a stale year pair does not cover a new mismatch on the sam
       (_rep["failed"], _rep["stale_acks"]), (True, [("CY1", "cached-year:2019/2020")]))
 _rep = references.audit_rows([_grow(summary="")], "ref")
 check("a gated row with an empty summary fails with no-summary", _codes(_rep, "G1"), ["no-summary"])
+_rows_wa = [_grow("W1", "10.1/w1")]
+_rows_wa[0]["summary_check"]["verdict"] = "wrong-abstract"
+check("audit: a wrong-abstract verdict is a defect",
+      _codes(references.audit_rows(_rows_wa, "ref"), "W1"), ["abstract-wrong"])
 _rep = references.audit_rows([_grow()], "ref")
 check("a fully checked gated row passes", (_rep["gated"], _rep["failed"], _rep["defects"]), (True, False, {}))
 _rep = references.audit_rows([_grow(), dict(_grow("G2", "10.1/g2"), doi="10.1/changed")], "ref")
@@ -2444,6 +2524,35 @@ for _needle in ('"schema": 2', '"deferred"', '"could_not_confirm"', '"lane_fit"'
 check_true("search template no longer abbreviates author lists", "et al." not in _TPL)
 check_true("search template no longer caps DOI-less items", "at most 4" not in _TPL)
 
+# ---- lane_briefs.py: every brief rendered from one spec (2026-09-27) -------
+import lane_briefs  # noqa: E402
+
+_lspec = {"title": "T", "for": "a tester", "description": "Covers X.", "today": "2026-09-27", "capped": False,
+          "lanes": [{"key": "V", "name": "Visual", "short": "vision", "kind": "forward", "target": 30,
+                     "definition": "Def V.", "exclusions": ["not S"], "queries": ["q1"], "seeds": ["A title"]},
+                    {"key": "X", "name": "Methods", "short": "methods", "kind": "antecedent", "target": 20,
+                     "definition": "Def X.", "exclusions": "not V", "queries": ["q3"]}]}
+check("lane_briefs: a complete spec has no problems", lane_briefs.check_spec(_lspec), [])
+_lb_v = lane_briefs.render(open(lane_briefs.TEMPLATE, encoding="utf-8").read(), _lspec, _lspec["lanes"][0],
+                           "/o/V.json", "/s/V")
+_lb_x = lane_briefs.render(open(lane_briefs.TEMPLATE, encoding="utf-8").read(), _lspec, _lspec["lanes"][1],
+                           "/o/X.json", "/s/X")
+check_true("lane_briefs: a forward brief has the verification duty, the floor rule and the seeds",
+           all(x in _lb_v for x in ("Verification duty", "floor, not a cap", "A title", "/o/V.json", "/s/V")))
+check_true("lane_briefs: no placeholder or block marker survives",
+           not lane_briefs.PLACEHOLDER.search(_lb_v + _lb_x) and "IF:" not in _lb_v + _lb_x)
+check_true("lane_briefs: an antecedent brief flips the tier and tags papers anteced",
+           "ANTECEDENTS" in _lb_x and '"source": "anteced"' in _lb_x and "Pre-2021" not in _lb_x)
+check_true("lane_briefs: no lab rule when the spec has no lab", "lab's own papers" not in _lb_v)
+_lcap = dict(_lspec, capped=True, lab={"pi": "Jack L. Gallant", "lane": "L"})
+_lb_c = lane_briefs.render(open(lane_briefs.TEMPLATE, encoding="utf-8").read(), _lcap, _lcap["lanes"][0], "o", "s")
+check_true("lane_briefs: a capped build says so and drops the floor rule",
+           "CAPPED search" in _lb_c and "floor, not a cap" not in _lb_c)
+check_true("lane_briefs: lab mode defers the lab's papers to its lane", '"to_lane": "L"' in _lb_c)
+_lbad = dict(_lspec, lanes=[dict(_lspec["lanes"][0], seeds=["Smith 2020 - A title"], key="v")])
+check_true("lane_briefs: a seed that names an author, and a bad key, are refused",
+           len(lane_briefs.check_spec(_lbad)) == 2)
+
 # ---- merge_lanes.py (2026-09-26) -------------------------------------------
 import merge_lanes  # noqa: E402
 
@@ -2489,9 +2598,16 @@ check("with --allow-v1 it loads without a deferral list",
       merge_lanes.load_lane(os.path.join(_d, "A.json"), allow_v1=True)["deferred"], None)
 
 
-def _merge_exit(raw, out):
+def _cleared_preflight(project):
+    common.dump_json({"at": datetime.datetime.now().isoformat(timespec="seconds"), "cleared": True,
+                      "problems": [], "accepted": []}, os.path.join(project, preflight.RECORD))
+
+
+def _merge_exit(raw, out, preflighted=True, extra=()):
+    if preflighted:
+        _cleared_preflight(os.path.dirname(os.path.abspath(out)))
     argv = sys.argv
-    sys.argv = ["merge_lanes.py", "--raw", raw, "--out", out]
+    sys.argv = ["merge_lanes.py", "--raw", raw, "--out", out, *extra]
     try:
         merge_lanes.main()
         return 0
@@ -2499,6 +2615,35 @@ def _merge_exit(raw, out):
         return e.code or 0
     finally:
         sys.argv = argv
+
+
+# Phase 0 is enforced in code: the first table-building step refuses to run
+# without a recent, cleared preflight record in the project directory.
+_pg = _tf.mkdtemp()
+os.makedirs(os.path.join(_pg, "raw"))
+common.dump_json({"schema": 2, "lane": "A", "status": {"target": 1}, "deferred": [],
+                  "papers": [{"ref": "A-01", "doi": "10.1/pg", "first_author": "Smith, J.", "year": 2020,
+                              "title": "A paper"}]}, os.path.join(_pg, "raw", "A.json"))
+_pgout = os.path.join(_pg, "rows.json")
+check_true("merge refuses to build a table with no preflight record",
+           _merge_exit(os.path.join(_pg, "raw"), _pgout, preflighted=False) not in (0, None)
+           and not os.path.exists(_pgout))
+check("merge --no-preflight REASON merges and records the reason",
+      (_merge_exit(os.path.join(_pg, "raw"), _pgout, preflighted=False, extra=("--no-preflight", "offline test")),
+       common.load_json(os.path.join(_pg, "merge_report.json")).get("preflight_skipped", {}).get("reason")),
+      (0, "offline test"))
+common.dump_json({"at": "2020-01-01T00:00:00", "cleared": True}, os.path.join(_pg, preflight.RECORD))
+check_true("a stale preflight record does not clear a build", "days old" in preflight.read_record(_pg)[1])
+common.dump_json({"at": datetime.datetime.now().isoformat(), "cleared": False, "problems": ["s2-key"]},
+                 os.path.join(_pg, preflight.RECORD))
+check_true("an unresolved stop does not clear a build", "unresolved" in preflight.read_record(_pg)[1])
+check("preflight.cleared: a missing key is cleared by choosing to wait",
+      preflight.cleared(False, ["s2-key"], [], "a@b.edu", ["wait"]), True)
+check("preflight.cleared: a newer toolkit needs current-version to proceed without updating",
+      (preflight.cleared(True, [], ["offer"], "a@b.edu", []),
+       preflight.cleared(True, [], ["offer"], "a@b.edu", ["current-version"])), (False, True))
+check("preflight.cleared: a missing email can never be accepted",
+      preflight.cleared(True, [], [], "", ["wait", "cap"]), False)
 
 
 _d = _tmpf.mkdtemp()

@@ -48,9 +48,12 @@ and need none: judge only against the abstract given.
 - "unsupported": anything else, including an inverted finding, a number or method the
   abstract does not give, or a claim of priority or impact the abstract does not make.
   Quote the unsupported clause exactly.
+- "wrong-abstract": the ABSTRACT is not this paper's abstract at all (boilerplate, a
+  citation line, a different paper's abstract, a fragment with no content). Say why in
+  "unsupported_clause". Do not judge the summary against it.
 
 Write summary_audit/result_NN.json (same NN) as a JSON list of
-  {"ref": "...", "summary_sha": "...", "verdict": "supported" | "unsupported",
+  {"ref": "...", "summary_sha": "...", "verdict": "supported" | "unsupported" | "wrong-abstract",
    "unsupported_clause": "..."}
 with one entry for every row in the batch. Copy each row's summary_sha into its result
 unchanged: it proves which version of the summary you judged, and a result without it
@@ -183,12 +186,12 @@ def ingest(rows, keyf, results, abstracts, manifest, asof):
             # a result for an older batch: it judged a different version of the summary
             errors.append(f"{k}: result was for a different version of the summary; re-check it")
             continue
-        if v not in ("supported", "unsupported"):
-            errors.append(f"{k}: verdict {v!r} is not supported/unsupported")
+        if v not in ("supported", "unsupported", "wrong-abstract"):
+            errors.append(f"{k}: verdict {v!r} is not supported/unsupported/wrong-abstract")
             continue
         clause = str(res.get("unsupported_clause") or "").strip()
-        if v == "unsupported" and not clause:
-            errors.append(f"{k}: unsupported without the unsupported clause")
+        if v in ("unsupported", "wrong-abstract") and not clause:
+            errors.append(f"{k}: {v} without saying why (unsupported_clause)")
             continue
         stamp(row, k, v, clause)
         n += 1
@@ -254,12 +257,16 @@ def main():
     n, errors = ingest(rows, keyf, results, ab, manifest, args.asof)
     common.save_rows(args.rows, rows, loaded)
     flagged = [r.get(keyf) for r in rows if (r.get("summary_check") or {}).get("verdict") == "unsupported"]
-    print(f"recorded {n} summary check(s); {len(flagged)} flagged")
+    wrong = [r.get(keyf) for r in rows if (r.get("summary_check") or {}).get("verdict") == "wrong-abstract"]
+    print(f"recorded {n} summary check(s); {len(flagged)} flagged; {len(wrong)} wrong abstract(s)")
     for e in errors:
         print(f"  ✗ {e}")
     for k in flagged:
         print(f"  ✗ {k}: summary claims something its abstract does not; fix it, then --prepare again")
-    sys.exit(1 if errors or flagged else 0)
+    for k in wrong:
+        print(f"  ✗ {k}: the abstract on file is not this paper's; add a landing-page entry with the "
+              "real one (or an empty text if none exists), rewrite the summary from it, then --prepare again")
+    sys.exit(1 if errors or flagged or wrong else 0)
 
 
 if __name__ == "__main__":

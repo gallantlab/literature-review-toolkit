@@ -280,6 +280,48 @@ def choices(problems, papers, oa):
     return out
 
 
+RECORD = "preflight.json"          # written into the project; merge_lanes.py requires it
+RECORD_MAX_AGE_DAYS = 14
+ACCESS = {"openalex-key", "openalex-key-rejected", "openalex-budget", "s2-key", "s2-key-rejected"}
+
+
+def cleared(ok, problems, offer, email, accepted):
+    """True when the build may start: everything passed, or the user accepted each
+    remaining stop -- a missing key or short budget by choosing to cap the search
+    or to wait (`cap` / `wait`), a newer toolkit by keeping this one
+    (`current-version`). A missing contact email cannot be accepted."""
+    if not email:
+        return False
+    if ok and not offer:
+        return True
+    access_ok = not (set(problems) & ACCESS) or bool({"cap", "wait"} & set(accepted))
+    update_ok = not offer or "current-version" in accepted
+    return access_ok and update_ok and not (set(problems) - ACCESS)
+
+
+def read_record(project_dir):
+    """(record or None, reason it does not clear a build or "")."""
+    path = os.path.join(project_dir, RECORD)
+    try:
+        rec = common.load_json(path)
+    except FileNotFoundError:
+        return None, f"no {RECORD} in {project_dir}"
+    except (OSError, ValueError) as e:
+        return None, f"{path} is unreadable ({e})"
+    try:
+        at = datetime.datetime.fromisoformat(rec["at"])
+    except (KeyError, TypeError, ValueError):
+        return rec, f"{path} has no valid 'at' time"
+    age = (datetime.datetime.now() - at).days
+    if age > RECORD_MAX_AGE_DAYS:
+        return rec, f"{path} is {age} days old (limit {RECORD_MAX_AGE_DAYS}); run the preflight again"
+    if not rec.get("cleared"):
+        stops = ", ".join(rec.get("problems") or []) or "update or email"
+        return rec, (f"{path} records an unresolved stop ({stops}); "
+                     "resolve it, or record the user's choice with --accept")
+    return rec, ""
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
@@ -289,6 +331,11 @@ def main():
     ap.add_argument("--email", help="contact email (else LITREVIEW_EMAIL)")
     ap.add_argument("--no-update-check", action="store_true",
                     help="skip the GitHub version check (a build already under way)")
+    ap.add_argument("--project", default=".",
+                    help=f"project directory to write {RECORD} into (default: current directory)")
+    ap.add_argument("--accept", action="append", choices=["cap", "wait", "current-version"], default=[],
+                    help="record the user's choice after an exit 2: cap the search, be prepared to wait, "
+                         "or keep this toolkit version (repeatable)")
     args = ap.parse_args()
     env = {k: os.environ.get(k, "") for k in ("LITREVIEW_EMAIL", "OPENALEX_API_KEY", "S2_API_KEY")}
     if args.email:
@@ -319,9 +366,24 @@ def main():
         print("\nStop: set a contact email first (NCBI and CrossRef require one):\n"
               "    export LITREVIEW_EMAIL=you@institution.edu      (or pass --email to every tool)\n"
               "then rerun this preflight.")
+    clear = cleared(ok, problems, offer, env["LITREVIEW_EMAIL"], args.accept)
+    rec = {"at": datetime.datetime.now().isoformat(timespec="seconds"), "version": local,
+           "papers": args.papers, "ok": ok and not offer, "problems": problems,
+           "update_offered": bool(offer), "accepted": sorted(set(args.accept)), "cleared": clear,
+           "offline": args.offline}
+    if os.path.isdir(args.project):
+        common.dump_json(rec, os.path.join(args.project, RECORD))
+        where = f" (recorded in {os.path.join(args.project, RECORD)})"
+    else:
+        where = f" (not recorded: {args.project} is not a directory yet)"
     if ok and not offer:
-        print("\nOK: toolkit current, keys set, and the OpenAlex budget covers the build.")
+        print(f"\nOK: toolkit current, keys set, and the OpenAlex budget covers the build{where}.")
         return 0
+    if clear:
+        print(f"\nCleared by the user's choice ({', '.join(sorted(set(args.accept)))}){where}.")
+        return 0
+    print(f"\nStopped{where}. After the user chooses, rerun with --accept cap|wait|current-version "
+          "(or fix the cause and rerun).")
     return 2
 
 

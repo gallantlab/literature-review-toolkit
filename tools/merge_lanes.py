@@ -40,6 +40,7 @@ import re
 import sys
 
 import common
+import preflight
 import verify
 
 PHASE = "2c"   # pipeline phase, read by tools/gen_docs.py for the tool index
@@ -319,15 +320,26 @@ def main():
     ap.add_argument("--force", action="store_true", help="overwrite even a canonical rows.json")
     ap.add_argument("--append", metavar="LANE_FILE", help="add a lane file's papers to an existing table")
     ap.add_argument("--into", metavar="ROWS", help="the table --append adds to")
+    ap.add_argument("--no-preflight", metavar="REASON",
+                    help="merge without a preflight record (the reason is kept in merge_report.json)")
     args = ap.parse_args()
     if args.append:
         return main_append(ap, args)
     if not (args.raw and args.out):
         ap.error("give --raw and --out (or --append and --into)")
+    # Phase 0 is enforced here, at the first step that builds the table: a build
+    # without a cleared preflight is the one that dies hours in on a spent budget.
+    project = os.path.dirname(os.path.abspath(args.out))
+    _rec, why = preflight.read_record(project)
+    if why and not (args.no_preflight or "").strip():
+        sys.exit(f"✗ {why}.\n  Run the preflight first:  python3 tools/preflight.py --project {project} "
+                 "--papers <planned size>\n  (or pass --no-preflight \"reason\" to merge anyway)")
     lanes = [load_lane(p, args.allow_v1) for p in sorted(glob.glob(os.path.join(args.raw, "*.json")))]
     if not lanes:
         ap.error(f"no lane files in {args.raw}")
     rows, rep = merge(lanes)
+    if why:
+        rep["preflight_skipped"] = {"reason": args.no_preflight.strip(), "why": why}
     failed = bool(rep["lost"] or rep["rejected"] or rep["unconfirmed"])
     if not failed:
         # a merge that lost, rejected or could not confirm a paper is not a table to build on

@@ -26,8 +26,8 @@ neither a DOI nor a pdf is skipped. --internal-out also writes {slug:
 internal_indegree}, how many OTHER corpus papers cite each corpus paper, which
 families_figure.py and forward.py use to pick landmarks.
 
-Semantic Scholar needs S2_API_KEY to be reliable. Because one key serves xref,
-citations and abstracts, run those tools in sequence. Its reference lists are
+Semantic Scholar needs S2_API_KEY to be reliable. xref, citations and abstracts
+share one key and take turns on it through a pacer shared across processes. Its reference lists are
 fetched in chunks of 10, and a failed chunk gets one more try in half-size
 chunks. A CrossRef fetch that fails transiently gets a second try at the end of
 the run, after --retry-wait.

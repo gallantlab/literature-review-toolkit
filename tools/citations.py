@@ -10,9 +10,9 @@ OPENALEX_API_KEY, every client on the same IP address shares one daily budget,
 and a spent budget stops the run with OpenAlexBudgetError (run preflight.py
 first). Semantic Scholar is the secondary source. It often counts higher for
 CS/AI venues and adds an "influential citations" count, but it throttles hard
-without S2_API_KEY, so treat its column as best-effort. Because one S2_API_KEY
-serves xref, citations and abstracts, run those tools in sequence, not in
-parallel.
+without S2_API_KEY, so treat its column as best-effort. One S2_API_KEY serves
+xref, citations and abstracts; their requests take turns through a pacer shared
+across processes, so they may run at the same time.
 
 INPUT: a JSON list of rows. Each row needs a key (default: "ref", else "label")
 and a DOI, from a "doi" field or a https://doi.org/... "link"; a row without one

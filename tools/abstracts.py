@@ -112,7 +112,35 @@ def _s2_id(row):
     return f"DOI:{d}" if d else ""
 
 
-def collect(rows, keyf, existing, fetchers):
+_BOILERPLATE = re.compile(
+    r"\ba peer[- ]reviewed journal\b|JSTOR is a not-for-profit|terms (and conditions )?of use|"
+    r"all rights reserved|this content downloaded from|use of the jstor archive|"
+    r"content in the JSTOR archive|you may not download an entire issue|"
+    r"\bVolume \d+,? Issue \d+\b", re.I)
+
+
+def not_an_abstract(text):
+    """Why `text` is not a paper's abstract, or "" if it may be one.
+
+    Sources sometimes hold something else in the abstract field: a journal's
+    self-description ("PNAS, a peer reviewed journal..."), JSTOR's terms of use,
+    a citation line for another item ("...; Preface: ..., Volume 1, Issue 1"), or
+    just the author list and venue. A summary written from one of these describes
+    the text, not the paper, so it is refused here and the next source is tried."""
+    t = " ".join((text or "").split())
+    if not t:
+        return "empty"
+    m = _BOILERPLATE.search(t)
+    if m:
+        return f"boilerplate ({m.group(0)!r})"
+    words = t.split()
+    if len(words) < 60 and re.search(r"\b(Proceedings of|In Proceedings|Conference on)\b", t) and \
+            re.match(r"^\W*(?:[A-Z][\w.'’\- ]{1,40}, ){2,}", t):
+        return "an author list and venue, not an abstract"
+    return ""
+
+
+def collect(rows, keyf, existing, fetchers, rejected=None):
     """-> ({ref: {text, source, url, doi, arxiv}}, missing, failed {ref: reason}, stale).
 
     `missing` is every ref with a summary whose lookup completed at every
@@ -122,6 +150,8 @@ def collect(rows, keyf, existing, fetchers):
     and must not be silently folded into `missing`. `stale` is every ref whose
     hand-added (landing-page) entry records other ids than the row now has: it
     is kept as it is, but it is not this paper's abstract any more.
+    `rejected`, if given, is filled with {ref: [why]} for every text a source
+    returned that not_an_abstract() refused and no later source replaced.
     """
     ab, stale = dict(existing), []
     for r in rows:
@@ -134,6 +164,7 @@ def collect(rows, keyf, existing, fetchers):
     todo = [r for r in rows if r.get(keyf) not in ab]
     by = {r.get(keyf): r for r in rows}
     failed_refs = {}
+    refused = {}           # ref -> [why], texts a source returned that are not abstracts
 
     def take(source, key_of, fetch):
         nonlocal todo
@@ -142,6 +173,10 @@ def collect(rows, keyf, existing, fetchers):
             return
         got, failed_keys = fetch(sorted(set(want.values())))
         for ref, k in want.items():
+            why = not_an_abstract(got.get(k)) if got.get(k) else ""
+            if why:
+                refused.setdefault(ref, []).append(f"{source}: {why}")
+                continue
             if got.get(k):
                 d, a = common.ids_of(by[ref])
                 ab[ref] = {"text": got[k], "source": source, "url": "", "doi": d, "arxiv": a}
@@ -158,6 +193,8 @@ def collect(rows, keyf, existing, fetchers):
               for r in rows if r.get(keyf) in failed_refs and r.get(keyf) not in ab}
     missing = [r.get(keyf) for r in rows if (r.get("summary") or "").strip()
                and r.get(keyf) not in ab and r.get(keyf) not in failed_refs]
+    if rejected is not None:
+        rejected.update({k: v for k, v in refused.items() if k not in ab})
     return ab, missing, failed, stale
 
 
@@ -177,7 +214,8 @@ def main():
     existing = common.load_optional_json(out, {})
     fetchers = {"arxiv": fetch_arxiv, "openalex": make_fetch_openalex(re.sub(r"\s", "", args.email)),
                 "s2": fetch_s2, "pubmed": fetch_pubmed}
-    ab, missing, failed, stale = collect(rows, keyf, existing, fetchers)
+    rejected = {}
+    ab, missing, failed, stale = collect(rows, keyf, existing, fetchers, rejected)
     common.dump_json(ab, out)
     common.dump_json(failed, os.path.join(os.path.dirname(os.path.abspath(out)), "abstracts_failed.json"))
     by = {}
@@ -187,6 +225,9 @@ def main():
     if missing:
         print(f"  {len(missing)} row(s) with a summary and no abstract (add a landing-page entry, "
               f"or acknowledge no-abstract later): {', '.join(missing)}")
+    for k, whys in rejected.items():
+        print(f"  ⚠ {k}: refused a text that is not its abstract ({'; '.join(whys)}); add a "
+              "landing-page entry if the paper has one", file=sys.stderr)
     for k in stale:
         print(f"  ✗ {k}: its landing-page abstract records other ids than the row now has; check it is "
               "this paper's, then set its doi/arxiv to the row's (or delete it and re-run)", file=sys.stderr)

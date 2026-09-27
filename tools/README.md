@@ -15,9 +15,9 @@ NCBI and CrossRef require a contact email. Export `LITREVIEW_EMAIL` once, or pas
 Two services ration keyless use. Without `OPENALEX_API_KEY`, everyone behind the
 same IP address shares 1,000 OpenAlex credits a day; a free key has its own
 10,000. Without `S2_API_KEY`, Semantic Scholar throttles hard. To check both
-before a new search, run `preflight.py` (Phase 0). Because one `S2_API_KEY`
-serves `xref.py`, `citations.py` and `abstracts.py`, run those three in sequence,
-not in parallel.
+before a new search, run `preflight.py` (Phase 0). `xref.py`, `citations.py` and
+`abstracts.py` share one `S2_API_KEY`; their requests take turns through a pacer
+shared across processes, so the three may run at the same time.
 
 ## Index
 
@@ -28,11 +28,12 @@ and CI fails if any copy is stale.
 <!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
 | Script | Phase | Purpose | Flags |
 |---|---|---|---|
-| `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--email` `--no-update-check` `--offline` `--papers` |
-| `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--out` `--raw` `--report` |
+| `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--accept` `--email` `--no-update-check` `--offline` `--papers` `--project` |
+| `lane_briefs.py` | 2 | Render every search lane's brief from one lane spec, so no brief goes out incomplete. | `--spec` |
+| `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--no-preflight` `--out` `--raw` `--report` |
 | `verify.py` | 3 | Verify a list of citations against CrossRef, DataCite, arXiv, PMC and PubMed. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
 | `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--candidates` `--email` `--ingest` `--input` `--key` `--prepare` `--reason` `--reject` `--rows` |
-| `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--asof` `--audit` `--candidates` `--email` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
+| `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--asof` `--audit` `--candidates` `--email` `--hand-fixes` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
 | `sentence_case.py` | 3f | Post-canon pass: propose strict APA-7 sentence case for reference titles, for a human to review. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
 | `download.py` | 4 (opt-in) | Download open-access PDFs for a list of papers, only when the user asks for them. | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
 | `reconcile_downloads.py` | 4 (opt-in) | Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
@@ -61,14 +62,33 @@ probes OpenAlex and Semantic Scholar, reads today's OpenAlex budget, and estimat
 what a corpus of `--papers N` costs.
 
 ```bash
-python3 tools/preflight.py --papers 600
-python3 tools/preflight.py --papers 600 --no-update-check   # a build already under way
+python3 tools/preflight.py --project <topic>/ --papers 600
+python3 tools/preflight.py --project <topic>/ --papers 600 --accept wait   # record the user's choice
+python3 tools/preflight.py --project <topic>/ --papers 600 --no-update-check   # a build under way
 ```
 
 Exit 2 means the user must decide before any lane starts. When a key is missing
 or the budget is short, it prints three choices: get the keys, cap the search, or
 be prepared to wait. `--offline` checks the environment only, with no probes and
-no GitHub check.
+no GitHub check. Every run writes `preflight.json` into the project, and
+`merge_lanes.py` refuses to build a table without one that is recent and cleared
+(everything passed, or the choice recorded with `--accept cap|wait|current-version`).
+
+## Phase 2: `lane_briefs.py`
+
+Renders every search lane's brief from one spec, so no brief goes out missing the
+verification duty, the summary rule or the output contract.
+
+```bash
+python3 tools/lane_briefs.py --spec lanes.json
+```
+
+The spec gives the bibliography's title and scope, `capped`, `lab` (lab mode), and per
+lane its key, name, one-line summary, kind (`forward` or `antecedent`), target,
+definition, exclusions, queries and seed titles (the module docstring has the full
+format). It writes `briefs/brief_<KEY>.md`, `lane_manifest.json`, `search_raw/` and a
+`scratch/<KEY>/` per lane beside the spec. It exits 1 on a missing field, a repeated
+key or a seed that names an author, and refuses a brief with anything left unfilled.
 
 ## Phase 2c: `merge_lanes.py`
 
@@ -297,8 +317,14 @@ It also adds warnings to acknowledge:
 - each canon warning;
 - a summary with no abstract to check it against.
 
-**Mojibake is flagged, not fixed**, because the original character is lost. Fix
-it by hand, last: re-canonicalizing reintroduces it.
+**Mojibake is flagged, not fixed**, because the original character is lost. Fix it
+in `hand_fixes.json` (below), not by editing `apa`: a re-canon would bring it back.
+
+**Hand fixes** live in `hand_fixes.json` beside `rows.json`:
+`{"<ref>": [{"old": "<damaged text>", "new": "<final text>", "why": "<source>"}]}`.
+Canon and `sentence_case.py --apply` re-apply them after every write; the audit fails
+a row whose fix is gone (`hand-fix-lost`); canon exits 1 on a fix that no longer
+matches its row.
 
 **`--repair`** fixes pure string damage (markup, Unicode hyphens, `?.`) without
 re-fetching, so hand fixes (sentence casing, mojibake, compound surnames) survive.
@@ -420,16 +446,20 @@ python3 tools/summary_audit.py --rows rows.json --ingest
 
 **`abstracts.py`** writes `abstracts.json` beside `rows.json`. It tries the arXiv
 API, then OpenAlex, then Semantic Scholar, then PubMed. An entry added by hand
-(`"source": "landing-page"`) is never overwritten. A fetch that could not complete
-goes to `abstracts_failed.json`, and the script exits 1; a failed fetch is not "no
-abstract".
+(`"source": "landing-page"`) is never overwritten; an empty `text` there records that
+the paper has none. A source text that is boilerplate, a citation line or an author
+list is refused (`not_an_abstract`), reported, and the next source tried. A fetch that
+could not complete goes to `abstracts_failed.json`, and the script exits 1; a failed
+fetch is not "no abstract".
 
 **`summary_audit.py --prepare`** writes batches of summary and abstract pairs,
 a brief and a manifest to `summary_audit/`. It refuses a row whose abstract fetch
 failed. **`--ingest`** records `summary_check` on each row, bound to the summary,
 the paper's ids and the abstract the agent saw. A result is refused when any of
 them changed after `--prepare`. A summary judged unsupported fails the audit until
-it is fixed and checked again. A row with no abstract is a warning to acknowledge.
+it is fixed and checked again; so does a "wrong-abstract" verdict, which says the
+abstract on file is not this paper's. A row with no abstract is a warning to
+acknowledge.
 
 ## Phase 6: `xref.py`
 
@@ -654,9 +684,9 @@ tags too coarse. The playbook's "Lab mode" section covers the later steps.
 
 ## Other files
 
-- **`search_prompt_template.md`**: the prompt for a Phase 2 search agent. It
-  defines the schema-2 lane file that `merge_lanes.py` reads. The playbook
-  explains each `{PLACEHOLDER}`.
+- **`search_prompt_template.md`**: the brief for a Phase 2 search agent, rendered by
+  `lane_briefs.py` (never filled by hand). It defines the schema-2 lane file that
+  `merge_lanes.py` reads.
 - **`family_prompt_template.md`**: the two-step propose-then-assign prompt for
   Phase 6b.
 - **`gen_docs.py`**: regenerates the index above in all three files and stamps

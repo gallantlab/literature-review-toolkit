@@ -5,7 +5,7 @@ fabricating references. The agent decides what to search, how to group the
 papers, and how to write them up. The scripts do the API calls, verification and
 bookkeeping.
 
-Version 1.24.0 · MIT license
+Version 1.25.0 · MIT license
 
 📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**, with the
 [operator manual](https://gallantlab.org/literature-review-toolkit/manual/),
@@ -63,7 +63,7 @@ pip install -r requirements.txt
 export LITREVIEW_EMAIL=you@institution.edu
 export OPENALEX_API_KEY=...
 export S2_API_KEY=...
-python3 tools/preflight.py --papers 600       # newer version? keys? today's OpenAlex budget?
+python3 tools/preflight.py --project <topic>/ --papers 600   # newer version? keys? today's OpenAlex budget?
 ```
 
 To keep the variables across sessions, add the `export` lines to your shell

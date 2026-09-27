@@ -486,6 +486,9 @@ def row_gate_defects(r, warn):
             d.append("summary-unchecked (checked for a different DOI/arXiv id; run summary_audit.py)")
         elif sc.get("verdict") == "unsupported":
             d.append(f"summary-flagged: {sc.get('note') or 'claims something its abstract does not'}")
+        elif sc.get("verdict") == "wrong-abstract":
+            d.append(f"abstract-wrong ({sc.get('note') or 'the abstract on file is not this paper'}): "
+                     "add the real one as a landing-page entry, rewrite the summary, re-check")
         elif sc.get("verdict") == "no-abstract":
             warn("no-abstract", "the summary has no abstract to be checked against")
         elif sc.get("verdict") != "supported":
@@ -514,10 +517,13 @@ def load_acks(path):
 LEDGER_MISSING = object()
 
 
-def audit_rows(rows, keyf, acks=None, ledger=None):
-    """The whole audit, for references.py --audit and spreadsheet.py alike."""
+def audit_rows(rows, keyf, acks=None, ledger=None, hand_fixes=None):
+    """The whole audit, for references.py --audit and spreadsheet.py alike.
+    `hand_fixes` (common.load_hand_fixes) makes a row whose recorded hand fix is
+    no longer in its apa a defect, so a re-canon cannot silently undo one."""
     gated = common.is_gated(rows)
     acks = acks or {}
+    hand_fixes = hand_fixes or {}
     defects, warnings, manual = {}, {}, {}
 
     def warn(k, wid, text):
@@ -543,6 +549,9 @@ def audit_rows(rows, keyf, acks=None, ledger=None):
                 warn(k, wid, note)
         if gated:
             d += row_gate_defects(r, lambda wid, text, k=k: warn(k, wid, text))
+        for f in common.lost_hand_fixes(r, hand_fixes.get(k, [])):
+            d.append(f"hand-fix-lost (hand_fixes.json: {f['new'][:60]!r}; run references.py to re-apply, "
+                     "or update the fix)")
         if d:
             defects[k] = d
     dups = duplicate_scan(rows, keyf)
@@ -703,6 +712,7 @@ def main():
     ap.add_argument("--list-acks", action="store_true",
                     help="list every unacknowledged warning as REF<TAB>WARNING_ID<TAB>TEXT and exit")
     ap.add_argument("--candidates", help="candidate ledger (default: candidates.json beside --rows)")
+    ap.add_argument("--hand-fixes", help="post-canon hand fixes (default: hand_fixes.json beside --rows)")
     args = ap.parse_args()
     if args.repair and args.audit:
         ap.error("--repair writes; --audit reports. Run --repair, then --audit to confirm.")
@@ -740,16 +750,27 @@ def main():
                 repaired[r.get(keyf, "?")] = what
             if stamp:
                 r.setdefault("canonical_at", args.asof)   # keep an existing date: repair is not canon
+    here = os.path.dirname(os.path.abspath(args.rows))
+    hand_fixes = common.load_hand_fixes(args.hand_fixes or os.path.join(here, common.HAND_FIXES))
+    fix_applied, fix_stale = [], []
     if not args.audit and not args.list_acks:
+        # canon re-fetches, so every recorded hand fix goes back on after it
+        fix_applied, fix_stale = common.apply_hand_fixes(rows, hand_fixes, keyf)
         out = args.out or args.rows
         same = os.path.abspath(out) == os.path.abspath(args.rows)
         common.save_rows(out, rows, loaded if same else None)
+        if fix_applied:
+            print(f"re-applied {len(fix_applied)} hand fix(es) from {common.HAND_FIXES}: "
+                  f"{', '.join(sorted(set(fix_applied)))}")
+        for ref, new in fix_stale:
+            print(f"  ✗ {ref}: hand fix no longer matches the row (neither its damaged nor its final text "
+                  f"is there): {new[:70]!r} — re-check it and update {common.HAND_FIXES}")
 
     acks_path = args.acks or os.path.join(os.path.dirname(os.path.abspath(args.rows)), "audit_acks.json")
     ledger_path = (args.candidates
                    or os.path.join(os.path.dirname(os.path.abspath(args.rows)), "candidates.json"))
     ledger = common.load_optional_json(ledger_path, LEDGER_MISSING)
-    report = audit_rows(rows, keyf, load_acks(acks_path), ledger=ledger)
+    report = audit_rows(rows, keyf, load_acks(acks_path), ledger=ledger, hand_fixes=hand_fixes)
     if args.list_acks:
         for k, ws in report["unacked"].items():
             for wid, text in ws:
@@ -772,7 +793,7 @@ def main():
         print(f"  ✗ {k}: not verified for its current DOI/arXiv id — NOT rebuilt. Run "
               "verify.py --rows first, or clear a false alarm with verify.py --override")
     print_report(report, len(rows))
-    if report["failed"] or result["failed"] or result["missing"] or result["unverified"]:
+    if report["failed"] or result["failed"] or result["missing"] or result["unverified"] or fix_stale:
         sys.exit(1)
     print("✓ all references pass the audit")
 

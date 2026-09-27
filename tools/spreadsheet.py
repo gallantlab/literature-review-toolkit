@@ -245,7 +245,8 @@ def main():
         except ValueError as e:
             print(f"✗ {e}", file=sys.stderr)
             sys.exit(1)
-    report = references.audit_rows(rows, keyf, acks, ledger=ledger)
+    report = references.audit_rows(rows, keyf, acks, ledger=ledger,
+                                   hand_fixes=common.load_hand_fixes(os.path.join(here, common.HAND_FIXES)))
     out, banner = args.out, None
     if report["failed"]:
         references.print_report(report, len(rows))

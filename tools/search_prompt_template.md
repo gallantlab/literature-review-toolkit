@@ -1,165 +1,195 @@
-# Literature search subagent prompt — TEMPLATE
+# Literature search lane brief — TEMPLATE
 
-Fill in the `{PLACEHOLDERS}` and pass the result as the `prompt` field of an
-Agent call (subagent_type: `general-purpose`). The agent has WebSearch +
-WebFetch and writes one lane file (schema 2) that `tools/merge_lanes.py` reads.
-Do NOT trust its citations — verify them all in Phase 3.
+Do not fill this by hand. `tools/lane_briefs.py --spec lanes.json` renders one brief
+per lane from it: it fills every `{PLACEHOLDER}`, keeps or drops each
+`<!-- IF:name -->` … `<!-- ENDIF:name -->` block, builds the lane table, and refuses
+to write a brief with anything left unfilled. Everything above the `BRIEF STARTS`
+marker is these notes and is never sent.
 
-**Capped search.** Only if the user chose to cap the search at the Phase-0
-preflight, keep the "*Exception — a CAPPED search*" sentence under "What to
-return"; otherwise delete it before sending.
+Blocks: `forward` / `antecedent` (the lane's kind: the antecedents variant flips the
+tier emphasis to classic, pre-modern work and tags papers `anteced`), `capped` /
+`uncapped` (whether the user capped the search at the Phase-0 preflight), `lab`
+(lab mode: the lab's own papers are deferred to the lab lane), `seeds` (the lane has
+landmark titles). Seeds are TITLES only, never author names: remembered author names
+have injected fabricated attributions, and about a third of remembered titles do not
+exist as typed.
 
-**Seed titles.** `{SEED_TITLES}` is an optional bullet list of landmark TITLES the lane
-should cover, never author names (remembered author names have injected fabricated
-attributions; about a third of remembered titles turn out not to exist as typed).
-Delete the "Landmark titles" section if you have none.
+<!-- BRIEF STARTS -->
+# Literature search brief — lane `{LANE_KEY}`: {TOPIC_NAME}
 
-**Lab mode.** Add to the topic definition: "A paper with {LAB_PI} as an author is the
-lab's own; do not put it in `papers`. List it in `deferred` with `to_lane: "L"`" when
-the lab's record is merged as lane `L`, so a deferral the record lacks exposes a gap
-in the lab's record.
+You are doing a literature search for an academic annotated bibliography titled
+**"{REVIEW_TITLE}"**, assembled for {REVIEW_FOR}. You are responsible for ONE lane of
+that bibliography.
 
-**Antecedents variant (Phase 2b).** This same template is reused for the required
-antecedents pass. For that pass, FLIP the tier emphasis: the target is
-foundational / classic / highly-cited work that PRE-DATES the modern literature
-(methodology origins, foundational empirical results, or theory), not recent
-papers. Run one agent per axis, set `{TIER_BOUNDARY_YEAR}` so "classic" dominates,
-and expect some no-DOI books/chapters (handle per Phase 2b). In the JSON example,
-change `"source": "search"` to `"source": "anteced"` (`"anteced-nosrc"` for a paper
-with no DOI), so the spreadsheet colors antecedents lilac.
+## The bibliography as a whole
 
----
+{BIBLIOGRAPHY_DESCRIPTION}
+<!-- IF:lab -->
 
-You are doing a literature search for an academic neuroscience review on the
-**{REVIEW_TITLE}** by {LAB_NAME}. I need you to identify papers relevant to
-ONE specific topic: **{TOPIC_NAME}**.
+**The lab's own papers are out of scope for every search lane.** A lab paper is any
+paper with {LAB_PI} as an author. Do NOT put one in `papers`. If you come across one,
+list it in `deferred` with `"to_lane": "{LAB_LANE}"` and its first author, year and
+title from the landing page: lane `{LAB_LANE}` is the lab's own record, and a deferral
+that the record lacks shows the record is incomplete. Papers by the lab's former
+trainees in their own labs are NOT lab papers unless {LAB_PI} is an author.
+<!-- ENDIF:lab -->
 
-## What "{TOPIC_NAME}" means in this review
+## YOUR LANE — `{LANE_KEY}`: {TOPIC_NAME}
 
 {TOPIC_DEFINITION}
-<!-- 3-5 sentences. Include: brain regions, methods, theoretical positions,
-     contested claims, what's IN scope and what's OUT of scope (adjacent
-     topics covered separately). -->
+
+### Explicitly OUT of your lane
+
+{EXCLUSIONS}
+
+Other agents are covering the rest of the bibliography in parallel. The full lane list
+is below so you can tell what is yours; if a paper straddles two lanes, keep it if it
+is squarely relevant to yours and note the overlap in a `note` field.
+
+{LANE_TABLE}
 
 ## What the corpus already has (DO NOT re-include these)
 
 {ALREADY_HAVE_LIST}
-<!-- Bullet list of existing papers, each one line: First Author Year — title -->
 
-## Selection criteria — TWO TIERS
+## Selection criteria
+<!-- IF:forward -->
 
-- **Pre-{TIER_BOUNDARY_YEAR}**: ONLY include if highly impactful / well-cited
-  / foundational. Think classic, canonical work.
-- **{TIER_BOUNDARY_YEAR}–present**: Be promiscuous. Include even if not yet
-  highly cited — they haven't had time. Anything methodologically interesting,
-  addressing an open question, or extending a major framework is worth
+- **Pre-{TIER_BOUNDARY_YEAR}**: include ONLY if highly impactful, well cited, or
+  genuinely foundational. Think canonical work.
+- **{TIER_BOUNDARY_YEAR}–present**: be promiscuous. Include even if not yet highly
+  cited — these papers have not had time to accrue citations. Anything methodologically
+  interesting, addressing an open question, or extending a major framework is worth
   including.
+<!-- ENDIF:forward -->
+<!-- IF:antecedent -->
+
+- This is an **ANTECEDENTS** lane: the target is foundational, highly cited, classic
+  work that PRE-DATES and underpins the modern literature (methodology origins,
+  foundational empirical results, or theory), much of it decades old. Include a later
+  paper only if it is itself a canonical reference point for the idea.
+- Recent work is covered by the other lanes; do not chase recent papers here.
+- Old classics often have no DOI (books, chapters, pre-1990 articles): include them as
+  DOI-less items (below). Cite an old book's ORIGINAL edition, never a reprint DOI
+  (reissue DOIs re-date the work).
+<!-- ENDIF:antecedent -->
 
 The current date is {TODAY}. Search for papers up through today.
+<!-- IF:forward -->
+**Recent work matters**: sweep the last three years, including bioRxiv and arXiv
+preprints, for this lane.
+<!-- ENDIF:forward -->
 
-## Aim for ~{TARGET_COUNT} papers (a floor, not a cap: see "What to return"), balanced across
+## Target: ~{TARGET_COUNT} papers
+<!-- IF:uncapped -->
 
-1. Classic / foundational (pre-{TIER_BOUNDARY_YEAR}, high impact)
-2. Recent reviews and updates ({TIER_BOUNDARY_YEAR}-present)
-3. Recent empirical work using {RELEVANT_METHODS}
-4. Recent theoretical / computational advances
-5. Recent {DOMAIN_SPECIFIC_CATEGORY} (e.g. clinical, lesion, intracranial)
+**The target is a floor, not a cap.** Never leave out an on-topic paper to stay near
+it: "lower priority" or "trimmed to target" is not a reason to drop a paper. Do not pad
+with filler either.
+<!-- ENDIF:uncapped -->
+<!-- IF:capped -->
+
+**This is a CAPPED search: the target is a hard cap of {TARGET_COUNT} papers.** Keep the
+most important papers, and list every on-topic paper over the cap in `excluded` with
+reason `over the capped-search limit`, so it is shown, not lost.
+<!-- ENDIF:capped -->
 
 ## How to search
 
 Use WebSearch and WebFetch. Try multiple query variants for each angle:
 
 {SEARCH_QUERIES}
-<!-- One bulleted line per query. Mix broad and narrow. Include some with
-     explicit recent years (2024, 2025, etc.) -->
 
-Search both Google Scholar (via `scholar.google.com` URLs) and PubMed
-(`pubmed.ncbi.nlm.nih.gov`). Google Scholar often blocks automated fetches; if
-it does, use PubMed, arXiv and publisher pages instead. Follow the reference lists
-and "cited by" lists of the landmark papers you find; that is usually more
-productive than more query variants.
+Search PubMed (`pubmed.ncbi.nlm.nih.gov`), Google Scholar, Semantic Scholar, bioRxiv,
+arXiv, OpenReview and journal sites. Google Scholar often blocks automated fetches; if
+it does, use the others. Follow the reference lists and "cited by" lists of the
+landmark papers you find; that is usually more productive than more query variants.
 
 If WebSearch stops working (the budget is shared by every agent running at once),
 continue through PubMed E-utilities (`eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi`),
 Semantic Scholar (`api.semanticscholar.org/graph/v1/paper/search`), OpenAlex
 (`api.openalex.org/works?search=`), CrossRef (`api.crossref.org/works?query=`) and the
 arXiv API with WebFetch. That is a first-class route, not a degradation.
+<!-- IF:seeds -->
 
-## Landmark titles this lane should cover
+### Landmark titles this lane should cover
 
-These are paper TITLES ONLY, from memory, and some may be wrong or not exist. Find
-each one, read its real title, authors and year off the landing page, and include it
-if it fits. Do not trust an author name you have not read off a landing page. If a
+These are paper TITLES ONLY, from memory, and some may be wrong or not exist. Find each
+one, read its real title, authors and year off the landing page, and include it if it
+fits your lane. Do not trust an author name you have not read off a landing page. If a
 title does not exist under any similar wording, list it in `could_not_confirm`.
 
 {SEED_TITLES}
+<!-- ENDIF:seeds -->
 
 ## What to return
 
-Write ONE JSON object to `{OUTPATH}` with the Write tool, then parse it back with
-`python3 -c "import json;json.load(open('{OUTPATH}'))"` and fix it if that fails.
-Write it incrementally if you are worried about time, so no work is lost.
+Write ONE JSON object (schema 2) to:
+
+    {OUTPATH}
 
 ```json
 {"schema": 2,
  "lane": "{LANE_KEY}",
  "status": {"target": {TARGET_COUNT}, "returned": 0, "websearch_exhausted": false, "notes": ""},
  "papers": [
-   {"ref": "{LANE_KEY}-01", "doi": "10.xxxx/yyyy", "arxiv": "", "link": "https://doi.org/10.xxxx/yyyy",
-    "first_author": "Family, I. I.", "year": 2022, "title": "Title as on the landing page",
-    "apa": "", "summary": "2-4 sentences written ONLY from the abstract.",
-    "tag": "classic", "topic": "{TOPIC_NAME}", "source": "search", "note": "", "lane_fit": ""}],
- "deferred": [{"title": "...", "doi": "", "first_author": "", "year": "", "reason": "fits lane X better",
-              "to_lane": "X"}],
- "excluded": [{"title": "...", "doi": "", "first_author": "", "year": "", "reason": "governance as such"}],
+   {"ref": "{LANE_KEY}-01", "lane": "{LANE_KEY}", "doi": "10.xxxx/yyyy", "arxiv": "",
+    "link": "https://doi.org/10.xxxx/yyyy",
+    "first_author": "Family, I. I.", "year": 2022, "title": "Title exactly as on the landing page",
+    "apa": "", "summary": "Two to four sentences written ONLY from the abstract.",
+    "tag": "classic", "topic": "{TOPIC_NAME}", "source": "{SOURCE_TAG}", "note": "", "lane_fit": ""}],
+ "deferred": [{"title": "...", "doi": "", "first_author": "Family, I.", "year": 2023,
+               "reason": "fits lane X better", "to_lane": "X"}],
+ "excluded": [{"title": "...", "doi": "", "first_author": "Family, I.", "year": 2010,
+               "reason": "outside the bibliography's scope"}],
  "could_not_confirm": [{"title": "...", "reason": "no such paper under any similar title"}]}
 ```
 
-- Every paper needs a DOI or an arXiv id. arXiv-only: set `arxiv` to the bare id and
-  `doi` to `10.48550/arXiv.<id>`. A book, chapter, report or essay with neither: leave
-  `doi` empty, give its URL in `link` if any, and write the full APA-7 reference in
-  `apa` from the title page or publisher record, with every author.
-- `first_author`, `year` and `title` are read off the landing page. They are what
-  the next phase verifies the DOI against.
-- `summary`: 2-4 sentences written ONLY from the paper's abstract: what it did and what
-  it found. No priority, impact or lineage claims ("the first", "classic", "seminal")
-  unless the abstract makes them, and no details the abstract does not state. Every
-  summary is checked against the abstract later (Phase 5c); on one build this rule cut
-  unsupported summaries from 41% to 5%.
-- **Never drop an on-topic paper because another search might own it.** Include it
-  and set `lane_fit` to the better-fitting area; duplicates are removed later.
-- **The target is a floor, not a cap.** Never leave out an on-topic paper to stay near
-  it — "lower priority" or "trimmed to target" is not a reason to drop a paper.
-  *Exception — a CAPPED search*: the target is a hard cap of {TARGET_COUNT}; keep the
-  most important papers, and list every on-topic paper over the cap in `excluded` with
-  reason `over the capped-search limit`, so it is shown, not lost.
+- `ref`: `{LANE_KEY}-01`, `{LANE_KEY}-02`, … in the order you list them.
+- **Every paper needs a DOI or an arXiv id**, except the DOI-less items below.
+  - A journal paper → its DOI. For a preprint that was later published, give the
+    PUBLISHED DOI (the version of record), and the arXiv id in `arxiv` if there is one.
+  - An unpublished bioRxiv/PsyArXiv preprint → its preprint DOI, read off the page.
+  - arXiv-only, or a conference paper with no DOI (NeurIPS, ICLR, ICML) → `arxiv` the bare
+    id, `doi` `10.48550/arXiv.<id>`, `link` `https://doi.org/10.48550/arXiv.<id>`.
+- **DOI-less and arXiv-less items** (a book, chapter, report, or software with neither):
+  set `"source": "{SOURCE_TAG}-nosrc"`, leave `doi` and `arxiv` empty, put the canonical
+  URL in `link`, and write the FULL APA-7 reference in `apa` from the title page,
+  publisher record or library catalog, with every author (and the publisher for a book).
+  Say in `note` where you confirmed it. There is no cap on these, but include only work
+  widely cited in the literature.
+- `first_author`, `year` and `title` are read OFF THE LANDING PAGE. They are what the
+  next phase verifies the DOI against, so they must describe the paper the DOI resolves to.
+- `summary`: two to four sentences written ONLY from the paper's abstract: what it did
+  and what it found. No priority, impact or lineage claims ("the first", "classic",
+  "seminal") unless the abstract makes them, and no details the abstract does not state.
+  Every summary is checked against the abstract later, and unsupported ones are rewritten.
+- `tag`: one of `classic`, `recent-review`, `recent-empirical`, `recent-method`,
+  `recent-theory`, `recent-LLM`, `recent-clinical`.
+- **Never drop an on-topic paper because another lane might own it.** Include it and set
+  `lane_fit` to the lane letter it fits better; duplicates across lanes are removed
+  automatically by DOI and arXiv id.
 - `deferred` is ONLY for a paper you handed to a different, named lane (`to_lane`) that
-  you believe will include it; when in doubt, include it yourself with `lane_fit`.
-  `first_author` and `year` are required on every deferred entry: the merge step needs
-  them to confirm a deferred paper by title alone, and fails the merge on any deferred
-  paper no lane kept.
-- `excluded` is ONLY for a paper outside the review's scope, a pre-{TIER_BOUNDARY_YEAR}
-  paper that does not clear the classic bar, or (in a capped search only) an on-topic
-  paper over the cap — each with its `title`, `reason`, `first_author` and `year`.
-  Excluded papers are listed on the spreadsheet's "Considered and excluded" sheet.
-- Set `status.returned` to the number of papers, and `websearch_exhausted` to true if
-  your web search stopped working; say in `notes` how you continued.
-
-Balance `tag` across: `classic` | `recent-review` | `recent-empirical` |
-`recent-method` | `recent-LLM` | `recent-theory` | `recent-clinical`.
-
-Quality over quantity for pre-{TIER_BOUNDARY_YEAR}, err toward inclusion for recent work.
+  you believe will include it. When in doubt, include the paper yourself with `lane_fit`.
+  `first_author` and `year` are required on every deferred entry: the merge confirms a
+  deferred paper by title plus those fields, and fails on any deferred paper no lane kept.
+- `excluded` is ONLY for a paper outside the bibliography's scope, a pre-{TIER_BOUNDARY_YEAR}
+  paper that does not clear the classic bar, or (in a capped search) an on-topic paper
+  over the cap — each with its `title`, `reason`, `first_author` and `year`. Excluded
+  papers are listed on the spreadsheet's "Considered and excluded" sheet.
+- Set `status.returned` to the number of papers, and `websearch_exhausted` to true if your
+  web search stopped working; say in `notes` how you continued.
 
 ## Verification duty — read this twice
 
-Every citation you return is machine-verified against CrossRef, DataCite, PubMed and
-the arXiv API in the next phase. In past runs about one in four agent-returned
-citations had a fabricated author list, a wrong year, a mis-copied DOI or arXiv id, or
-a reversed conclusion. With this section in the brief, a 1,050-paper build had none.
+Every citation you return is machine-verified against CrossRef, DataCite, PubMed and the
+arXiv API in the next phase. In past runs about one in four agent-returned citations had a
+fabricated author list, a wrong year, a mis-copied DOI or arXiv id, or a reversed
+conclusion. With this section in the brief, a 1,050-paper build had none.
 
 1. **Visit the actual landing page** for every paper (PubMed, the journal, bioRxiv, the
-   arXiv abstract page) and read the author list off it. Many papers have similar
-   titles; do not reconstruct authors from memory or a search snippet.
+   arXiv abstract page) and read the author list off it. Many papers have similar titles;
+   do not reconstruct authors from memory or a search snippet.
 2. **Confirm the first author and the year** on that page. Long author lists are where
    first authors get mis-ordered.
 3. **Confirm the DOI or arXiv id resolves to the paper you mean**, not just that it
@@ -170,8 +200,12 @@ a reversed conclusion. With this section in the brief, a 1,050-paper build had n
 
 ## Output
 
-Write the file incrementally (write what you have, then extend it), so a stall loses
-nothing. If you need a helper script, put it only in `{SCRATCH_DIR}` (other lanes run
-at the same time and share the project folder). Do NOT delegate to subagents. Then
-reply with only: the count of papers written, the year range, and the numbers
-deferred, excluded and could not confirm.
+Use the `Write` tool. The file must be valid JSON: parse it back with
+`python3 -c "import json;d=json.load(open('{OUTPATH}'));print(len(d['papers']))"` and fix
+it if that fails. Write it incrementally (write what you have, then extend it every ~10
+papers), so a stall loses nothing. If you need a helper script, put it only in
+`{SCRATCH_DIR}` (other lanes run at the same time and share the project folder). Never
+read or write anywhere else except web fetches. Do NOT delegate to subagents.
+
+Then reply with, and only with: the count of papers written, the year range, and the
+numbers deferred, excluded and could not confirm.

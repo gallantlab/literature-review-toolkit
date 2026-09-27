@@ -3,7 +3,7 @@
 **Scripts that let an LLM agent run a literature review without fabricating
 references.**
 
-Version 1.24.0 · MIT license · [AI disclosure](#ai-disclosure)
+Version 1.25.0 · MIT license · [AI disclosure](#ai-disclosure)
 
 The agent decides what to search, what matters, how to group it, and optionally
 how to write it up. The scripts handle the API calls, verification and
@@ -131,7 +131,7 @@ pip install -r requirements.txt
 export LITREVIEW_EMAIL=you@institution.edu   # NCBI and CrossRef require one
 export OPENALEX_API_KEY=...                   # https://help.openalex.org/api/authentication
 export S2_API_KEY=...                         # https://www.semanticscholar.org/product/api#api-key-form
-python3 tools/preflight.py --papers 600       # newer version? keys? today's OpenAlex budget?
+python3 tools/preflight.py --project <topic>/ --papers 600   # newer version? keys? today's OpenAlex budget?
 ```
 
 Then open Claude Code in the directory that holds the clone and describe the

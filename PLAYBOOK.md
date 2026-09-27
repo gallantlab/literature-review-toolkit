@@ -20,12 +20,13 @@ doubt, obey this list. Bold elsewhere in this file is ordinary emphasis, not an
 eleventh rule.
 
 0. **Check for a newer toolkit and for API access before any new search**
-   (Phase 0). Run `tools/preflight.py --papers <planned size>` first. Exit 0:
-   proceed. Exit 2: stop. Offer a newer version if it found one (install only on a
+   (Phase 0). Run `tools/preflight.py --project <dir> --papers <planned size>` first;
+   it records `preflight.json`, and `merge_lanes.py` refuses to build a table without a
+   recent, cleared one. Exit 0: proceed. Exit 2: stop. Offer a newer version if it found one (install only on a
    yes, then rerun the preflight). If a key is missing or the OpenAlex budget is
    short, put its three choices to the user (**get the API keys**, **cap the
    search**, or **be prepared to wait**) and wait for their pick before launching
-   any lane.
+   any lane; then record it (`--accept cap|wait|current-version`).
 1. **Verify EVERY citation before it enters a deliverable** (Phase 3), preprints
    included. `verify.py --rows` stamps each row; canon refuses, and the audit
    fails, a row without an OK stamp (or a reasoned override) for its current
@@ -99,8 +100,14 @@ snippet details are in `docs/maintaining.md`.
 **Step 0: preflight (contract rule 0).** Before anything else, run
 
 ```bash
-python3 tools/preflight.py --papers <lanes x target + lab papers>
+python3 tools/preflight.py --project <dir> --papers <lanes x target + lab papers>
 ```
+
+It writes `<dir>/preflight.json`. `merge_lanes.py` refuses to run without one that is
+under 14 days old and cleared: everything passed, or the user's choice is recorded
+with `--accept cap`, `--accept wait` or `--accept current-version` (a missing email
+cannot be accepted). `--no-preflight "reason"` merges anyway and keeps the reason in
+`merge_report.json`.
 
 (`--papers` defaults to 500. `--offline` checks only the environment variables:
 no probes and no version check.)
@@ -209,14 +216,12 @@ A build runs for hours, so overlap the waits. Two rules decide what may overlap:
    (`citations.py`, `abstracts.py`, `xref.py`, `forward.py`,
    `handcheck.py --prepare`, `summary_audit.py --prepare`, `spreadsheet.py`) may
    run alongside a writer.
-2. **One Semantic Scholar client at a time.** `citations.py`, `abstracts.py` and
-   `xref.py` share the one `S2_API_KEY`, and each paces only its own requests.
-   Because the per-key limit is strict, run them one after another, not side by
-   side.
+2. **Semantic Scholar is paced in code.** `citations.py`, `abstracts.py` and `xref.py`
+   share one `S2_API_KEY`; every S2 request waits its turn through a lock file shared
+   by all processes (`common.s2_wait_turn`), so they may run side by side.
 
-**What that allows.** Once verify's DOI corrections are in (Phase 3), start the
-Semantic Scholar chain in the background (`citations.py` → `abstracts.py` →
-`xref.py`) while canon runs; none of them needs canonical `apa` strings. Pitch the
+**What that allows.** Once verify's DOI corrections are in (Phase 3), start
+`citations.py`, `abstracts.py` and `xref.py` in the background while canon runs; none of them needs canonical `apa` strings. Pitch the
 families at the same point (Phase 6b), since the user's reply is the one human wait
 in the run. `forward.py` reads `internal_citations.json` from xref and the attached
 counts, so it follows both.
@@ -255,32 +260,23 @@ it verbatim.
 
 ### Phase 2 — Brief and launch the search lanes
 
-Launch one web-enabled subagent (`general-purpose`) per lane, each with a
-self-contained prompt built from `tools/search_prompt_template.md`; it has no
-context from this conversation. Launch the Phase-2b antecedent lanes in the same
-fan-out. Fill every placeholder, and grep the prompt for `{` before sending:
+Write a lane spec (`lanes.json`: the bibliography's title and scope, `capped` from the
+preflight, `lab` in lab mode, and per lane its key, name, one-line summary, kind
+`forward` or `antecedent`, target, definition, exclusions, queries and seed TITLES),
+then render every brief:
 
-- `{TOPIC_NAME}`, `{TOPIC_DEFINITION}` (Phase 1b), `{REVIEW_TITLE}`, `{LAB_NAME}`
-- `{ALREADY_HAVE_LIST}`: the known papers, one line each (Phase 1c)
-- `{SEARCH_QUERIES}`, `{RELEVANT_METHODS}`, `{DOMAIN_SPECIFIC_CATEGORY}`
-- `{TODAY}` (the recency anchor) and `{TIER_BOUNDARY_YEAR}` (contract, "Default
-  tier criteria")
-- `{TARGET_COUNT}`: usually 25-40 papers
-- `{OUTPATH}`: `search_raw/<lane>.json` beside `rows.json`, because Phase 2c reads
-  every file in `search_raw/`
-- `{LANE_KEY}`: the lane's short key, used in `"lane"` and as each `ref` prefix
-  (`<LANE_KEY>-01`, …). Refs must be unique across all lanes; the merge refuses a
-  repeated ref.
-- `{SEED_TITLES}`: landmark titles only (or delete that section); `{SCRATCH_DIR}`: a
-  per-lane folder such as `scratch/<lane>/` for helper scripts (lanes that shared one
-  folder overwrote each other's scripts); in lab mode, `{LAB_PI}` for the rule that
-  sends the lab's own papers to lane `L` as deferrals (Lab mode, L4c).
+```bash
+python3 tools/lane_briefs.py --spec lanes.json
+```
 
-For a CAPPED search (Phase 0, choice 2), keep the template's capped-search
-sentence; otherwise delete it. Keep the template's verification duty (landing page,
-first author and year read off it, abstract read before summarizing). Seed with
-titles only, never remembered author names, and label the seeds as unverified
-(Lessons, "Lane briefs and search agents").
+Never fill `tools/search_prompt_template.md` by hand. `lane_briefs.py` checks the spec
+(unique keys, every field, seeds that name an author are refused), writes
+`briefs/brief_<KEY>.md`, `lane_manifest.json`, `search_raw/` and a `scratch/<KEY>/`
+per lane, and refuses a brief with any placeholder left. The template carries the
+verification duty, the abstract-only summary rule, the floor-or-cap rule, the lab
+deferral rule and the output contract, so every brief has them. Launch one
+`general-purpose` agent per lane, forward and antecedent lanes in one fan-out, with
+the prompt the tool prints. Target: usually 25-40 papers per lane.
 
 **What a lane returns.** One schema-2 JSON object (`"schema": 2`, `lane`,
 `status`, `papers`, `deferred`, `excluded`, `could_not_confirm`) written to
@@ -650,10 +646,15 @@ acknowledgment (its warning no longer fires) is reported, not failed: delete it.
 | `no-abstract` | a summary with no abstract to check it against (Phase 5c) | acknowledge, or add a landing-page abstract |
 | `*`: `no-candidate-ledger`, `no-xref-run` / `no-forward-run`, `incomplete-xref-run` / `incomplete-forward-run`, `partial-xref-run` / `partial-forward-run` | Phase 6 was not run, did not finish, or read fewer papers than the table now has | run the pass (Phase 6), or acknowledge why this review goes without it |
 
-**Hand fixes come after the last canon.** Canon re-fetches on every run, so a fix
-made before it is overwritten: U+FFFD mojibake (`Bürgel`), compound-surname
-splits, and anything else you edit in the `apa` (Lessons, "Reference records"). `references.py --repair` fixes markup, Unicode-hyphen and `?.`
-damage offline without re-fetching.
+**Record every hand fix in `hand_fixes.json`**, never by editing `apa` alone:
+`{"<ref>": [{"old": "<damaged text canon produces>", "new": "<final text, in sentence
+case>", "why": "<source>"}]}` (`old` is `""` for an empty apa). Canon re-fetches on every
+run, so `references.py` and `sentence_case.py --apply` re-apply every fix after they
+write, and the audit fails a row whose fix is gone (`hand-fix-lost`) and a fix that no
+longer matches (canon exits 1 on it). Typical fixes: U+FFFD mojibake (`Bürgel`),
+compound-surname splits, two authors packed into one, a missing subtitle or year
+(Lessons, "Reference records"). `references.py --repair` fixes markup,
+Unicode-hyphen and `?.` damage offline without re-fetching.
 
 **Sentence-case titles after canon (`tools/sentence_case.py`).** Strict APA-7 wants
 sentence case, and canon does not impose it, because correct casing needs
@@ -802,7 +803,9 @@ entry is fetched again. A fetch that could not complete goes to
 `abstracts_failed.json` and makes the run exit 1: that is not "no abstract", so
 re-run it. For a paper no source has, add a hand entry from the landing page:
 `{"text": "...", "source": "landing-page", "url": "...", "doi": "<row's doi>",
-"arxiv": "<row's arxiv>"}`. A landing-page entry is never overwritten; if its ids
+"arxiv": "<row's arxiv>"}` (an empty `text` records that none exists). A source text that
+is boilerplate, a citation line or an author list is refused (`abstracts.not_an_abstract`)
+and reported, and the next source is tried. A landing-page entry is never overwritten; if its ids
 stop matching the row it is reported as stale.
 
 **`summary_audit.py --prepare`** writes the rows needing a check into batches of 40
@@ -811,7 +814,9 @@ and a `manifest.json`. It refuses (exit 1) any row whose abstract fetch failed o
 whose abstract entry records other ids. It **deletes old `batch_*.json` and
 `result_*.json`**, so ingest every finished result before re-preparing. Each
 checking agent judges only whether the abstract supports the summary: "supported",
-or "unsupported" with the unsupported clause quoted exactly, echoing each entry's
+"unsupported" with the unsupported clause quoted exactly, or "wrong-abstract" when the
+abstract on file is not this paper's (an audit defect: add the real one as a landing-page
+entry, rewrite the summary, re-check), echoing each entry's
 `summary_sha`.
 
 **`--ingest`** binds every result to the manifest, not to whatever `rows.json` or
@@ -1592,11 +1597,12 @@ in `tools/README.md` and `docs/tools.md`.
 <!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
 | Script | Phase | Purpose | Flags |
 |---|---|---|---|
-| `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--email` `--no-update-check` `--offline` `--papers` |
-| `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--out` `--raw` `--report` |
+| `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--accept` `--email` `--no-update-check` `--offline` `--papers` `--project` |
+| `lane_briefs.py` | 2 | Render every search lane's brief from one lane spec, so no brief goes out incomplete. | `--spec` |
+| `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--no-preflight` `--out` `--raw` `--report` |
 | `verify.py` | 3 | Verify a list of citations against CrossRef, DataCite, arXiv, PMC and PubMed. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
 | `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--candidates` `--email` `--ingest` `--input` `--key` `--prepare` `--reason` `--reject` `--rows` |
-| `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--asof` `--audit` `--candidates` `--email` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
+| `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--asof` `--audit` `--candidates` `--email` `--hand-fixes` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
 | `sentence_case.py` | 3f | Post-canon pass: propose strict APA-7 sentence case for reference titles, for a human to review. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
 | `download.py` | 4 (opt-in) | Download open-access PDFs for a list of papers, only when the user asks for them. | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
 | `reconcile_downloads.py` | 4 (opt-in) | Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
@@ -1696,16 +1702,16 @@ NOT ask whether to download PDFs: the default is no (Phase 4 is opt-in). Extendi
 rerunning an EXISTING corpus follows "Upgrading an old corpus". Then, in order:
 
 ```
- 0. python3 tools/preflight.py --papers <lanes x target + lab papers>   (Phase 0)
+ 0. python3 tools/preflight.py --project <dir> --papers <planned size>   (Phase 0)
     Exit 2: stop and ask before launching anything. Offer the newer toolkit
     if it found one (install only on a yes, then rerun); if access is short,
     give its three choices: get the keys, cap the search, or be prepared to
     wait. A build already under way reruns it with --no-update-check.
 
- 1. Scope the topic (Phase 1). Write the lane briefs from
-    tools/search_prompt_template.md (schema 2; add the verification-duty
-    section, see Lessons) and launch the forward-search AND antecedent lanes
-    in one fan-out (Phases 2 + 2b), each writing search_raw/<lane>.json.
+ 1. Scope the topic (Phase 1). Write lanes.json and run
+    python3 tools/lane_briefs.py --spec lanes.json; launch the forward-search
+    AND antecedent lanes in one fan-out (Phases 2 + 2b), each writing
+    search_raw/<lane>.json.
 
  2. python3 tools/merge_lanes.py --raw search_raw --out rows.json       (Phase 2c)
     A lost, unconfirmed or rejected deferral/paper fails the merge and writes
@@ -1725,9 +1731,8 @@ rerunning an EXISTING corpus follows "Upgrading an old corpus". Then, in order:
 
  5. Once rows are verified, two tracks at once:
     a. canon: references.py --rows rows.json --out rows.json      (Phase 3f)
-    b. one Semantic Scholar chain, in sequence (one S2 key):
-       citations.py (5b) -> xref.py --internal-out internal_citations.json
-       (6) -> abstracts.py (5c)
+    b. citations.py (5b), xref.py --internal-out internal_citations.json (6)
+       and abstracts.py (5c); they share the S2 key's pace on their own
     Then, after canon has finished (both write rows.json): attach the counts
     (citations.py --attach-only; Phase 5b) and run forward.py (6).
 
@@ -1737,7 +1742,7 @@ rerunning an EXISTING corpus follows "Upgrading an old corpus". Then, in order:
     topic for each new row. Handle the partial-*-run warnings (Phase 6).
 
  7. sentence_case.py (review with --vocab and a --proper file, then --apply),
-    then post-canon hand fixes (mojibake, compound surnames) (Phase 3f).
+    and hand fixes recorded in hand_fixes.json (Phase 3f).
 
  8. summary_audit.py --prepare; one checking agent per batch, no web access;
     --ingest. Fix each flagged summary and re-run --prepare (Phase 5c).

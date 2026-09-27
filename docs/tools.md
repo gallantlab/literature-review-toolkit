@@ -17,11 +17,12 @@ in `tools/README.md` and `PLAYBOOK.md`.
 <!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
 | Script | Phase | Purpose | Flags |
 |---|---|---|---|
-| `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--email` `--no-update-check` `--offline` `--papers` |
-| `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--out` `--raw` `--report` |
+| `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--accept` `--email` `--no-update-check` `--offline` `--papers` `--project` |
+| `lane_briefs.py` | 2 | Render every search lane's brief from one lane spec, so no brief goes out incomplete. | `--spec` |
+| `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--no-preflight` `--out` `--raw` `--report` |
 | `verify.py` | 3 | Verify a list of citations against CrossRef, DataCite, arXiv, PMC and PubMed. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
 | `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--candidates` `--email` `--ingest` `--input` `--key` `--prepare` `--reason` `--reject` `--rows` |
-| `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--asof` `--audit` `--candidates` `--email` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
+| `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--asof` `--audit` `--candidates` `--email` `--hand-fixes` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
 | `sentence_case.py` | 3f | Post-canon pass: propose strict APA-7 sentence case for reference titles, for a human to review. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
 | `download.py` | 4 (opt-in) | Download open-access PDFs for a list of papers, only when the user asks for them. | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
 | `reconcile_downloads.py` | 4 (opt-in) | Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
@@ -56,9 +57,16 @@ each entry links to its section there.
   missing or rejected, or today's OpenAlex budget is short. For a key or budget
   problem, it prints three choices: get the API keys, cap the search, or be
   prepared to wait. It prints the update command but never installs anything.
+  It records the outcome in the project's `preflight.json`, which the merge
+  requires.
   For a build already under way, pass `--no-update-check`.
   See [§2.3](manual.md#23-phase-0-run-the-preflight-before-every-new-search).
-- **`merge_lanes.py`** (Phase 2c) never merges two rows on title and year alone.
+- **`lane_briefs.py`** does not let a brief go out incomplete: it refuses a spec with
+  a missing field, a repeated key or a seed that names an author, and a brief with any
+  placeholder left.
+- **`merge_lanes.py`** (Phase 2c) does not build a table before the preflight: it
+  refuses without a recent, cleared `preflight.json` (`--no-preflight "reason"`
+  overrides, and the reason is kept). It never merges two rows on title and year alone.
   They count as one paper only when the lanes' claimed authors and years agree
   and the rows carry no two different journal DOIs. Otherwise it keeps both rows
   and reports a possible pair.
@@ -101,7 +109,9 @@ each entry links to its section there.
 - **`references.py`** (canon) rebuilds a row only when its verify stamp is OK, or
   overridden, for its current ids. This refusal holds on every table, however old.
   A row it does not rebuild keeps its `apa`, is named, and makes the run exit 1.
-  So does a DOI that no registry has, or a fetch that fails twice.
+  So does a DOI that no registry has, or a fetch that fails twice. It re-applies
+  every fix in `hand_fixes.json` after it writes, and the audit fails a row whose fix
+  is gone (`hand-fix-lost`).
     - `--audit` is the gate: it exits 1 on any defect. On a gated table, an
       unacknowledged warning fails it too.
     - Its warnings (possible duplicates, suspect surnames, year conflicts,
@@ -128,14 +138,18 @@ each entry links to its section there.
   `--attach` or `--attach-only`. A re-run keeps an earlier count that its own lookup
   lost. An arXiv-only row is counted by its arXiv DOI; a row with neither gets none.
   See [§5.4](manual.md#54-phase-5b-citation-counts).
-- **`abstracts.py`** does not count a failed fetch as a missing abstract. It
+- **`abstracts.py`** does not take boilerplate, a citation line or an author list for
+  an abstract: it refuses the text and tries the next source. It does not count a
+  failed fetch as a missing abstract. It
   lists failures in `abstracts_failed.json`, and `summary_audit.py --prepare`
   refuses those rows. An entry is fetched again when the row's ids change. A
   hand-added entry (`"source": "landing-page"`) is never overwritten; when its
   ids no longer match the row, it is reported as stale. The run exits 1 on any
   failed fetch or stale entry.
   See [§5.5](manual.md#55-phase-5c-check-each-summary-against-its-abstract).
-- **`summary_audit.py`** does not judge a summary itself. It writes batches for
+- **`summary_audit.py`** does not judge a summary against an abstract that is not the
+  paper's: checkers answer "wrong-abstract", which fails the audit until the real one
+  is added. It does not judge a summary itself. It writes batches for
   checking agents with no web access, and `--ingest` binds each verdict to what
   that agent saw. It refuses a result when the summary, the row's ids or the
   abstract changed since `--prepare`. It also refuses one that does not echo its
@@ -157,8 +171,8 @@ each entry links to its section there.
   list could not be fetched, it exits 1 unless `--allow-incomplete`. Either way
   it writes `<out>.run.json` beside `--out`, which the candidate ledger reads.
   For an arXiv paper, or one whose CrossRef record has no reference list, it asks
-  Semantic Scholar. Because one `S2_API_KEY` serves xref, citations and
-  abstracts, run those three in sequence.
+  Semantic Scholar. xref, citations and abstracts share one `S2_API_KEY` and
+  take turns on it on their own, so they may run at the same time.
   See [§5.6](manual.md#56-phase-6-cross-citation-pass-and-the-candidate-ledger).
 - **`forward.py`** exits 1 when any landmark pull failed, unless
   `--allow-incomplete`, and writes the same run record. Because each pull is

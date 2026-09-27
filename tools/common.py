@@ -411,6 +411,75 @@ def load_optional_json(path, default):
     return load_json(path) if path and os.path.exists(path) else default
 
 
+# ---- hand fixes: post-canon corrections that survive every re-canon ----------
+HAND_FIXES = "hand_fixes.json"
+
+
+def load_hand_fixes(path):
+    """hand_fixes.json -> {ref: [{"old", "new", "why"}, ...]} ({} when absent).
+
+    A hand fix corrects what canon cannot: a registry deposit that splits a
+    compound surname, packs two authors into one, drops a subtitle, has no year.
+    Canon re-fetches on every run and would undo a fix typed into rows.json, so
+    fixes live in this file and every tool that rewrites `apa` re-applies them.
+    `old` is the damaged text canon produces ("" for an empty apa), `new` the
+    FINAL text (sentence case included), `why` the source that justifies it."""
+    fixes = load_optional_json(path, {})
+    if not isinstance(fixes, dict):
+        raise ValueError(f"{path} must map ref -> list of {{old, new, why}}")
+    out = {}
+    for ref, fs in fixes.items():
+        fs = [fs] if isinstance(fs, dict) else fs
+        if not isinstance(fs, list):
+            raise ValueError(f"{path}: {ref} must be a list of fixes")
+        for f in fs:
+            ok = isinstance(f, dict) and (f.get("new") or "").strip() and (f.get("why") or "").strip()
+            if not ok:
+                raise ValueError(f"{path}: every fix for {ref} needs `new` and `why` "
+                                 "(and `old`, the damaged text)")
+        out[ref] = fs
+    return out
+
+
+def apply_hand_fixes(rows, fixes, keyf=None):
+    """Re-apply every hand fix in place. Returns (applied refs, stale [(ref, new)]).
+
+    A fix already present is left alone; one present with only its case changed
+    (sentence case lowercased it) is restored to its exact text; otherwise its
+    `old` text is replaced. A fix whose `old` and `new` are both absent is stale:
+    the row changed underneath it, so it needs a human look."""
+    keyf = keyf or key_field(rows)
+    by = {r.get(keyf): r for r in rows}
+    applied, stale = [], []
+    for ref, fs in fixes.items():
+        r = by.get(ref)
+        if r is None:
+            stale.extend((ref, f["new"]) for f in fs)
+            continue
+        for f in fs:
+            apa, old, new = r.get("apa") or "", f.get("old") or "", f["new"]
+            if new in apa:
+                continue
+            i = apa.lower().find(new.lower())
+            if i >= 0:
+                r["apa"] = apa[:i] + new + apa[i + len(new):]
+            elif old and old in apa:
+                r["apa"] = apa.replace(old, new)
+            elif not old and not apa.strip():
+                r["apa"] = new
+            else:
+                stale.append((ref, new))
+                continue
+            applied.append(ref)
+    return applied, stale
+
+
+def lost_hand_fixes(row, fs):
+    """The fixes (from load_hand_fixes) whose final text the row's apa no longer holds."""
+    apa = (row.get("apa") or "").lower()
+    return [f for f in fs if f["new"].lower() not in apa]
+
+
 def _title_words(t):
     t = MARKUP.sub(" ", t or "").lower()
     return " ".join(re.sub(r"[^a-z0-9 ]", " ", t).split())
@@ -1324,10 +1393,51 @@ def arxiv_batch(ids, chunk=50, sleep=3.0):
 # Every S2 call goes through s2_request. The per-key limit is strict and its 429s
 # carry no Retry-After, so the toolkit paces itself: at least S2_MIN_INTERVAL
 # between requests, then S2_BACKOFF after a 429 or other transient failure.
+# The pace is shared ACROSS PROCESSES through a lock file holding the time of the
+# last request, because one key serves citations, abstracts and xref: run side by
+# side, each used to pace only itself and together they drew 429s (139 / 200 / 29
+# failures on one build). Now any number of S2 tools may run at once; their
+# requests simply take turns.
 S2_API = "https://api.semanticscholar.org/graph/v1/"
 S2_MIN_INTERVAL = 1.1
 S2_BACKOFF = (20, 40)
 _S2_LAST = [0.0]
+
+
+def _s2_lock_path():
+    import tempfile
+    return os.environ.get("LITREVIEW_S2_LOCK") or os.path.join(
+        tempfile.gettempdir(), f"litreview-s2-{os.getuid() if hasattr(os, 'getuid') else 'user'}.lock")
+
+
+def s2_wait_turn(interval=None):
+    """Sleep until S2_MIN_INTERVAL has passed since the last S2 request made by
+    ANY process on this machine, then record this request's time. Falls back to
+    per-process pacing where file locks are unavailable."""
+    interval = S2_MIN_INTERVAL if interval is None else interval
+    try:
+        import fcntl
+        with open(_s2_lock_path(), "a+") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            try:
+                fh.seek(0)
+                last = float((fh.read() or "0").strip() or 0)
+                wait = last + interval - time.time()
+                if wait > 0:
+                    time.sleep(min(wait, interval))
+                fh.seek(0)
+                fh.truncate()
+                fh.write(f"{time.time():.3f}")
+                fh.flush()
+            finally:
+                fcntl.flock(fh, fcntl.LOCK_UN)
+        return
+    except (ImportError, OSError, ValueError):
+        pass
+    wait = _S2_LAST[0] + interval - time.monotonic()
+    if wait > 0:
+        time.sleep(wait)
+    _S2_LAST[0] = time.monotonic()
 
 
 def s2_request(path, body=None):
@@ -1343,10 +1453,7 @@ def s2_request(path, body=None):
         hdrs["x-api-key"] = key
     data = json.dumps(body).encode() if body is not None else None
     for attempt in range(len(S2_BACKOFF) + 1):
-        wait = _S2_LAST[0] + S2_MIN_INTERVAL - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        _S2_LAST[0] = time.monotonic()
+        s2_wait_turn()
         try:
             return http_json(S2_API + path, retries=1, data=data, headers=hdrs)
         except Exception as e:
