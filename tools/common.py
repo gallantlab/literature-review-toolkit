@@ -23,6 +23,10 @@ Every tool imports this one module, so each guarantee lives in one place:
 
 Tools are run as `python3 tools/<tool>.py`, so `tools/` is on sys.path[0] and a
 plain `import common` resolves.
+
+The hot-papers repo imports this module too (it has no copy), through HDRS,
+http, http_json, load_json, dump_json, doi_of, arxiv_id_of, ARXIV_NS and ATOM.
+Run its tests before changing any of them.
 """
 import gzip
 import hashlib
