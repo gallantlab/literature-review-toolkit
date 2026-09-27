@@ -213,7 +213,59 @@ def s2_refs(dois, chunk=10, retry_wait=0):
     return out
 
 
-def fetch_all(papers, sleep=0.4, retry_wait=60.0):
+OA_WORKS = "https://api.openalex.org/works"
+
+
+def openalex_refs(dois, email=""):
+    """{doi: refs} for the DOIs OpenAlex holds a non-empty reference list for.
+
+    OpenAlex answers 50 DOIs per filter request (1 credit) and lists each work's
+    references as OpenAlex ids, which a second batch of filter requests turns into
+    DOIs and titles. It is tried before Semantic Scholar because it is not rate-
+    limited like S2: on gallant_lab_v2 it held reference lists for 26 of 50 papers
+    S2 kept throttling. A paper it has no list for is left to Semantic Scholar;
+    a failed batch leaves its papers to S2 too. OpenAlexBudgetError propagates."""
+    def batches(xs, n=50):
+        return [xs[i:i + n] for i in range(0, len(xs), n)]
+    mail = f"&mailto={urllib.parse.quote(email)}" if email else ""
+    ids_of = {}
+    for chunk in batches(sorted({d.lower() for d in dois})):
+        filt = "doi:" + "|".join(chunk)
+        try:
+            res = http_json(f"{OA_WORKS}?filter={urllib.parse.quote(filt, safe=':|/.')}"
+                                   f"&per-page=100&select=doi,referenced_works{mail}").get("results", [])
+        except common.OpenAlexBudgetError:
+            raise
+        except Exception as e:
+            print(f"  OpenAlex references batch failed ({type(e).__name__}); left to S2", file=sys.stderr)
+            continue
+        for w in res:
+            d = (w.get("doi") or "").lower().replace("https://doi.org/", "")
+            refs = [r.rsplit("/", 1)[-1] for r in (w.get("referenced_works") or [])]
+            if d and refs:
+                ids_of[d] = refs
+    meta = {}
+    for chunk in batches(sorted({r for refs in ids_of.values() for r in refs})):
+        try:
+            res = http_json(f"{OA_WORKS}?filter=openalex_id:{'|'.join(chunk)}&per-page=100"
+                                   f"&select=id,doi,display_name,publication_year{mail}").get("results", [])
+        except common.OpenAlexBudgetError:
+            raise
+        except Exception as e:
+            print(f"  OpenAlex reference-metadata batch failed ({type(e).__name__})", file=sys.stderr)
+            continue
+        for w in res:
+            meta[(w.get("id") or "").rsplit("/", 1)[-1]] = w
+    out = {}
+    for d, refs in ids_of.items():
+        out[d] = [{"doi": ((meta.get(r) or {}).get("doi") or "").lower().replace("https://doi.org/", ""),
+                   "author": "", "year": str((meta.get(r) or {}).get("publication_year") or ""),
+                   "title": (meta.get(r) or {}).get("display_name") or "", "journal": "", "raw": ""}
+                  for r in refs]
+    return out
+
+
+def fetch_all(papers, sleep=0.4, retry_wait=60.0, email=""):
     """Reference lists for every paper -> ({slug: refs}, [slugs still incomplete]).
 
     CrossRef first for journal DOIs (one more try after `retry_wait` for an
@@ -250,6 +302,15 @@ def fetch_all(papers, sleep=0.4, retry_wait=60.0):
             all_refs[p["slug"]] = refs or []
             time.sleep(sleep)
         incomplete = still
+    if to_s2:
+        # OpenAlex first (batched, not rate-limited like S2), Semantic Scholar for the rest
+        oa = openalex_refs([p["doi"] for p in to_s2], email)
+        for p in to_s2:
+            refs = oa.get(p["doi"].lower())
+            if refs:
+                all_refs[p["slug"]] = refs
+                print(f"  {p['slug']:50s} {len(refs):>4d} refs (openalex)", file=sys.stderr)
+        to_s2 = [p for p in to_s2 if not oa.get(p["doi"].lower())]
     if to_s2:
         got = s2_refs([p["doi"] for p in to_s2], retry_wait=retry_wait)
         for p in to_s2:
@@ -337,7 +398,7 @@ def main():
     todo, all_refs = split_cached(papers, cache)
     print(f"Fetching reference lists for {len(todo)} papers ({len(papers) - len(todo)} from the cache "
           f"{os.path.basename(cache_path)})...", file=sys.stderr)
-    fetched, incomplete = fetch_all(todo, sleep=args.sleep, retry_wait=args.retry_wait)
+    fetched, incomplete = fetch_all(todo, sleep=args.sleep, retry_wait=args.retry_wait, email=args.email)
     all_refs.update(fetched)
     for p in todo:
         if p["slug"] not in incomplete:

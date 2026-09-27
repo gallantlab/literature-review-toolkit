@@ -1675,18 +1675,43 @@ with _patched(common, s2_request=_s2_batch_stub([
 check("s2_refs pages a list longer than the batch returned",
       [r["doi"] for r in _got["10.1/long"]], ["10.1/r1", "10.1/r2", "10.1/r3"])
 _asked = []
-with _patched(xref, http_json=_no_network, s2_refs=lambda dois, **kw: (_asked.extend(dois), {d: [] for d in dois})[1]), \
+with _patched(xref, http_json=_no_network, openalex_refs=lambda dois, email="": {},
+              s2_refs=lambda dois, **kw: (_asked.extend(dois), {d: [] for d in dois})[1]), \
         _sleeps() as _sl:
     _refs, _inc = xref.fetch_all([{"slug": "A", "doi": "10.48550/arXiv.2301.00001"}], sleep=0.4, retry_wait=0)
 check("xref sends an arXiv DOI to S2, never CrossRef, with no per-paper sleep",
       (_asked, _refs["A"], _inc, _sl), (["10.48550/arXiv.2301.00001"], [], [], []))
-with _patched(xref, crossref_refs=lambda d: [],
+with _patched(xref, crossref_refs=lambda d: [], openalex_refs=lambda dois, email="": {},
               s2_refs=lambda dois, **kw: {d: [{"doi": "10.1/z"}] for d in dois}), _sleeps():
     _refs, _inc = xref.fetch_all([{"slug": "J", "doi": "10.1/j"}], sleep=0, retry_wait=0)
 check("an empty CrossRef list falls back to S2", _refs["J"], [{"doi": "10.1/z"}])
-with _patched(xref, s2_refs=lambda dois, **kw: {d: None for d in dois}), _sleeps():
+with _patched(xref, openalex_refs=lambda dois, email="": {}, s2_refs=lambda dois, **kw: {d: None for d in dois}), \
+        _sleeps():
     _refs, _inc = xref.fetch_all([{"slug": "A", "doi": "10.48550/arXiv.2301.00001"}], sleep=0, retry_wait=0)
 check("an S2 failure is incomplete, not 'cites nothing'", _inc, ["A"])
+# OpenAlex reference lists come before Semantic Scholar; S2 gets only what OpenAlex lacks
+_s2_asked = []
+with _patched(xref, crossref_refs=lambda d: [],
+              openalex_refs=lambda dois, email="": {"10.1/oa": [{"doi": "10.1/cited"}]},
+              s2_refs=lambda dois, **kw: (_s2_asked.extend(dois), {d: [] for d in dois})[1]), _sleeps():
+    _refs, _inc = xref.fetch_all([{"slug": "O", "doi": "10.1/oa"}, {"slug": "P", "doi": "10.1/none"}],
+                                 sleep=0, retry_wait=0)
+check("xref: OpenAlex supplies a list CrossRef lacks, and only the rest go to S2",
+      (_refs["O"], _s2_asked), ([{"doi": "10.1/cited"}], ["10.1/none"]))
+
+
+def _oa_fake(url, *a, **k):
+    if "referenced_works" in url:
+        return {"results": [{"doi": "https://doi.org/10.1/oa", "referenced_works": ["https://openalex.org/W1"]},
+                            {"doi": "https://doi.org/10.1/empty", "referenced_works": []}]}
+    return {"results": [{"id": "https://openalex.org/W1", "doi": "https://doi.org/10.9/C", "display_name": "Cited",
+                         "publication_year": 1999}]}
+
+
+with _patched(xref, http_json=_oa_fake):
+    _oar = xref.openalex_refs(["10.1/OA", "10.1/empty"])
+check("openalex_refs: turns referenced ids into DOIs and titles; an empty list is left for S2",
+      _oar, {"10.1/oa": [{"doi": "10.9/c", "author": "", "year": "1999", "title": "Cited", "journal": "", "raw": ""}]})
 
 _calls = []
 
@@ -3704,7 +3729,7 @@ sys.argv = ["xref.py", "--rows", _mrp, "--out", os.path.join(os.path.dirname(_mr
             "--email", "t@example.org"]
 _merr = io.StringIO()
 try:
-    with _patched(xref, fetch_all=lambda papers, sleep=0.4, retry_wait=60.0: (
+    with _patched(xref, fetch_all=lambda papers, sleep=0.4, retry_wait=60.0, **kw: (
             {"Z1": [{"doi": "10.1/c"}], "Z2": []}, [])), _ctx.redirect_stderr(_merr):
         xref.main()
 except SystemExit:
@@ -4083,7 +4108,7 @@ def _t4x_run(incomplete, *extra):
     argv = sys.argv
     sys.argv = ["xref.py", "--rows", _t4xrp, "--out", _t4xout, "--email", "t@example.org", *extra]
     try:
-        with _patched(xref, fetch_all=lambda papers, sleep=0.4, retry_wait=60.0:
+        with _patched(xref, fetch_all=lambda papers, sleep=0.4, retry_wait=60.0, **kw:
                        ({"Z1": [], "Z2": []}, incomplete)), \
                 _ctx.redirect_stdout(io.StringIO()), _ctx.redirect_stderr(io.StringIO()):
             xref.main()
