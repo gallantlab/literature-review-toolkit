@@ -1016,6 +1016,27 @@ def build_apa(people, year, title, journal, vol=None, issue=None, pages=None):
     return MARKUP.sub("", s).translate(UNI_HYPHEN)
 
 
+# CrossRef types for a whole book: APA-7 prints `Title. Publisher.`
+BOOK_TYPES = {"book", "monograph", "edited-book", "reference-book"}
+
+
+def clean_publisher(p):
+    """A publisher name without the city some deposits glue onto it
+    ("Oxford University PressOxford" -> "Oxford University Press")."""
+    p = re.sub(r"\s+", " ", p or "").strip().rstrip(".")
+    return re.sub(r"(?<=Press)(?:[A-Z][a-z]+)(?: [A-Z][a-z]+)*$", "", p).strip()
+
+
+def build_book_apa(people, year, title, publisher):
+    """APA-7 whole book: `Authors (Year). Title. Publisher.`"""
+    import html
+    t = norm_title(title).rstrip(".")
+    s = f"{join_authors(people)} ({year}). {t}" + ("" if t.endswith(("?", "!")) else ".")
+    s += f" {clean_publisher(publisher)}."
+    s = html.unescape(re.sub(r"\s+", " ", s).strip())
+    return MARKUP.sub("", s).translate(UNI_HYPHEN)
+
+
 def build_chapter_apa(people, year, title, book, pages=None, publisher=None):
     """APA-7 chapter in an edited book: `... Title. In Book (pp. x-y). Publisher.`
     CrossRef deposits no editors for most chapters, so none are printed."""
@@ -1125,6 +1146,7 @@ def crossref_record(msg, fallback_venue=""):
             "first_author_unsplit": bool(authors) and (not giv.strip() or not first_has_family),
             "volume": msg.get("volume"), "issue": msg.get("issue"), "pages": msg.get("page"),
             "book": book, "publisher": msg.get("publisher") or "",
+            "whole_book": msg.get("type") in BOOK_TYPES,
             # a preprint's published version, as the preprint server deposits it
             "published_as": next((str(x.get("id") or "").lower() for x in
                                   (msg.get("relation") or {}).get("is-preprint-of") or []

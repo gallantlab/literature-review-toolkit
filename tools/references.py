@@ -156,7 +156,10 @@ PHASE = "3f"   # pipeline phase, read by tools/gen_docs.py for the tool index
 # Both readers live in common (crossref_record / arxiv_entries) and are shared
 # with verify.py and xref.py; this file only turns a record into an APA string.
 def crossref_apa(r):
-    """APA string for one crossref_record(): a chapter names its book, not its series."""
+    """APA string for one crossref_record(): a chapter names its book, not its
+    series; a whole book names its publisher."""
+    if r.get("whole_book") and r.get("publisher") and not r.get("journal"):
+        return common.build_book_apa(r["people"], r["year"], r["title"], r["publisher"])
     if r.get("book"):
         return common.build_chapter_apa(r["people"], r["year"], r["title"], r["book"],
                                         r["pages"], r.get("publisher"))
@@ -172,7 +175,10 @@ def crossref(doi, fallback_venue=""):
     r = common.crossref_work(doi, fallback_venue)
     if not r or not r["people"]:
         return None
-    out = {"apa": crossref_apa(r), "venue": r["book"] or r["journal"], "source": "crossref"}
+    venue = r["book"] or r["journal"]
+    if not venue and r.get("whole_book"):
+        venue = common.clean_publisher(r["publisher"])
+    out = {"apa": crossref_apa(r), "venue": venue, "source": "crossref"}
     if r.get("published_as"):
         out["warn"] = ["published-version"]
         out["warn_text"] = {"published-version": (

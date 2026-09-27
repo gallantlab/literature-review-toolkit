@@ -5661,6 +5661,20 @@ check("sentence_case: the pronoun I stays capital", _sc.sentence_case("Where Am 
 check("sentence_case: MATLAB keeps its case", _sc.sentence_case("A Matlab Toolbox", set(_sc.PROPER), []),
       "A Matlab toolbox")
 
+
+check("candidates: a row moved to its published version still holds its preprint",
+      "10.1101/pre" in candidates.corpus_dois([{"doi": "10.1038/pub", "preprint_doi": "10.1101/pre"}]), True)
+# A whole book from CrossRef prints its publisher, without a glued-on city.
+_bk = {"type": "edited-book", "publisher": "Oxford University PressOxford",
+       "title": ["Computational Neuroscience of Vision"], "container-title": [],
+       "author": [{"family": "Rolls", "given": "Edmund"}, {"family": "Deco", "given": "Gustavo"}],
+       "issued": {"date-parts": [[2001, 11, 1]]}}
+check("canon: a whole book is Title. Publisher.", references.crossref_apa(common.crossref_record(_bk)),
+      "Rolls, E., & Deco, G. (2001). Computational Neuroscience of Vision. Oxford University Press.")
+check("clean_publisher: a glued city is dropped, a plain name kept",
+      (common.clean_publisher("Oxford University PressOxford"), common.clean_publisher("MIT Press")),
+      ("Oxford University Press", "MIT Press"))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

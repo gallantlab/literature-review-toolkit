@@ -106,13 +106,16 @@ def validate_ledger(ledger):
 
 
 def corpus_dois(rows):
-    """Every row's DOI, lowercased; an arXiv-only row counts by its arXiv DOI."""
+    """Every row's DOI, lowercased; an arXiv-only row counts by its arXiv DOI, and
+    a row moved to its published version (references.py --adopt-published) also
+    by its preprint_doi."""
     out = set()
     for r in rows:
         aid = common.arxiv_id_of(r)
         d = common.doi_of(r) or (f"10.48550/arXiv.{common.norm_arxiv(aid)}" if aid else "")
-        if d:
-            out.add(_doi(d))
+        for x in (d, r.get("preprint_doi")):
+            if x:
+                out.add(_doi(x))
     return out
 
 
