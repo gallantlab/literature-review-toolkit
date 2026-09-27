@@ -4966,6 +4966,15 @@ check("... and drops one the table now holds or the ledger lists",
 check("no merge report, no lane exclusions", spreadsheet.lane_exclusions(os.path.join(_dx, "none.json"), []), [])
 
 
+# ---- missing-space: notation in parentheses is not stripped markup (2026-09-26) ----
+check_true("a comma inside Factor(U,T) is not a missing space",
+           not any(d.startswith("missing-space") for d in references.audit(
+               "Lip, E. L. C., & Zhu, K. (2025). Factor(U,T): Controlling untrusted AI by monitoring their plans. arXiv.", True)[0]))
+check_true("a comma glued outside parentheses still is",
+           any(d.startswith("missing-space") for d in references.audit(
+               "Doe, J. (2001). Neurons of the marine mollusc,Tritonia diomedea. Journal of Things, 1, 1-2.", True)[0]))
+
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

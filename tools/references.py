@@ -266,7 +266,9 @@ def audit(apa, has_source):
         defects.append("double-terminal-punctuation (a title ending in ? or ! takes no period)")
     if parts:
         t = parts["title"]
-        if re.search(r"[,;](?=[A-Za-z])", t):
+        # a comma inside a spaceless parenthesized/bracketed term is notation, not
+        # stripped markup ("Factor(U,T)", "[0,1]", "f(x,y)")
+        if re.search(r"[,;](?=[A-Za-z])", re.sub(r"[(\[][^\s()\[\]]*[)\]]", "", t)):
             # a comma or semicolon with no space after it: CrossRef's JATS markup
             # was stripped without a separator ("marine mollusc,Tritonia")
             defects.append("missing-space (punctuation glued to the next word)")
