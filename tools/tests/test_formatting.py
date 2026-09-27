@@ -5652,6 +5652,15 @@ check("verify: a moved row's claim year may precede the published year",
       (verify._year_issue({"expect_year": "2024", "published_later": True}, [{"year": "2026"}]),
        bool(verify._year_issue({"expect_year": "2024"}, [{"year": "2026"}]))), ([], True))
 
+
+# sentence case keeps the pronoun I and software names.
+import sentence_case as _sc  # noqa: E402
+
+check("sentence_case: the pronoun I stays capital", _sc.sentence_case("Where Am I Now", set(_sc.PROPER), []),
+      "Where am I now")
+check("sentence_case: MATLAB keeps its case", _sc.sentence_case("A Matlab Toolbox", set(_sc.PROPER), []),
+      "A Matlab toolbox")
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

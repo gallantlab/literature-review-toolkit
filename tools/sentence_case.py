@@ -54,8 +54,11 @@ import common
 
 PHASE = "3f"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
-# Proper in any corpus: eponyms, peoples/places, calendar terms.
+# Proper in any corpus: the pronoun I, eponyms, peoples/places, calendar terms,
+# software names.
 PROPER = {
+    "I", "I'm", "I've",
+    "MATLAB", "Matlab", "Python",
     "Bayesian", "Markov", "Gaussian", "Fourier", "Laplacian", "Hilbert",
     "Granger", "Hebbian", "Bonferroni", "Poisson", "Boltzmann", "Euclidean",
     "Riemannian", "Kolmogorov", "Shannon", "Lempel-Ziv", "Monte", "Carlo",
