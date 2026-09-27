@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Multi-source PDF downloader (Phase 4 — OPT-IN, not run by default).
+"""Download open-access PDFs for a list of papers, only when the user asks for them.
 
-The default review workflow does not download PDFs (see PLAYBOOK.md). Run
-this tool only when the user has explicitly asked for PDF acquisition. A
-dedicated replacement is planned; treat this as legacy that still works.
+Phase 4 is opt-in: the default workflow does not download PDFs (see PLAYBOOK.md). Run this tool only
+when the user has asked for PDF acquisition. A dedicated replacement is planned;
+until then, this legacy tool still works.
 
-Tries: arxiv direct -> Unpaywall (non-PMC URLs first) -> EuropePMC.
-Validates that downloaded bytes start with %PDF.
-Writes a manual-followup list for failures.
+For each paper it tries arXiv, then Unpaywall (non-PMC URLs first), then
+EuropePMC. It keeps a file only if its bytes start with %PDF, and it skips hosts
+that block scripts (PMC, bioRxiv, medRxiv, PNAS, OUP, MIT Press, ScienceDirect,
+Wiley, Cell). A PDF already in --out-dir is kept. With --manual-list, the papers
+it could not fetch are appended to that file with their DOI, PMC and arXiv links,
+for download by hand.
 
 Input format (JSON list):
 [
@@ -18,8 +21,8 @@ Input format (JSON list):
   ...
 ]
 
-Run:  python3 download.py --papers list.json --out-dir papers/topic_X/ \
-                          --email you@example.edu
+  python3 tools/download.py --papers list.json --out-dir papers/topic_X/ \\
+          --email you@inst.edu --manual-list papers/topic_X/_needs_manual.txt
 """
 import argparse
 import json
@@ -122,10 +125,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--papers", required=True, help="JSON list file")
     ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--email", required=True, help="contact email for Unpaywall")
+    ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"),
+                    help="contact email for Unpaywall (default: LITREVIEW_EMAIL)")
     ap.add_argument("--manual-list", default=None, help="path for failures list")
     ap.add_argument("--sleep", type=float, default=0.4)
     args = ap.parse_args()
+    if not args.email:
+        ap.error("--email or LITREVIEW_EMAIL required (Unpaywall asks for a contact email)")
 
     os.makedirs(args.out_dir, exist_ok=True)
     papers = common.load_json(args.papers)

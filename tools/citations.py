@@ -1,27 +1,36 @@
 #!/usr/bin/env python3
-"""Fetch citation counts for a bibliography from OpenAlex + Semantic Scholar.
+"""Fetch citation counts for every row from OpenAlex and Semantic Scholar.
 
-WHY NOT GOOGLE SCHOLAR: Google Scholar has no public API and CAPTCHA-blocks
-automated queries after a handful of requests, so it cannot be queried for a
-whole bibliography. OpenAlex and Semantic Scholar are the queryable proxies.
-OpenAlex is the primary source (free, no key, reliable, near-complete coverage
-by DOI). Semantic Scholar is a useful secondary (often higher for CS/AI venues,
-and gives an "influential citations" sub-count) but its free endpoints
-rate-limit hard (429/400) from shared IPs — treat it as best-effort and set a
-key in S2_API_KEY to make it reliable.
+Google Scholar has no public API and blocks automated queries after a few
+requests, so it cannot be queried for a whole bibliography. OpenAlex and Semantic
+Scholar are the queryable proxies.
 
-INPUT: a JSON list of rows. Each row needs a stable key (default: "ref" else
-"label") and a DOI, taken from a "doi" field or parsed from a "link" that is a
-https://doi.org/... URL. arXiv DOIs (10.48550/arXiv.<id>) are auto-mapped to
-the arXiv id for the Semantic Scholar lookup.
+OpenAlex is the primary source, with near-complete coverage by DOI. Without
+OPENALEX_API_KEY, every client on the same IP address shares one daily budget,
+and a spent budget stops the run with OpenAlexBudgetError (run preflight.py
+first). Semantic Scholar is the secondary source. It often counts higher for
+CS/AI venues and adds an "influential citations" count, but it throttles hard
+without S2_API_KEY, so treat its column as best-effort. Because one S2_API_KEY
+serves xref, citations and abstracts, run those tools in sequence, not in
+parallel.
+
+INPUT: a JSON list of rows. Each row needs a key (default: "ref", else "label")
+and a DOI, from a "doi" field or a https://doi.org/... "link"; a row without one
+gets empty counts. arXiv DOIs (10.48550/arXiv.<id>) are looked up in Semantic
+Scholar by arXiv id.
 
 OUTPUT: {key: {"openalex": int|None, "s2": int|None, "s2_influential": int|None,
-               "asof": "YYYY-MM-DD"}}  -> attach to rows before spreadsheet.py.
+               "asof": "YYYY-MM-DD"}}
+To show the counts in the spreadsheet, attach them to the rows with
+common.attach_counts (as cite_openalex and cite_s2), then rebuild it.
 
-  python3 tools/citations.py --rows rows.json --out citation_counts.json \
+  python3 tools/citations.py --rows rows.json --out citation_counts.json \\
           --email you@inst.edu
 
-Counts are a snapshot at run time; re-run to refresh. See PLAYBOOK Phase 5b.
+OpenAlex's batch filter sometimes returns a low-count duplicate record. So the
+tool keeps the highest count per DOI, retries each miss by single-work lookup,
+and re-queries a count far below Semantic Scholar's. Counts are a snapshot at run
+time; re-run to refresh. See PLAYBOOK Phase 5b.
 """
 import argparse
 import datetime

@@ -1,33 +1,43 @@
 #!/usr/bin/env python3
-"""Verify a list of citations against PMC / PubMed / CrossRef / DataCite / arXiv.
+"""Verify a list of citations against CrossRef, DataCite, arXiv, PMC and PubMed.
 
-Reports one verdict per citation: OK, MISMATCH (author/year/title), NOT-FOUND,
-ERROR, or UNCHECKED (the row carried no claim to check, so a resolving DOI proves
-nothing). NOT-FOUND and ERROR are kept strictly separate: NOT-FOUND means every
-lookup completed and none matched (chase it down — likely fabricated); ERROR
-means a lookup could not complete (rate-limit / network) and must be re-run.
-Collapsing the two — as an earlier version did by swallowing exceptions into
-NOT-FOUND — can drop a real paper on a transient throttle. Never add a NOT-FOUND
-without chasing it, and always re-run an ERROR.
+Reports one verdict per citation:
+  OK          the record agrees with the claim
+  MISMATCH    the record disagrees on first author, year or title, or the DOI
+              does not resolve
+  NOT-FOUND   every lookup completed and none matched: chase it down, since it
+              is likely fabricated
+  ERROR       a lookup could not complete (rate limit, network): re-run it
+  UNCHECKED   the row carried no claim to check, so a resolving DOI shows only
+              that the DOI exists
+NOT-FOUND and ERROR are kept strictly apart. An earlier version swallowed
+exceptions into NOT-FOUND, which can drop a real paper on a transient throttle.
+Never drop a NOT-FOUND without chasing it, and always re-run an ERROR.
 
-Exit status: 0 only when every verdict is OK; 1 otherwise — the same fail-loud
-contract as references.py --audit and cite_check.py, so a chained Phase-3 run
-stops on the first table that needs attention.
+Exit status: 0 only when every verdict is OK; 1 otherwise. references.py --audit
+and cite_check.py fail the same way, so a chained Phase 3 run stops at the first
+table that needs attention.
 
-arXiv/conference papers are a verification BLIND SPOT for PMC/PubMed/CrossRef:
-an arXiv DOI (10.48550/arXiv.<id>) is not in CrossRef, and a PubMed title-search
-returns a plausible-but-wrong paper — so they come back NOT-FOUND or a garbage
-MISMATCH, which reads as "skip" and lets a whole class of papers (AI/ML venues,
-preprints) dodge the check. So this tool resolves arXiv DOIs and bare `arxiv`
-ids directly against the arXiv API, prefetched in BATCHES (the API takes many
-ids per `id_list` call and rate-limits a per-paper loop into a ban).
+Lookups. arXiv papers (an `arxiv` id, or a 10.48550/arXiv.<id> DOI) are a blind
+spot for the other sources: CrossRef has no arXiv DOIs, and a PubMed title search
+returns a plausible but wrong paper. So they go to the arXiv API, prefetched in
+BATCHES, because the API takes many ids per call and bans a per-paper loop. A
+journal DOI is verified only by its own record, and a row with both ids is
+checked against both. A DOI missing from CrossRef is not necessarily fake:
+Zenodo, figshare, OSF and Dryad register software, data-set and some preprint
+deposits with DataCite. So a clean CrossRef 404 is followed by a DataCite lookup,
+and resolving there counts the same as resolving in CrossRef. PMC, PubMed and a
+PubMed title search are fallbacks. They can verify a citation with no journal
+DOI, but they never stand in for a DOI: when a DOI resolves in neither registry,
+a fallback hit makes the verdict MISMATCH ("DOI does not resolve"), and no hit
+makes it NOT-FOUND.
 
-A DOI missing from CrossRef is not necessarily fake: Zenodo, figshare, OSF and
-Dryad software/data-set (and some preprint) deposits are registered with
-DataCite instead, so a clean CrossRef 404 is followed by a DataCite lookup
-before the DOI is called MISMATCH. A DOI missing from BOTH registries is still
-the existing "DOI does not resolve" — DataCite resolving it counts the same as
-CrossRef resolving it.
+First author. Surnames are compared, not initials. A record's first author is
+trusted only when the registry deposited it structured (family + given name);
+otherwise the verdict is MISMATCH with "confirm by hand". An ambiguous claim
+("Hao CHEN") gets the same, and an unreadable name on either side ("?", "anon")
+never matches. The year may differ by one from any record, and the title must
+agree both ways (common.title_agrees).
 
 Input format (JSON list of dicts):
 [
@@ -36,29 +46,37 @@ Input format (JSON list of dicts):
    "pmid":  "37127759",           # optional
    "doi":   "10.1038/s41593-...", # optional (incl. arXiv DOIs 10.48550/arXiv.X)
    "arxiv": "2305.18274",         # optional; bare arXiv id (else parsed from doi)
-   "title": "Semantic reconstruction ...",  # optional, used as fallback search
+   "title": "Semantic reconstruction ...",  # optional; checked, and the title-search fallback
    "expect_first_author": "Tang J",  # optional; as reported (any shape), checked by surname
    "expect_year": "2023"             # optional; if given, will be checked
   },
   ...
 ]
 
-Run:  python3 verify.py < input.json > report.json
-Or:   python3 verify.py --citations input.json --out report.json
-Or:   python3 verify.py --rows rows.json --out report.json    # straight from the live table
+  python3 tools/verify.py < input.json > report.json
+  python3 tools/verify.py --citations input.json --out report.json
+  python3 tools/verify.py --rows rows.json --out report.json    # straight from the live table
 
-With --rows the citation list is derived from rows.json (rows_to_citations):
-label = the row key, doi from `doi`/`link`, and the expected first author, year
-and title from the SEARCH AGENT's claim (`search_author` / `search_year` /
-`search_title`), and once the row is canonical from its `apa` as well (both must
-agree with the record) — so a project needs no converter script, and a
-pre-canon table is not verified against its own empty `apa`.
+With --rows, the citation list is built from rows.json (rows_to_citations):
+label = the row key, the DOI from `doi` or `link`, and the expected first author,
+year and title from the SEARCH AGENT's claim (`search_author` / `search_year` /
+`search_title`). Once a row is canonical, its `apa` must agree with the record as
+well. So a project needs no converter script, and a pre-canon table is not
+verified against its own empty `apa`. A canonical row with no claim is checked
+against its apa alone, and the audit then asks a human to confirm it
+(identity-not-reestablished).
+
+--rows also writes each verdict onto its row as `verified` (every verdict, not
+only OK, bound to the row's DOI and arXiv id), unless --no-stamp. references.py
+rebuilds only rows with an OK stamp for their current ids. To clear a false alarm
+(e.g. a preprint retitled on publication), record why; this needs no network:
+  python3 tools/verify.py --rows rows.json --override A-07 --reason "retitled on publication"
 
 A lookup that fails transiently is retried once more at the end of the run,
 after a cool-down (--retry-wait). To re-check a few rows later:
-      python3 verify.py --rows rows.json --retry-from report.json --out report.json
-re-verifies only the rows that were not OK and splices them back into the report
-(--only A-01,B-02 names rows explicitly).
+  python3 tools/verify.py --rows rows.json --retry-from report.json --out report.json
+This re-verifies only the rows that were not OK and splices them back into the
+report (--only A-01,B-02 names rows explicitly).
 """
 import argparse
 import datetime

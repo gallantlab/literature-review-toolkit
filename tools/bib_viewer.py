@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
-"""Render the searchable bibliography viewer every review page embeds.
+"""Render a searchable bibliography of the whole corpus, for a page that has no timeline.
 
-A written review is built from the corpus's abstract-derived summaries, so the
-reader must be able to get from a claim in the prose to the summary that produced
-it without leaving the page. That is what this block is for: the WHOLE corpus —
-including the references the review never cites, because which papers went uncited
-is itself evidence about the review's scope — grouped by theoretical family, with a
-live search box, a "cited in this review only" filter, and a chip on each cited
-entry linking back to its numbered works-cited entry.
+A review page does not use it: the review embeds the interactive timeline, which
+already carries every paper's reference, summary and counts, so a second browser
+beside it would be duplication. Use this viewer for a corpus with no review
+attached, or wherever the references are wanted as text rather than as a plot.
+It lets a reader get from a claim to the summary behind it. It lists the WHOLE corpus, grouped by theoretical
+family, including the references the review never cites: which papers went
+uncited is itself evidence about the review's scope. It has a live search box, a
+"cited in this review only" filter, and a chip on each cited entry that links to
+its numbered works-cited entry.
 
-It can also carry a provenance note naming who wrote the summaries and saying they
-come from abstracts rather than full texts. Pass provenance=False from a review page,
-whose masthead already carries that disclosure — a model-written review states its
-authorship ONCE — and leave it on for a viewer that ships standalone.
+The viewer can carry a provenance note that names who wrote the summaries and
+says they come from abstracts, not full texts. A model-written review states its
+authorship once. So pass provenance=False from a review page whose masthead
+already carries that disclosure, and leave it on for a standalone viewer.
 
-Use it from a project's `build_review_page.py`:
+To embed it, call it from a project's `build_review_page.py`:
 
     import bib_viewer
     block = bib_viewer.render(rows, spec=common.load_json("families.json"),
@@ -23,18 +25,22 @@ Use it from a project's `build_review_page.py`:
                               author_note="An artificial intelligence developed by Anthropic")
     ... page CSS += bib_viewer.CSS ... page body += block ... page JS += bib_viewer.JS
 
-`render` returns only the block, so the host page owns its own <section>, heading and
-design tokens. The CSS is written against the token names every page in this toolkit
-already defines (--panel, --sunk, --band, --ink, --ink-2, --muted, --rule, --rule-2,
---accent, --accent-ink, --accent-soft, --f1..--f6, --display, --body, --data).
+`render` returns only the block, so the host page owns its <section>, heading and
+design tokens. The CSS uses the token names every page in this toolkit defines
+(--panel, --sunk, --band, --ink, --ink-2, --muted, --rule, --rule-2, --accent,
+--accent-ink, --accent-soft, --f1..--f6, --display, --body, --data).
 
-Standalone, it writes a complete viewer page for a corpus with no review attached:
+For a corpus with no review attached, it writes a complete viewer page:
 
     python3 tools/bib_viewer.py --rows rows.json --families families.json \\
-            --out corpus_viewer.html --title "Cortical layers"
+            --out corpus_viewer.html --title "Cortical layers" \\
+            --author "<model>" --author-note "<what the model is>"
 
-Verify the filter by EXECUTING it, never by reading it: `verify_bib_filter.mjs`
-runs this module's own JS against a stub DOM built from the rendered entries.
+Without --author the page carries no provenance note, and the tool warns.
+
+Check the filter by running it, never by reading it: a project's
+`verify_bib_filter.mjs` runs this module's JS against a stub DOM built from the
+rendered entries. The toolkit does not ship that script.
 """
 import argparse
 import html
@@ -44,7 +50,7 @@ import common
 
 PHASE = "7"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
-# Family colour classes, in the order families.json lists them. Matches the
+# Family color classes, in the order families.json lists them. Matches the
 # report page's palette so a project's pages read as one system.
 FAM_CLASSES = ["f1", "f2", "f3", "f4", "f5", "f6"]
 
@@ -113,7 +119,7 @@ def _year(row):
 def entry(row, cited_n=None, anchor="#ref-{n}"):
     """One <li> for one reference: id, canonical APA, DOI, summary, meta line.
 
-    The cited chip is labelled `ref N`, NOT `cited N`: the meta line beside it
+    The cited chip is labeled `ref N`, NOT `cited N`: the meta line beside it
     already carries an OpenAlex "N cites" count, and two senses of "cite" touching
     reads as one number."""
     apa = E(row.get("apa", ""))
@@ -147,7 +153,7 @@ def render(rows, spec=None, cited=None, author="", author_note="",
     """The viewer block: provenance note, toolbar, and the grouped reference list.
 
     rows      — the corpus, every row of it (not only the cited ones)
-    spec      — families.json, to group and colour by theoretical family
+    spec      — families.json, to group and color by theoretical family
     cited     — {ref id: citation number}; enables the chips and the cited-only filter
     author/author_note — who wrote the summaries, named in the provenance note
     anchor    — format string for a cited chip's target, "{n}" is the citation number

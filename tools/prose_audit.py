@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
-"""Phase 7 — measure a review's prose and prove a revision pass lost no citation.
+"""Measure a review's prose, and check that a revision pass lost no citation.
 
 A model-written review is rarely wrong and often unreadable. The recurring defect
-is not fancy words, it is compression: four or five findings chained through
+is compression, not fancy words: four or five findings chained through
 semicolons into one 60-120 word sentence, each with its own citation. The prose
-is accurate, and nobody can follow it. That is invisible to `cite_check.py`,
-which asks only whether the citations resolve.
+is accurate, and nobody can follow it. cite_check.py cannot see this, because it
+asks only whether the citations resolve.
 
-  python3 tools/prose_audit.py --page build_review_page.py
-  python3 tools/prose_audit.py --content content.json
+  python3 tools/prose_audit.py --page build_review_page.py    # [[REF]] markers
+  python3 tools/prose_audit.py --content content.json         # APA author-date
 
-It reports, per prose block: words, sentence count, mean sentence length, and the
-sentences long enough to be unreadable. Then it reports pairs of blocks that share
-many citations, which is how the same argument gets told twice in two sections.
+For each prose block it reports words, sentence count, mean and longest sentence
+length, and citation count, and it lists the longest sentences (at least --long
+words, default 45). It then reports pairs of blocks that share many citations
+(--overlap, default 8), which is how one argument gets told twice in two
+sections. A page script is read by parsing it, never by importing it.
 
-Rewriting for concision silently drops citations, so this is also the gate on that
-pass. Keep a copy of the source before revising and compare against it:
+Rewriting for concision can drop citations unnoticed, so this tool is also the
+gate on that pass. Keep a copy of the source before revising, and compare
+against it:
 
   cp build_review_page.py /tmp/before.py      # then revise
   python3 tools/prose_audit.py --page build_review_page.py --baseline /tmp/before.py
 
-Exit 1 if any citation present in the baseline is missing afterwards (a reference
-silently cut from the works cited). Long sentences are reported, never gated — how
-short a sentence should be is editorial, and a list-like sentence with parallel
-clauses can legitimately run long.
+Exit 1 if any citation in the baseline is missing afterward (a reference cut
+from the works cited). Long sentences are reported, never gated: how short a
+sentence should be is editorial, and a list-like sentence with parallel clauses
+can run long.
 """
 import argparse
 import ast

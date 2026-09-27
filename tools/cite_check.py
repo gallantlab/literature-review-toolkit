@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""Phase 7 gate — every in-text citation must name a paper in rows.json.
+"""Gate: every in-text citation in a review must name a paper in rows.json.
 
-A review's reference list is built from rows.json, so an in-text citation that
-names no row is a reference the reader cannot follow, and an author-year that
-matches TWO rows is a citation the reader cannot resolve. Both are invisible to
-the renderer, which simply prints whatever prose it is given.
+A review's reference list is built from rows.json. An in-text citation that names
+no row is a reference the reader cannot follow. An author-year that matches TWO
+rows is a citation the reader cannot resolve. The renderer cannot see either
+problem, because it prints whatever prose it is given.
 
   python3 tools/cite_check.py --rows rows.json --content content.json
 
-Reads the `abstract` and every `sections[].paragraphs[]` of the content JSON,
-parses APA author-date citations in both parenthetical and narrative form, and
-checks each against author-year keys derived from the canonical `apa` strings.
+It reads the `abstract` and every `sections[].paragraphs[]` of the content JSON,
+parses APA author-date citations in parenthetical and narrative form, and checks
+each against author-year keys built from the canonical `apa` strings.
 
-Exit 1 on an UNRESOLVED citation (a hard gate: the reference list cannot back it).
-AMBIGUOUS citations are reported as warnings, because the fix is editorial —
-APA-7 8.19 says to name enough subsequent authors to tell the two apart
-("(Kral, Davis, et al., 2022)"), which this tool cannot write for you.
+Exit 1 on an UNRESOLVED citation, because the reference list cannot back it.
+AMBIGUOUS citations are warnings, because the fix is editorial. APA-7 8.19 names
+enough further authors to tell the two apart ("(Kral, Davis, et al., 2022)"),
+which this tool cannot write for you.
 
-Note on year suffixes: APA-7's other disambiguator is 2025a/2025b. references.py
-accepts those, and so does this tool, but adding them means editing rows.json's
-canonical `apa` strings; the extra-author form usually costs less.
+APA-7's other disambiguator is a year suffix (2025a, 2025b). references.py and
+this tool both accept one. Adding it means editing the canonical `apa` strings in
+rows.json, so the extra-author form is usually the cheaper fix.
 """
 import argparse
 import re

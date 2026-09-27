@@ -1,26 +1,33 @@
 #!/usr/bin/env python3
-"""Phase 6b — validate an LLM-proposed family taxonomy against the bibliography,
-stamp `family` onto rows.json, and emit families.json (the reproducible cache) +
-families.md (grouped tables + a family x topic cross-tab).
+"""Validate a family taxonomy, stamp `family` onto rows.json, and write families.json and families.md.
 
-WHAT THIS TOOL DOES (the deterministic half). The *carving* — proposing a few
-families and assigning every paper — is judgment, done by the agent with a human
-checkpoint on the ~N family definitions (see family_prompt_template.md, PLAYBOOK
-Phase 6b). This tool owns only the mechanical part: validate the assignment is
-exhaustive / exclusive / balanced, stamp the rows, and render. Re-run only when
-the taxonomy changes — families.json is the cache (like citation_counts.json).
+The carving is judgment: the agent proposes a few families and assigns every
+paper, with a human checkpoint on the family definitions (see
+family_prompt_template.md and PLAYBOOK Phase 6b). This tool does the mechanical
+half. It checks that the assignment is exhaustive and exclusive, warns when it is
+unbalanced, stamps the rows, and renders families.md (tables by family plus a
+family x topic cross-tab). families.json is the reproducible cache, like
+citation_counts.json, so re-run only when the taxonomy changes.
 
-DON'T cluster embeddings to make families: good theoretical families cut across
-textual similarity (they unite dissimilar papers and split similar ones), so the
+Do not cluster embeddings to make families. Good theoretical families cut across
+textual similarity: they unite dissimilar papers and split similar ones. So the
 proposal must be an LLM synthesis, not a distance metric. See PLAYBOOK.
 
-INPUT (--assign FILE): JSON the agent produced and the user approved:
+INPUT (--assign FILE): the JSON the agent produced and the user approved:
   { "principle": "one line naming the organizing axis (orthogonal to Topic)",
     "families": [ {"key":"compress", "name":"Compress",
                    "claim":"one-line claim", "lineage":"A -> B -> C"}, ... ],
     "assignments": { "<ref>": "<family key>", ... } }   # every rows.json ref, once
 
-  python3 tools/families.py --rows rows.json --assign families_input.json \
+It stops with an error on a duplicate family key, fewer than 2 or more than 9
+families (3-8 recommended), an unassigned paper, a ref not in rows.json, or an
+unknown family key. An assignment may name a family by key or by display name,
+in any case, so it can be rebuilt from the `family` already stamped on the rows.
+It warns on a one-paper family or one holding more than 60% of the papers, and
+drops empty families.
+
+  python3 tools/families.py --rows rows.json --digest     # compact corpus for the proposal
+  python3 tools/families.py --rows rows.json --assign families_input.json \\
           --out families.json
 """
 import argparse

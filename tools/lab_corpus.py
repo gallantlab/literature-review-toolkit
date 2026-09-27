@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
-"""Lab mode — Phase L1: ingest a lab's full publication corpus from OpenAlex.
+"""Lab mode: fetch a lab's full publication corpus from OpenAlex.
 
-Topic mode starts from a query and searches outward; LAB MODE starts from a
-known set of papers (a lab's output), derives the themes, tracks them over time,
-and only then searches outward to place them in the field. This tool fetches the
-corpus — the seed everything else hangs off.
+Topic mode starts from a query and searches outward. LAB MODE starts from a known
+set of papers (a lab's output), derives its themes, tracks them over time, and
+only then searches outward to place them in the field. This tool fetches that
+corpus, the seed everything else hangs off.
 
-Give it an OpenAlex author id (recommended — use --search first to find it).
-"All papers from a lab" is approximated by a PI's authored works. Pass several
-ids with repeated --author for either of two reasons: to widen coverage to key
-lab members, OR because ONE PERSON's record is split across ids, which is common
-and easy to miss. Works are deduplicated by OpenAlex id.
+Give it an OpenAlex author id; find one with --search first. "All papers from a
+lab" is approximated by the PI's authored works. Pass several ids with repeated
+--author for either of two reasons: to widen coverage to key lab members, or
+because ONE PERSON's record is split across ids, which is common and easy to
+miss. Works are deduplicated by OpenAlex id. --from-year and --to-year limit the
+publication years.
 
   python3 tools/lab_corpus.py --search "Jack Gallant"          # find the id
   python3 tools/lab_corpus.py --author A5056348548 --out lab_papers.json
   python3 tools/lab_corpus.py --author A50… --author A51… --out lab_papers.json
 
-Output: lab_papers.json — one row per paper with ref / title / year / doi / link
-/ apa / venue / cite_openalex / topics / abstract(summary) / coauthors / type.
+Output: lab_papers.json, one row per paper, sorted by year and keyed L1, L2, …,
+with ref / openalex / doi / link / title / year / venue / apa / cite_openalex /
+topic / topics / summary (the abstract, else the title) / coauthors / type /
+source ("lab") / built_at.
 
-Disambiguation is the #1 correctness risk, and it cuts BOTH ways. An id can be
-MERGED (holding several namesakes, so Phase L2 must prune) or SPLIT (one person
-across several ids, so Phase L2 must ADD — and nothing fails when a record is
-simply missing). --search prints the year span and ORCID for exactly this reason;
-read its warnings.  See PLAYBOOK "Lab mode".
+Disambiguation is the main correctness risk, and it cuts both ways. An id can be
+MERGED (holding several namesakes, so Phase L2 must prune it) or SPLIT (one
+person across several ids, so Phase L2 must ADD the others, and nothing fails
+when a record is missing). This is why --search prints each id's year span and
+ORCID; read its warnings. See PLAYBOOK "Lab mode".
 """
 import argparse
 import datetime
@@ -182,6 +185,7 @@ def main():
                 "coauthors": [a.get("author", {}).get("display_name", "")
                               for a in (w.get("authorships") or [])],
                 "type": w.get("type", ""),
+                "source": "lab",          # the lab row color and star
                 "built_at": built_at,
             })
 

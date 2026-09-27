@@ -9,7 +9,7 @@ labeled at left with its claim. Each dot is one verified paper, placed by
 publication year. Dot area is proportional to citation count, and a hollow dot
 has no count. Labeled dots are landmarks, chosen automatically by citation count
 and by how often the corpus itself cites them. A ring and a ★ mark a home-lab
-paper. [§7.2 of the manual](manual.md#72-the-lineage-figure) gives the full key.
+paper, when starring is turned on. [§7.2 of the manual](manual.md#72-the-lineage-figure) gives the full key.
 
 ---
 
@@ -22,10 +22,15 @@ paper. [§7.2 of the manual](manual.md#72-the-lineage-figure) gives the full key
 | **From the search** | 42 papers, 1980–2025 (<span class="swatch search"></span> cream rows) |
 | **From the cross-citation pass** | 30 papers, 1944–2010 (<span class="swatch xref"></span> green rows) |
 | **Caught by verification** | 3 fabrications: a real 2025 paper by Schmahmann et al. returned as "Olson et al.", a DOI off by one digit, and an invented PMCID |
+| **Built** | May 2026, with an early version of the toolkit: before the antecedents pass and the reference gates |
 | **Time** | about 7 minutes, without PDFs |
 
+This run is small and early. A current build runs more steps and takes hours;
+see the manual's [reference card](manual.md#10-reference-card) for measured
+times.
+
 The cross-citation pass found the field's older anatomy (1944–2010) that the
-forward search missed. The output directory keeps the audit trail:
+topic search missed. The output directory keeps that run's audit trail:
 `agent_out.json` (raw search results), `verify_report.json` (what verification
 caught), `xref_visual_cerebellum.json` (the cross-citation table),
 `xref_picks.json` (the 30 papers taken from it), and `rows.json` (the table the
@@ -45,7 +50,7 @@ spreadsheet is built from).
 ![The Gallant lab's 61 human-imaging papers in six themes, 1990 to 2025](assets/figures/lab_trajectory.png){ loading=lazy }
 <figcaption markdown>
 **Lab mode first maps the lab's own work.** The 61 human-imaging papers from the
-Gallant lab, grouped into six research themes derived in phase L3. Every paper is
+Gallant lab, grouped into six research themes derived in Phase L3. Every paper is
 a lab paper, so every dot is ringed and starred. The lab's work moves from visual
 encoding and stimulus reconstruction (2000–2015) to semantic maps of visual
 cortex (from 2012) and then to language (from 2016). A methods-and-software lane
@@ -172,8 +177,8 @@ ideas older than neuroimaging.
 for how human language arose from a primate brain. The axis is linear
 (no time warp). The two arrows are editorial (`--spec`). Each links an older claim
 that a feature is unique to humans or apes to a recent paper that found it in
-monkeys. Every "revising the gap"
-paper dates from 2008 or later, so the case for gradual evolution is recent.
+monkeys. Every "revising the gap" paper dates from 2008 or later, so the case
+for gradual evolution is recent.
 </figcaption>
 </figure>
 
@@ -194,5 +199,5 @@ decoding of conversation has barely begun.
 !!! tip "The HTML version is interactive"
     Each run also produces an interactive HTML figure. Hover a dot for its
     reference, click it for its summary, counts and DOI, and step through papers
-    with Next/Prev or the arrow keys. SVG and PDF exports are produced for
-    publication. See [Reading the lineage figure](manual.md#72-the-lineage-figure).
+    with Next/Prev or the arrow keys. For publication, each run also writes an
+    SVG copy, plus PNG and PDF when `rsvg-convert` or Inkscape is installed. See [Reading the lineage figure](manual.md#72-the-lineage-figure).

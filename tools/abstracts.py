@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
-"""Fetch the abstract of every row, in batches, into abstracts.json.
+"""Fetch each row's abstract into abstracts.json, for the summary check.
 
-Summaries are checked against these (summary_audit.py), so each row's abstract
-comes from the most authoritative source that has it: the arXiv API for arXiv
-papers, then OpenAlex (50 DOIs per request), then Semantic Scholar (500 per
-request), then PubMed for rows with a PMID. Each entry records the `doi` and
-`arxiv` it was fetched for; an entry whose ids no longer match its row is
-refetched, except one added by hand ("source": "landing-page"), which is never
-overwritten and is reported as stale instead (fix it, with the row's ids).
-abstracts_failed.json, beside abstracts.json, maps each ref whose fetch could
-not complete to why ({} when none); summary_audit.py --prepare refuses those
-refs rather than filing them as having no abstract.
+The summary check (summary_audit.py) compares each summary with its abstract, so
+each abstract comes from the most authoritative source that has it. The sources
+are tried in order: the arXiv API for arXiv papers, then OpenAlex (50 DOIs per
+request), then Semantic Scholar (500 ids per request), then PubMed for rows with
+a `pmid`.
+
+Each entry records the `doi` and `arxiv` it was fetched for. When a row's ids
+change, its entry is fetched again. An entry added by hand ("source":
+"landing-page") is never overwritten. When its ids no longer match the row, it is
+reported as stale: check that it is still this paper's abstract, then set its
+ids to the row's.
+
+abstracts_failed.json, written beside abstracts.json, maps each ref whose fetch
+could not complete to the reason ({} when none). A failed fetch is not "no
+abstract", so summary_audit.py --prepare refuses those refs.
+
+Exit 1 when any fetch failed or any hand-added entry is stale; re-run to fill
+the gaps. A spent OpenAlex daily budget stops the run with OpenAlexBudgetError.
+Because one S2_API_KEY serves xref, citations and abstracts, run those tools in
+sequence, not in parallel.
 
     python3 tools/abstracts.py --rows rows.json --email you@inst.edu
 """

@@ -5,7 +5,7 @@ fabricating references. The agent decides what to search, how to group the
 papers, and how to write them up. The scripts do the API calls, verification and
 bookkeeping.
 
-Version 1.23.0 · MIT license
+Version 1.23.1 · MIT license
 
 📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**, with the
 [operator manual](https://gallantlab.org/literature-review-toolkit/manual/),
@@ -18,20 +18,41 @@ A review has two modes. **Topic mode** starts from a question and searches
 outward. **Lab mode** starts from a lab's publications, derives its research
 themes, and places them in the field. Both then run the same pipeline:
 
-1. **Search**, plus a required **antecedents** pass for the field's roots.
-2. **Verify** every citation against PubMed, PMC, CrossRef and arXiv. Search
-   agents fabricate roughly 1 in 4.
-3. **Canonicalize** every reference from its verified DOI into APA-7, behind a
-   hard audit gate.
-4. **Build the spreadsheet**, add **citation counts** (OpenAlex, checked against
-   Semantic Scholar), and mine the corpus's reference lists for papers it missed.
-5. **Offer the lineage timeline** on every review: the agent proposes
-   **theoretical families**, and you use them, change them, or skip the timeline.
-   If kept, it renders an interactive timeline of the families.
-6. Optionally, write an AI-authored **review article**.
+1. **Search** in parallel lanes, plus a required **antecedents** pass for the
+   field's roots.
+2. **Verify** every citation against PubMed, PMC, CrossRef, DataCite and arXiv.
+   Search agents fabricate roughly 1 in 4.
+3. **Canonicalize** every reference from its verified DOI into APA-7.
+   References with no DOI get a hand check, and a checking agent compares every
+   summary with its abstract.
+4. **Count citations** (OpenAlex, checked against Semantic Scholar). Then mine
+   the corpus's reference lists, and the papers that cite its landmarks, for
+   papers the search missed.
+5. **Offer the lineage timeline** on every review. The agent proposes
+   **theoretical families**, and you use them, change them, or skip the
+   timeline. If you keep it, the toolkit renders an interactive timeline of the
+   families.
+6. **Build the spreadsheet.** It runs the full audit and refuses a table that
+   fails it.
+7. Optionally, write an AI-authored **review article**.
 
 Each topic gets an annotated `.xlsx` bibliography and, unless you skip it, the
-lineage timeline. PDF download is opt-in.
+lineage timeline. PDF download is opt-in. Plan on hours, not minutes: in one
+1,158-paper build the search lanes alone took about 1.5 hours.
+
+## What it needs
+
+- **Python 3** with `xlsxwriter` and `python-docx` (`requirements.txt`).
+- **A contact email** in `LITREVIEW_EMAIL`. NCBI and CrossRef require one.
+- **Two free API keys.** `OPENALEX_API_KEY`
+  ([get one](https://help.openalex.org/api/authentication)) gives you your own
+  daily budget. Without it, every client on one IP address shares a single
+  budget, and a campus network can spend it before you start. `S2_API_KEY`
+  ([request one](https://www.semanticscholar.org/product/api#api-key-form))
+  avoids Semantic Scholar's heavy throttling of keyless use.
+- **Optional:** poppler (`brew install poppler` or
+  `apt-get install poppler-utils`) for the opt-in PDF step, and `rsvg-convert`
+  or Inkscape for PNG and PDF copies of the timeline.
 
 ## Install
 
@@ -39,16 +60,16 @@ lineage timeline. PDF download is opt-in.
 git clone https://github.com/gallantlab/literature-review-toolkit.git
 cd literature-review-toolkit
 pip install -r requirements.txt
-export LITREVIEW_EMAIL=you@institution.edu   # NCBI and CrossRef require a contact email
-export OPENALEX_API_KEY=...                   # free; a keyless IP shares one daily budget
-export S2_API_KEY=...                         # free; keyless Semantic Scholar is heavily throttled
-python3 tools/preflight.py --papers 600       # newer toolkit on GitHub? keys? today's OpenAlex budget?
+export LITREVIEW_EMAIL=you@institution.edu
+export OPENALEX_API_KEY=...
+export S2_API_KEY=...
+python3 tools/preflight.py --papers 600       # newer version? keys? today's OpenAlex budget?
 ```
 
-`brew install poppler` (or `apt-get install poppler-utils`) is needed only for
-the opt-in PDF step.
+To keep the variables across sessions, add the `export` lines to your shell
+profile.
 
-## Use
+## Start a review
 
 Open Claude Code in the directory that holds your reviews, with this repo cloned
 inside it, and describe the review:
@@ -60,19 +81,23 @@ tractography method. go back as far as the 1970s.
 ```
 
 The agent first runs `tools/preflight.py`. If GitHub has a newer version of the
-toolkit, it offers to install it. If a key is missing or the OpenAlex budget is short,
-it stops and asks you to choose: get the API keys, cap the search, or be prepared to
-wait. It then follows [`PLAYBOOK.md`](./PLAYBOOK.md), creates one subdirectory per
-topic, and delivers the spreadsheet there. To run the phases by hand, see
-[§5 of the manual](https://gallantlab.org/literature-review-toolkit/manual/#5-the-shared-backbone);
-every phase is one script in [`tools/`](./tools).
+toolkit, it offers to install it. If a key is missing or the OpenAlex budget is
+short, it stops and asks you to choose: get the API keys, cap the search, or be
+prepared to wait. It then follows [`PLAYBOOK.md`](./PLAYBOOK.md), creates one
+subdirectory per topic, and delivers the spreadsheet there. When the repo is
+installed as a Claude Code plugin, its skill points the agent at the playbook.
+Without the plugin, name the playbook in your request.
+
+To run the phases by hand, see
+[§5 of the manual](https://gallantlab.org/literature-review-toolkit/manual/#5-the-shared-backbone).
+Every phase is one script in [`tools/`](./tools).
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
 | [`PLAYBOOK.md`](./PLAYBOOK.md) | the procedure the agent follows, with its accumulated lessons |
-| [`tools/`](./tools) | one script per phase, plus the shared `common.py` |
+| [`tools/`](./tools) | one script per phase, the shared `common.py`, and the search-lane and family prompt templates |
 | [`templates/`](./templates) | a starter script for building `rows.json` |
 | [`skills/`](./skills) | the Claude skill that points an agent at the playbook |
 | [`.claude-plugin/`](./.claude-plugin) | manifests that make the repo installable as a Claude Code plugin |
@@ -85,7 +110,7 @@ AI model, under the direction of Jack Gallant (Gallant Lab, UC Berkeley). What
 the toolkit produces is also AI-generated: the search, the paper summaries
 (written from abstracts, not full texts), the family groupings and the review
 articles. The scripts verify every citation and rebuild every reference from its
-DOI; summaries and interpretation cannot be machine-checked. See the
+DOI. Summaries and interpretation cannot be machine-checked. See the
 [full disclosure](https://gallantlab.org/literature-review-toolkit/#ai-disclosure).
 
 ## License

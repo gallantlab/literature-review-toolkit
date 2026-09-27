@@ -1,69 +1,69 @@
 #!/usr/bin/env python3
-"""Phase 6b — render the interactive HTML lineage figure of the theoretical families.
+"""Render the interactive lineage timeline of the theoretical families.
 
-Self-contained single .html (inline SVG + CSS + JS, no deps, no network) plus a
-standalone .svg and, if rsvg-convert/inkscape is present, .png + .pdf. The timeline
-is offered on every review, so the standard settings are the defaults: dots sized
-by citation count, internal_citations.json picked up from beside rows.json, and the
-exact arguments recorded in figure_render_args.txt (created if missing, never
-overwritten).
+It writes one self-contained .html (inline SVG, CSS and JS; no dependencies, no
+network), a standalone .svg, and a .png and .pdf when rsvg-convert or inkscape is
+installed. Because the timeline is offered on every review, the standard settings
+are the defaults: dots sized by citation count, internal_citations.json read from
+beside rows.json, and the exact arguments recorded in figure_render_args.txt.
+That file holds hand-written tuning notes, so it is created when missing and
+never overwritten; the tool says when a render is not recorded in it.
 
-Open in a browser, present fullscreen. Hover any node -> full reference
-(tooltip); click -> side panel with citation + a live DOI link; hover or focus a
-family's NAME -> a panel giving that family's claim and its lineage in full, plus
-its paper count, while its papers are spotlighted. (families.json has always
-carried `claim` and `lineage`; until 2026-09-18 the figure drew only a truncated
-claim beside the lane and the lineage was invisible, so a reader had to open
-families.md to learn what a family meant. The exported .svg/.png/.pdf carry the
-same text in a native SVG <title>, since no script runs out there.)
-The panel also carries Prev/Next buttons (and
-binds the left/right arrow keys) that step through the papers in year order, so a
-reader can walk the timeline instead of hunting for individual dots; a checkbox
-switches between stepping within the selected family and across the whole corpus.
+Open the .html in a browser and present it fullscreen. Hover a dot to see its
+full reference; click it for a side panel with the citation, summary and a live
+DOI link. Hover or focus a family's name for a panel with the family's claim, its
+lineage in full and its paper count, while its papers are spotlighted. The
+exported .svg, .png and .pdf carry the same family text in a native SVG <title>,
+since no script runs there. The side panel's Prev/Next buttons (and the
+left/right arrow keys) step through the papers in year order, so a reader can
+walk the timeline instead of hunting for dots. A checkbox switches between
+stepping within the selected family and across the whole corpus.
 
-Data-driven: family lanes come from families.json, dots from rows.json (one per
-paper, beeswarm-packed by year within its lane).
+Family lanes come from families.json and dots from rows.json: one dot per paper,
+packed by year within its lane.
 
-LANDMARKS are auto-selected and labeled (big dots) — no hand-made overlay needed.
-A paper is a landmark if ANY of:
-  (1) it is among the most-cited in its family (top --per-family by max(OpenAlex, S2)),
-  (2) it is foundational *within this review* — cited by >= --motif-min of the corpus's
-      own papers (needs internal_citations.json from `xref.py --internal-out`, read from
-      beside rows.json unless --internal names another; skipped if there is none),
-  (3) it is a home-lab paper — an author surname listed in --lab-author or the
-      LITREVIEW_LAB_AUTHOR env var (home-lab favoring is OFF by default), or a row
-      with source == "lab" — these are starred (★) and ringed in --lab-color
+LANDMARKS are selected and labeled automatically (big dots). A paper is a
+landmark if ANY of:
+  (1) it is among the most-cited in its family (top --per-family by
+      max(OpenAlex, S2));
+  (2) it is foundational within this review: cited by >= --motif-min of the
+      corpus's own papers (needs internal_citations.json from
+      `xref.py --internal-out`, read from beside rows.json unless --internal
+      names another; skipped if there is none);
+  (3) it is a home-lab paper: a row with source == "lab", or one with an author
+      surname given by --lab-author or the LITREVIEW_LAB_AUTHOR env var (off by
+      default). Home-lab papers are starred (★) and ringed in --lab-color
       (default gold, moved automatically if it clashes with a family lane).
-Total labels are capped at --max-labels for legibility. When the cap bites, what is
-guaranteed to survive is the home-lab papers plus the top-2 most-cited per family;
-the rest of the budget is filled by within-review in-degree. Internal-motif papers
-are NOT all kept — on a large, densely inter-citing corpus hundreds of papers can
-clear --motif-min, so the cap is what keeps the figure readable. The number dropped
-is reported on every run; raise --max-labels or --motif-min if it is large.
-Pass --spec with a "labels" map to override auto-selection entirely (manual curation wins);
---no-auto-landmarks turns labeling off.
+--max-labels caps the total for legibility. When the cap bites, the home-lab
+papers and the top 2 most-cited per family always survive, and within-review
+in-degree fills the rest. On a large corpus that cites itself densely, hundreds
+of papers can clear --motif-min, so the cap is what keeps the figure readable.
+When the cap drops labels, the run says how many; raise --max-labels or
+--motif-min if that number is large. A "labels" map in --spec replaces the
+automatic selection (manual curation wins); --no-auto-landmarks turns labeling
+off.
 
-DOT SIZE encodes citation count by default (--size-by-citations sqrt), with a size
-legend; landmark status rides on the ring, leader and label. `--size-by-citations
-none` gives the older binary dots (big = labeled landmark, small = everything else),
-which say nothing about how much a paper is cited.
-Counts span four orders of magnitude in a real corpus (0 to ~24k), so both modes
-normalize against the 95th percentile and clamp above it; `sqrt` is
-area-proportional and separates the heavy tail, `log` compresses harder and
-reads flatter. Read the result with the obvious caveat in mind: citation count
-is partly an AGE variable, so the right-hand edge of any timeline will be small.
+DOT SIZE encodes citation count by default (--size-by-citations sqrt), with a
+size legend; landmark status rides on the ring, leader and label. A paper with no
+count is drawn hollow, not as a zero. `--size-by-citations none` gives the older
+binary dots (big = labeled landmark, small = everything else), which say nothing
+about how often a paper is cited. Counts span four orders of magnitude in a real
+corpus (0 to ~24k), so both scales normalize against the 95th percentile and
+clamp above it. `sqrt` is area-proportional and separates the heavy tail; `log`
+compresses harder and reads flatter. Citation count is partly an AGE variable,
+so the right-hand edge of any timeline is small.
 
-  python3 tools/families_figure.py --rows rows.json --families families.json \
+  python3 tools/families_figure.py --rows rows.json --families families.json \\
           --out-prefix mytopic_families --title "My topic — theoretical families"
 
 OPTIONAL editorial overlay (--spec figure_spec.json), all keys optional:
-  { "labels":  {"<ref>": "short label", ...},     # which papers to label (overrides milestones)
+  { "labels":  {"<ref>": "short label", ...},     # which papers to label (overrides auto-selection)
     "arrows":  [{"from":"<ref>","to":"<ref>","color":"#b00020","label":"..."}],
     "notes":   [{"at":"<ref>","text":"...","color":"#333"}],
     "order":   ["FamilyName", ...],                # lane order (default: families.json order)
     "subtitle":"..." }
-The lineage arrows/notes are editorial — curate them with the user; don't expect
-a good auto-generated set. See PLAYBOOK Phase 6b.
+The arrows and notes are editorial: curate them with the user, and do not expect
+a good automatic set. See PLAYBOOK Phase 6b.
 """
 import argparse
 import base64

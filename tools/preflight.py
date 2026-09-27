@@ -1,32 +1,35 @@
 #!/usr/bin/env python3
-"""Phase 0 preflight: before any search, check for a newer toolkit, the API keys, and the OpenAlex budget.
+"""Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget.
 
 Run it FIRST, before writing a single lane brief. A build runs for hours, and two
 of its services ration keyless use: OpenAlex (citation counts, abstracts, forward
-citations, hand-check DOI search, lab_corpus.py) and Semantic Scholar (xref, the
-second citation count, abstracts). Finding that out halfway through a build costs
-hours; finding it out here costs one request to each.
+citations, the hand-check DOI search, lab_corpus.py) and Semantic Scholar (xref,
+the second citation count, abstracts). Finding that out halfway through a build
+costs hours; finding it out here costs one request to each.
 
 It checks:
-  the toolkit        the version on GitHub (main) against this copy; this project is
-                     updated often, so a newer one is offered with the command that
-                     installs it (git pull for a clone, the plugin menu otherwise).
-                     A build already under way keeps the version it started with.
-  LITREVIEW_EMAIL    required by NCBI/CrossRef (or pass --email to every tool)
-  OPENALEX_API_KEY   without it, ONE free daily budget is shared by every client on
-                     the same IP address -- a campus network can have spent it before
-                     you start. A probe reads the budget left right now.
-  S2_API_KEY         without it, Semantic Scholar throttles hard; xref and the S2
+  the toolkit        the version on GitHub (main) against this copy. The toolkit
+                     changes often, so a newer version is offered with the
+                     command that installs it (git pull for a clone, the plugin
+                     menu otherwise). A build already under way keeps the version
+                     it started with, so pass it --no-update-check.
+  LITREVIEW_EMAIL    required by NCBI and CrossRef (or pass --email to every tool)
+  OPENALEX_API_KEY   without it, every client on the same IP address shares ONE
+                     free budget of 1,000 credits a day, and a campus network may
+                     have spent it before you start; a free key has its own
+                     10,000. A probe reads the budget left right now.
+  S2_API_KEY         without it, Semantic Scholar throttles hard: xref and the S2
                      counts take hours and leave gaps.
-and estimates what a corpus of --papers N costs in OpenAlex credits.
+It also estimates what a corpus of --papers N costs in OpenAlex credits.
 
 Exit 0 when the build can run as planned. Exit 2 when the user must decide
-first: a newer toolkit is available (offer to install it), or a key is missing or
-the budget is short (give them the three choices it prints -- get the keys, cap
-the search, or be prepared to wait). Ask before any lane is launched.
+first: a newer toolkit is available (offer to install it), LITREVIEW_EMAIL is not
+set, a key is missing or rejected, or the budget is short. For a missing key or a
+short budget, give the user the three choices it prints: get the keys, cap the
+search, or be prepared to wait. Ask before any lane is launched.
 
     python3 tools/preflight.py --papers 600
-    python3 tools/preflight.py --papers 600 --offline      # keys only, no probes
+    python3 tools/preflight.py --papers 600 --offline      # environment only: no probes, no GitHub check
 """
 import argparse
 import datetime
@@ -45,7 +48,8 @@ PHASE = "0"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
 OPENALEX_PROBE = "https://api.openalex.org/works?filter=doi:10.1038/nature06713&select=id"
 S2_PROBE = "https://api.semanticscholar.org/graph/v1/paper/DOI:10.1038/nature06713?fields=title"
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# realpath: projects reach tools/ through a symlink, and the manifest lives in the real checkout
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 MANIFEST = os.path.join(".claude-plugin", "plugin.json")      # stamped with the version every commit
 REMOTE_MANIFEST = ("https://raw.githubusercontent.com/gallantlab/literature-review-toolkit/main/"
                    ".claude-plugin/plugin.json")
@@ -311,6 +315,10 @@ def main():
         print("\n".join(offer))
     if problems:
         print("\n".join(choices(problems, args.papers, oa)))
+    if not env["LITREVIEW_EMAIL"]:
+        print("\nStop: set a contact email first (NCBI and CrossRef require one):\n"
+              "    export LITREVIEW_EMAIL=you@institution.edu      (or pass --email to every tool)\n"
+              "then rerun this preflight.")
     if ok and not offer:
         print("\nOK: toolkit current, keys set, and the OpenAlex budget covers the build.")
         return 0

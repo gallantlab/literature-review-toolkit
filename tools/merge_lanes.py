@@ -1,27 +1,36 @@
 #!/usr/bin/env python3
 """Merge search-lane files into rows.json, and fail when a paper fell between lanes.
 
-Reads every schema-2 lane file (tools/search_prompt_template.md) in --raw and:
-  - dedups by DOI, then arXiv id, then normalized title + year, recording the
-    other lanes that returned a paper (`also_lanes`);
-  - keeps each agent's claim as search_author / search_year / search_title, which
-    verify.py checks the DOI against;
-  - rejects a paper with no DOI, arXiv id or APA string (it can be neither
-    verified nor hand-checked);
-  - matches every `deferred` entry against the merged table and exits 1 on any
-    that no lane kept, or that matched by title alone with neither first_author
-    nor year to confirm it — send those to a recovery lane and re-merge;
+It reads every schema-2 lane file (see tools/search_prompt_template.md) in --raw
+and:
+  - dedups by DOI, then arXiv id, then normalized title + year, and records the
+    other lanes that returned a paper (`also_lanes`). A title + year match with
+    a conflicting author or year, or with two different journal DOIs, stays as
+    two rows and is reported as a possible pair;
+  - keeps each lane's claim as search_author / search_year / search_title,
+    which verify.py checks the DOI against;
+  - rejects a paper with no DOI, arXiv id or APA string, since it can be neither
+    verified nor hand-checked;
+  - matches every `deferred` entry against the merged table. A deferral that no
+    lane kept is LOST. One matched by title alone, with neither first_author nor
+    year (or with an unreadable first_author), is UNCONFIRMED. Send those to a
+    recovery lane, or complete the deferral, and re-merge;
   - records each lane's `excluded` papers (out of scope, or pre-tier and not
     classic) with their reasons, for the spreadsheet's "Considered and excluded"
-    sheet: an exclusion is a decision, not a hand-off, so it is never required to
-    match a row — but a lane that trimmed on-topic papers to hit its target must
-    put them back in `papers`, since the target is a floor;
-  - flags thin lanes (under 60% of target, or out of search budget) to resume.
-A failed merge (lost, unconfirmed or rejected papers) writes merge_report.json
-but not rows.json, and exits 1.
+    sheet. An exclusion is a decision, not a hand-off, so it never has to match
+    a row. The lane target is a floor, so an on-topic paper trimmed to meet it
+    belongs back in `papers` (except in a capped search);
+  - flags thin lanes (under 60% of target, or out of search budget), to resume.
+A merge with a lost, unconfirmed or rejected paper writes merge_report.json but
+not rows.json, and exits 1. It refuses to overwrite a canonical rows.json unless
+--force, and refuses a schema-1 lane file (a bare list) unless --allow-v1.
 
     python3 tools/merge_lanes.py --raw search_raw --out rows.json
     python3 tools/merge_lanes.py --append recovery.json --into rows.json   # late rows
+
+--append adds a lane file's papers to an existing table and never changes an
+existing row. It skips a paper the table already holds, and it refuses an empty
+--into (run --raw/--out for a first merge). Verify the appended rows next.
 """
 import argparse
 import datetime

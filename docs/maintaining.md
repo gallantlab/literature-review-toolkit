@@ -6,31 +6,35 @@ Notes for whoever edits these docs next, human or agent.
     This site covers everything in `README.md` and `PLAYBOOK.md`. When you add or
     rename a tool, change a phase, a command or a flag, or add a guardrail,
     update the affected page under `docs/` in the same change. `docs/manual.md`
-    drifts fastest: it holds the phase commands, the guardrails and the pipeline
-    diagram.
+    drifts fastest, because it holds the phase commands, the guardrails and the
+    pipeline diagram.
 
-## The generated tool index
+## The generated tool index and version
 
-The index in `docs/tools.md`, `tools/README.md` and `PLAYBOOK.md` is generated
-from the modules (docstring, `PHASE` constant, `--help` flags) by
-`python3 tools/gen_docs.py`. Run it after adding a tool or flag. Only the text
-around the index is hand-written.
+`python3 tools/gen_docs.py` generates the tool index in `docs/tools.md`,
+`tools/README.md` and `PLAYBOOK.md` from the modules: each one's docstring,
+`PHASE` constant and `--help` flags. Only the text around the index is
+hand-written. The same run writes the current version number into the files
+that state it: `README.md`, `docs/index.md`, `mkdocs.yml`, the skill and the two
+plugin manifests. Run it as the last step before committing, with everything you
+intend to commit.
 
 ## The AI disclosure
 
-The home page's "AI disclosure" section and the footer link to it state that the
-toolkit and these docs were written largely by Claude, and that what the toolkit
-produces is AI-generated. Keep both when editing.
+The home page's "AI disclosure" section states that the toolkit and these docs
+were written largely by Claude, and that what the toolkit produces is
+AI-generated. The site footer (`copyright` in `mkdocs.yml`) links to it, and the
+README carries a short version. Keep all three when editing.
 
 ## Checks
 
-`.github/workflows/tests.yml` runs three checks on every push and pull request.
-Run them locally before pushing:
+`.github/workflows/tests.yml` runs three checks on every push to `main` and
+every pull request. Run them locally before pushing (`pip install ruff` first):
 
 ```bash
 ruff check .                              # config in pyproject.toml
 python3 tools/tests/test_formatting.py    # each case is a defect that once shipped
-python3 tools/gen_docs.py --check         # fails if a generated block is stale
+python3 tools/gen_docs.py --check         # fails if the tool index or a version stamp is stale
 ```
 
 ## Build and deploy
@@ -70,21 +74,21 @@ To refresh the review pages, render the `.docx` with `review_paper.py`, then:
 
 ```bash
 /Applications/LibreOffice.app/Contents/MacOS/soffice --headless --convert-to pdf review.docx
-pdftoppm -r 150 -png -f 1 -l 1 review.pdf page       # and the "References" page
-magick page-01.png -trim -bordercolor white -border 20 -resize 1000x example_review_title.png
+pdftoppm -r 150 -png -f 1 -l 1 -singlefile review.pdf page   # page.png; repeat for the "References" page
+magick page.png -trim -bordercolor white -border 20 -resize 1000x example_review_title.png
 ```
 
 On macOS, `soffice` is not on `PATH`, and it hangs inside a sandbox that blocks
-macOS system services. To refresh any figure, overwrite the file in place; the
-Markdown references the filenames. When a figure changes, check its caption:
-captions state paper counts, dates and findings read off the figure.
+macOS system services. To refresh any figure, overwrite the file in place,
+because the Markdown refers to the filenames. When a figure changes, check its
+caption: captions state paper counts, dates and findings read off the figure.
 
 ## The spreadsheet preview
 
 The bibliography table in the [manual](manual.md#71-the-spreadsheet) is HTML, not
 a screenshot. It lives in `docs/_includes/bib_table.html` and is pulled in with
-`--8<-- "docs/_includes/bib_table.html"`; `exclude_docs` in `mkdocs.yml` keeps
-the partial from being published on its own. To regenerate it, write a
+`--8<-- "docs/_includes/bib_table.html"`. The `exclude_docs` setting in
+`mkdocs.yml` keeps the partial from being published on its own. To regenerate it, write a
 `<table class="bib-preview">` from a real `rows.json`, with rows classed
 `row-search`, `row-xref` or `row-source` (colors in
 `docs/stylesheets/extra.css`).

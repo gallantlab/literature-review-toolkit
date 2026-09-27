@@ -1,27 +1,29 @@
 #!/usr/bin/env python3
 """Hand-check the references that have no DOI or arXiv id (books, reports, essays).
 
-A DOI-less row cannot be machine-verified, so this tool does the work around the
-hand check, and the audit fails any DOI-less row without its record:
+No API can verify a DOI-less row, so on a gated table the audit fails any such
+row without a hand-check record. This tool does the work around the hand check:
 
-  --prepare           search CrossRef and OpenAlex for a DOI the row is missing
-                      (the same title, by common.title_match, and the same year), and write the
-                      hand-check input and brief for the rest -- each hand-check-input
-                      entry carries `apa_sha`, the hash of the reference it shows
-                      (the apa, else search_apa) as it stood at --prepare;
-                      an existing handcheck_result.json is renamed (never deleted) to
-                      handcheck_result.stale-<timestamp>.json, since it answers the
-                      previous --prepare
-  --adopt-dois FILE   give each row with exactly one found DOI that DOI, so it
-                      goes through verify.py instead
-  --ingest FILE       record each result on its row as `hand_verified`, refusing one
-                      whose row's current (shown) apa sha differs from --input's `apa_sha`
-                      (the reference changed while it was being checked), whose
-                      --input entry predates apa_sha altogether, or whose own `apa_sha`
-                      echo is missing or differs from --input's (a result for an older
-                      --prepare, ingested after the apa was edited and re-prepared)
-  --input FILE        the hand-check input recorded at --prepare, used by --ingest to
-                      detect that drift (default: handcheck_input.json beside --rows)
+  --prepare           search CrossRef and OpenAlex for a DOI the row lacks (the
+                      same title, by common.title_match, and the same year).
+                      Rows with a candidate go to handcheck_doi_candidates.json;
+                      the rest go to handcheck_input.json, with
+                      handcheck_brief.md for the checking agent. Each input entry
+                      carries `apa_sha`, the hash of the reference it shows (the
+                      apa, else search_apa). An existing handcheck_result.json
+                      answers the previous --prepare, so it is renamed (never
+                      deleted) to handcheck_result.stale-<timestamp>.json.
+  --adopt-dois FILE   give each row with exactly one candidate DOI that DOI, so it
+                      goes through verify.py instead. For a row with several, keep
+                      one in the file and re-run.
+  --ingest FILE       record each result on its row as `hand_verified`. A result
+                      is refused when the row's shown reference changed since
+                      --prepare, when its --input entry has no `apa_sha` (an
+                      input written before that binding existed), or when the
+                      result's own `apa_sha` echo is missing or differs from the
+                      input's (a result for an older --prepare).
+  --input FILE        the hand-check input that --ingest checks against
+                      (default: handcheck_input.json beside --rows)
 
     python3 tools/handcheck.py --rows rows.json --prepare --email you@inst.edu
     python3 tools/handcheck.py --rows rows.json --adopt-dois handcheck_doi_candidates.json
@@ -29,7 +31,10 @@ hand check, and the audit fails any DOI-less row without its record:
 
 Result file: a JSON list of {"ref", "apa_sha" (copied from the input entry),
 "verdict": "confirmed"|"corrected"|"not-found", "apa" (corrected only),
-"source_checked", "changes"}.
+"source_checked", "changes"}. A "corrected" result replaces the row's apa.
+
+--ingest exits 1 when it refused any result or any row is recorded not-found;
+remove a not-found row, or check it again.
 """
 import argparse
 import datetime

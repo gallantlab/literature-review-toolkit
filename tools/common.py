@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 """Shared helpers for the literature-review toolkit.
 
-One home for the things every tool needs: the arXiv/CrossRef constants, the
-APA name+reference formatter (so the canonical-reference guarantee lives in
-exactly one place), DOI parsing, a polite User-Agent, an HTTP GET/POST with
-exponential backoff on rate-limits/timeouts, and JSON load/dump that always
-reads+writes UTF-8 (ensure_ascii=False) through a context manager.
+Every tool imports this one module, so each guarantee lives in one place:
+
+  - HTTP: a polite User-Agent, gzip decoding, and a GET/POST with backoff on
+    rate limits and timeouts. An OpenAlex request carries OPENALEX_API_KEY when it
+    is set, and a spent OpenAlex daily budget raises OpenAlexBudgetError at once.
+    Semantic Scholar requests are paced and carry S2_API_KEY when it is set.
+  - Sources: the CrossRef, DataCite and arXiv record readers, and batched arXiv
+    and Semantic Scholar lookups.
+  - References: DOI and arXiv-id parsing, the APA-7 name and reference formatter
+    (so the canonical-reference guarantee lives in exactly one place), the one
+    APA parser every tool reads a reference back with, and title matching.
+  - The live table: JSON load/dump that always reads and writes UTF-8
+    (ensure_ascii=False), write guards that refuse to overwrite a canonical or
+    changed rows.json, and the stamps and hashes the reference gates check.
 
 Tools are run as `python3 tools/<tool>.py`, so `tools/` is on sys.path[0] and a
 plain `import common` resolves.

@@ -15,20 +15,21 @@ message:
 
   Version-Bump: minor
 
-A commit without the trailer (all commits before 1.13.0) is judged by size: at
-least MINOR_LINES added plus removed text lines is minor, anything smaller
-(including a binary-only change) is patch. Size can never declare a major bump.
+A commit without the trailer (all commits before 1.13.0) is judged by size. At
+least MINOR_LINES added plus removed text lines is minor; anything smaller,
+including a binary-only change, is patch; a commit with nothing to count is none.
+Size can never declare a major bump.
 
 MAJOR below is the base the history starts from. It is 1, not 0, because by
 1.13.0 the toolkit had been in development for six months, released publicly
-many times, and used in production.
-Merge commits are skipped, since their changes are already counted in the
-commits they merge. Lines that only state the version are not counted, so
-stamping the version into files never changes it.
+many times, and used in production. Merge commits are skipped, since their
+changes are already counted in the commits they merge. Lines that only state the
+version are not counted, so stamping the version into files never changes it.
 
 Uncommitted changes count as one more commit, so `gen_docs.py` can stamp the
-version a commit will have before it is made. Needs full history: a shallow
-clone (CI's default) must fetch with `fetch-depth: 0`.
+version a commit will have before it is made; --bump gives that commit's
+declared bump, and --committed ignores the uncommitted changes. It needs full
+history: a shallow clone (CI's default) must fetch with `fetch-depth: 0`.
 
   python3 tools/version.py              # print the version
   python3 tools/version.py --explain    # one line per commit, with its effect

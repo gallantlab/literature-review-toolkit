@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Reconcile manually-downloaded PDFs against a slug+title+doi manifest.
+"""Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them.
 
-Companion to `download.py`. Phase 4 — OPT-IN, not part of the default
-workflow. Only run when the user has explicitly asked for PDF acquisition.
+Companion to download.py (Phase 4, opt-in): run it only when the user has asked
+for PDF acquisition. It scans --downloads-dir (default ~/Downloads) for PDFs
+modified in the last --since-hours (default 12), and moves each match into
+--out-dir as <slug>.pdf. --dry-run reports without moving anything.
 
-Strategy (most reliable first):
-  1. **Filename ↔ DOI substring match.** Many publishers encode the DOI suffix
-     in the filename: `nrn755.pdf` → `10.1038/nrn755`, `science.1138071.pdf` →
+Matching, most reliable first:
+  1. **Filename ↔ DOI substring.** Many publishers encode the DOI suffix in the
+     filename: `nrn755.pdf` → `10.1038/nrn755`, `science.1138071.pdf` →
      `10.1126/science.1138071`, `s41467-019-13761-7.pdf` → `10.1038/s41467-...`.
-     If a filename's stem appears as a substring in exactly one manifest DOI,
-     that's a high-confidence match.
-  2. **Author surname + year + title-word overlap** in PDF first-page text.
-     Require all three signals to converge before moving.
-  3. **Refuse to move** when uncertain — leave the PDF in Downloads for the
-     user to confirm rather than misfile.
+     A filename that matches exactly one manifest DOI is a confident match.
+  2. **Author surname + year + title words** on the PDF's first page (read with
+     pdftotext). All three must agree, and the best entry must lead the runner-up
+     by a clear margin.
+  3. **Refuse to move** when uncertain. The PDF stays in Downloads for the user
+     to confirm, rather than being misfiled; a slug already filled is never
+     overwritten.
 
 Manifest format (JSON list):
 [
@@ -24,7 +27,7 @@ Manifest format (JSON list):
   ...
 ]
 
-Run:  python3 reconcile_downloads.py --manifest list.json --out-dir papers/attention/
+  python3 tools/reconcile_downloads.py --manifest list.json --out-dir papers/attention/
 """
 import argparse
 import os

@@ -1,23 +1,32 @@
 #!/usr/bin/env python3
-"""The candidate ledger: every paper xref or forward citations suggest gets a recorded decision.
+"""The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests.
 
-candidates.json maps DOI -> {title, year, first_author, sources, decision, reason, at},
-plus `_runs`: {source: {at, n, complete, n_papers}}, recorded by each --add, so
-the audit can tell that xref and forward citations were actually run, whether
-that run finished, and whether it covered every sourced row (`complete` and
-`n_papers` come from the FILE.run.json sidecar xref.py/forward.py write beside
-their --out; a missing or incomplete sidecar records complete=False). --add
-refuses a sidecar written by the other tool than --source names.
-Keys starting with "_" are records, not candidates.
-The audit fails while any candidate is pending, and the spreadsheet lists every
-excluded one with its reason, so a paper that is not in the review was visibly
-considered and set aside.
+candidates.json maps each DOI to {title, year, first_author, sources, decision,
+reason, at}. Keys that start with "_" are records, not candidates. `_runs` holds
+{source: {at, n, complete, n_papers}}, written by each --add. From it the audit
+can tell whether xref and forward citation were run, whether each run finished,
+and whether it read every row with a DOI or arXiv id. `complete` and `n_papers`
+come from the <FILE>.run.json sidecar that xref.py and forward.py write beside
+their --out; a missing sidecar records complete=False. --add refuses a sidecar
+written by a different tool than --source names, and skips candidates the corpus
+already holds.
+
+The audit fails while any candidate is pending, or while an included candidate is
+not in the table. A missing ledger, or a missing, incomplete or partial xref or
+forward run, is a warning the audit makes you acknowledge. The spreadsheet lists
+every excluded candidate with its reason on its "Considered and excluded" sheet,
+so a paper left out of the review was visibly considered and set aside.
 
     python3 tools/candidates.py --rows rows.json --add xref.json --source xref
     python3 tools/candidates.py --rows rows.json --add forward_candidates.json --source forward
     python3 tools/candidates.py --rows rows.json --list pending
     python3 tools/candidates.py --rows rows.json --decide 10.1/x --decision exclude --reason "methods paper"
     python3 tools/candidates.py --rows rows.json --export-included xref_lane.json --lane X
+
+--decide needs --decision and a --reason. --export-included writes the included
+candidates that are not yet in the table as a schema-2 lane file. Add it with
+`merge_lanes.py --append xref_lane.json --into rows.json`, then verify the new
+rows.
 """
 import argparse
 import datetime

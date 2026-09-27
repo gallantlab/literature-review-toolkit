@@ -1,26 +1,34 @@
 #!/usr/bin/env python3
-"""Build/rebuild the bibliography xlsx from a JSON of accumulated rows.
+"""Build the bibliography .xlsx from rows.json, and refuse a table that fails the audit.
 
-Base schema:
-  Topic | Ref# | APA reference | Link | Summary | Tag | PDF (local) | Xref
+It runs the same audit as references.py --audit. On a gated table, a failing
+audit writes nothing and exits 1; --draft writes <out>_DRAFT.xlsx instead, with a
+banner saying it is not a deliverable. A legacy table (one that predates the
+reference gates) is written despite the findings. A candidates.json that is not a
+valid ledger is refused on any table.
 
-Optional columns, auto-added when the data carries them:
-  - `family` on any row -> a "Family" column after Tag (thematic grouping).
-  - citation counts -> "Cite (OpenAlex)" | "Cite (S2)" (see below).
+Base schema (sheet "References", or --sheet-name):
+  Topic | Ref # | APA reference | Link | Summary | Tag | PDF (local) | Xref
 
-Citation columns (auto-added): if any row carries citation counts, two columns
-  Cite (OpenAlex) | Cite (S2)
-are inserted after Tag. Counts come from tools/citations.py (Phase 5b); attach
-them to each row as `cite_openalex` / `cite_s2` — the exact key names
-citations.py emits (`openalex` / `s2`), prefixed `cite_`. Google Scholar can't
-be queried at scale (no API, CAPTCHA) — these databases are the proxy. See
-PLAYBOOK.md.
+Columns added after Tag when the data carries them, in this order:
+  - Family, when any row has `family` (families.py);
+  - Cite (OpenAlex) | Cite (S2), when any row has `cite_openalex` or `cite_s2`.
+    The counts come from citations.py (Phase 5b); attach them to the rows with
+    common.attach_counts. Google Scholar cannot be queried at scale (no API,
+    CAPTCHA), so these databases are the proxy. See PLAYBOOK.md;
+  - Verify note, when any row has a `verify_note` (handcheck.py writes one);
+  - Summary checked against, when any row has a `summary_check`
+    (summary_audit.py): the abstract's source, or "no abstract".
 
-`Link` should always be a DOI URL (`https://doi.org/<doi>`). PubMed/PMC URLs
-are not used as the primary link. `PDF (local)` is empty unless Phase 4 was
-opted into.
+A second sheet, "Considered and excluded", lists each candidate the ledger
+excluded and each paper a lane excluded (merge_report.json beside --rows), with
+its reason. So a paper that is not in the review was visibly considered.
 
-Color codes by `source` (see COLORS; an unknown value renders white + a warning):
+`Link` should always be a DOI URL (`https://doi.org/<doi>`); PubMed/PMC URLs are
+not used as the primary link. `PDF (local)` is empty unless Phase 4 was opted
+into.
+
+Row color by `source` (see COLORS; an unknown value renders white, with a warning):
   source-doc -> white | search -> cream (#FFF7E0) | xref / forward / survey -> green (#E2F0D9)
   lab -> blue (#DDEBF7) | anteced / anteced-nosrc -> lilac (#F3E6F5)
 
@@ -34,7 +42,7 @@ Input format (JSON list):
   ...
 ]
 
-Run:  python3 spreadsheet.py --rows rows.json --out bibliography.xlsx
+  python3 tools/spreadsheet.py --rows rows.json --out bibliography.xlsx
 """
 import argparse
 import os

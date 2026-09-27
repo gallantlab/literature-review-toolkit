@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Post-canon pass — propose strict APA-7 sentence case for reference titles.
+"""Post-canon pass: propose strict APA-7 sentence case for reference titles, for a human to review.
 
-The DOI is ground truth for a paper's *location*; the `apa` string is display,
-and APA-7 wants sentence case. CrossRef and arXiv return titles in inconsistent
-casing (arXiv and many publishers use Title Case, Nature deposits sentence case),
-so references.py normalizes ALL-CAPS titles but deliberately does NOT transform
-Title Case into sentence case: doing that correctly needs the proper-noun
-judgment APA bakes in, and a mechanical caser mis-cases proper nouns silently —
-which the audit gate cannot catch.
+The DOI is ground truth for where a paper is; the `apa` string is display, and
+APA-7 wants sentence case. CrossRef and arXiv return titles in mixed casing
+(arXiv and many publishers use Title Case; Nature deposits sentence case).
+references.py fixes ALL-CAPS titles but deliberately does NOT turn Title Case
+into sentence case. Doing that correctly needs the proper-noun judgment APA
+assumes, and a mechanical caser mis-cases proper nouns without leaving anything
+the audit could catch.
 
-So this tool PROPOSES and a human REVIEWS. Run it, read the diff, extend the
-allowlist for the corpus's own proper nouns, then apply.
+So this tool PROPOSES and a human REVIEWS. Run it, read the diff, add the
+corpus's own proper nouns to a --proper file, then apply.
 
   python3 tools/sentence_case.py --rows rows.json                    # print the diff
   python3 tools/sentence_case.py --rows rows.json --vocab            # review by token
@@ -19,7 +19,7 @@ allowlist for the corpus's own proper nouns, then apply.
 
 `--vocab` is the fast way to review a large corpus: instead of reading 150 title
 diffs, read the ~400 distinct token changes they amount to. A mis-cased proper
-noun shows up there immediately.
+noun shows up there at once.
 
 Protected automatically, with no allowlist needed:
   - ALL-CAPS acronyms (EEG, DMN, MBSR, LORETA)
@@ -29,13 +29,20 @@ Protected automatically, with no allowlist needed:
   - each hyphen/slash/dash part judged separately, so 'Resting-State' is not
     mistaken for camelCase
   - the first word of the title and of any subtitle after a colon
+A DataCite deposit's `(Version …)` and `[Descriptor]` are not part of the title,
+so they are never cased. Titles that look German or French are skipped and
+listed, because casing them lowercases every noun; --include-foreign cases them
+anyway.
 
-The allowlist below holds only nouns that are proper in ANY corpus. Domain proper
-nouns (a practice, a cohort, a trial, an instrument, a language) belong in a
-per-project `--proper` file: {"words": [...], "phrases": [...]}. Phrases are
-matched case-insensitively and restored to the capitalization written there,
-which is what lets a generic word lowercase while a named entity containing it
-does not.
+The built-in allowlist (PROPER, below) holds only nouns that are proper in ANY
+corpus. Domain proper nouns (a practice, a cohort, a trial, an instrument, a
+language) belong in a per-project `--proper` file: {"words": [...], "phrases":
+[...]}. Phrases match case-insensitively and are restored to the capitalization
+written there, so a generic word can lowercase while a named entity containing
+it does not.
+
+--apply writes in place (or to --out), and refuses a rows.json that changed since
+it was read.
 """
 import argparse
 import os

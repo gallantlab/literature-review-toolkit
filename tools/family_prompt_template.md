@@ -3,9 +3,11 @@
 Run on every review: the families are what the lineage timeline is drawn from,
 and the timeline is always offered. Two steps with a human checkpoint between
 them. The orchestrator can do this directly, or dispatch a sub-agent with
-structured output. `tools/families.py`
-then validates + renders. Feed the corpus via `tools/families.py --digest`
-(compact) or the raw `rows.json`.
+structured output; `tools/families.py` then validates and renders. Fill
+`{CORPUS_DIGEST}` with the output of `tools/families.py --rows rows.json --digest`
+(compact, one tab-separated line per paper) or with the raw `rows.json`. Set
+`{N_MIN}-{N_MAX}` to 3-8 as a rule; `families.py` refuses fewer than 2 or more
+than 9 families.
 
 ---
 
@@ -15,7 +17,7 @@ You are organizing a literature review on **{TOPIC_NAME}** into a few
 **theoretical families** — groups defined by *what each paper fundamentally
 commits to / is for*, NOT by method or sub-area.
 
-Here is the corpus (one line each: `ref / topic / cites / author year / summary`):
+Here is the corpus (one line each: `ref / topic / cites / author (year) / summary`):
 
 {CORPUS_DIGEST}
 
@@ -64,11 +66,11 @@ Save that as `families_input.json`, then run:
 ```
 python3 tools/families.py --rows rows.json --assign families_input.json --out families.json
 ```
-It validates exhaustive / exclusive (fails loud otherwise; imbalance is only a
-stderr warning — read it), stamps
-`family` onto rows.json, writes `families.json` (the reproducible cache) and
-`families.md`, and `tools/spreadsheet.py` will auto-add the Family column on the
-next rebuild.
+It checks that the assignment is exhaustive and exclusive, with 2-9 families and
+no unknown or duplicate keys, and fails loud otherwise. Imbalance (a one-paper
+family, or one over 60%) is only a stderr warning, so read it. It then stamps
+`family` onto rows.json and writes `families.json` (the reproducible cache) and
+`families.md`; `tools/spreadsheet.py` adds the Family column on the next rebuild.
 
 **Note.** The lineage/taxonomy *figure* is built by `tools/families_figure.py`,
 which **auto-selects and labels the landmark papers** — do not hand-build a labels

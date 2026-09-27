@@ -1,21 +1,28 @@
 #!/usr/bin/env python3
 """Find papers that cite the corpus's landmark papers but are not in the corpus.
 
-xref.py looks backward (what corpus papers cite); this looks forward. It takes the
-landmarks (top N by within-corpus in-degree, then citation count), asks OpenAlex
-for the most-cited papers citing each (up to --per-landmark), and scores each
-citing paper by how many corpus papers it cites. Papers citing at least
---min-shared corpus papers become candidates for candidates.py. A citing paper is
-recognized as already being in the corpus by its OpenAlex id or its DOI, so a
-corpus row with no DOI (and whose id lookup failed) cannot be excluded from the
-candidates. Because each pull is ordered by citation count, very recent papers
-are under-represented.
+xref.py looks backward, at what corpus papers cite; this tool looks forward. It
+takes the landmarks: the top --landmarks rows with a DOI (default 30), ranked by
+within-corpus in-degree (internal_citations.json, from xref.py --internal-out),
+then by citation count. For each landmark it asks OpenAlex for the most-cited
+papers that cite it (up to --per-landmark, default and maximum 200). Each citing
+paper is scored by how many corpus papers it cites. Those that cite at least
+--min-shared corpus papers (default 3) and have a DOI become candidates for
+candidates.py.
+
+A citing paper is recognized as already in the corpus by its OpenAlex id or its
+DOI. A corpus row with no DOI cannot be recognized, so it may come back as a
+candidate. Because each pull is ordered by citation count, very recent papers are
+under-represented.
 
     python3 tools/forward.py --rows rows.json --out forward_candidates.json --email you@inst.edu
 
-Also writes `<out>.run.json` = {"complete", "incomplete": [refs whose landmark
-pull failed], "at", "tool": "forward", "n_papers": rows with a DOI/arXiv id}
-beside --out, so candidates.py --add can tell a partial run from a full one.
+It also writes `<out>.run.json` beside --out: {"complete", "incomplete": [refs
+whose landmark pull failed], "at", "tool": "forward", "n_papers": rows with a DOI
+or arXiv id}. candidates.py --add reads it to tell a partial run from a full one.
+
+Exit 1 when any landmark pull failed (re-run), unless --allow-incomplete. A spent
+OpenAlex daily budget stops the run with OpenAlexBudgetError.
 """
 import argparse
 import datetime
@@ -104,7 +111,14 @@ def main():
     rows = common.load_json(args.rows)
     keyf = common.key_field(rows, args.key)
     here = os.path.dirname(os.path.abspath(args.rows))
-    indeg = common.load_optional_json(args.internal or os.path.join(here, "internal_citations.json"), {})
+    ipath = args.internal or os.path.join(here, "internal_citations.json")
+    indeg = common.load_optional_json(ipath, {})
+    if not indeg:
+        print(f"  WARNING: no in-degrees ({ipath} missing or empty; run xref.py --internal-out first):"
+              " landmarks fall back to OpenAlex counts", file=sys.stderr)
+    if not any(r.get("cite_openalex") for r in rows):
+        print("  WARNING: no row carries cite_openalex (attach citation counts first, Phase 5b):"
+              " landmark ties fall back to table order", file=sys.stderr)
     dois = sorted({common.doi_of(r, lower=True) for r in rows if common.doi_of(r)})
     wids = openalex_ids(dois, args.email)
     marks = pick_landmarks(rows, keyf, indeg, args.landmarks)

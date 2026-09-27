@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Phase 7 — build a review ARTICLE (.docx) from a finished review corpus.
+"""Build a review article (.docx) from a finished review corpus.
 
-This tool owns only the *mechanics*: the title/author/disclosure block, the
-abstract, the section headings + body paragraphs, an embedded figure with a
-standalone caption, and an APA-7 **reference list pulled straight from
-rows.json** (the canonical `apa` strings, deduped, alphabetized, hanging-indent).
+This tool owns only the mechanics: the title, author and disclosure block, the
+abstract, the section headings and paragraphs, an embedded figure with its
+caption, and an APA-7 reference list. The reference list holds every row's
+canonical `apa` from rows.json (deduplicated, in APA-7 order, hanging indent,
+each with its link). reference_list() builds it, and HTML pages should reuse it.
 
-It does NOT write prose. Author the prose separately with the scientific-writing
-skill and supply it as a content JSON (`--content`). In-text citations are APA
-author-date, e.g. "(Huth et al., 2016)"; every in-text citation must name a paper
-that exists in rows.json so the reference list backs it.
+It does NOT write prose. Write the prose separately with the scientific-writing
+skill, and supply it as a content JSON (--content). In-text citations are APA
+author-date, e.g. "(Huth et al., 2016)". Every in-text citation must name a paper
+in rows.json. This tool prints whatever prose it is given, so run cite_check.py
+before rendering.
 
 If the review is AI-authored, say so: put the model's name in `authors`, an
 `author_note` identifying it as an AI, and a `disclosure` paragraph (the
-fabricate-then-verify caveat — see PLAYBOOK Phase 7).
+fabricate-then-verify caveat; see PLAYBOOK Phase 7).
 
 content.json schema:
 {
@@ -29,9 +31,9 @@ content.json schema:
   "references_heading": "References",                 # optional (default "References")
   "references_note": "..."                            # optional; "{n}" is replaced by the count
 }
+A relative figure path is read from the folder of --out.
 
-Usage:
-  python3 tools/review_paper.py --rows rows.json --content content.json \
+  python3 tools/review_paper.py --rows rows.json --content content.json \\
           --out <Topic>_review.docx [--figure <topic>_families.png]
 """
 import argparse

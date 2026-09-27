@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
-"""Check every row's summary against its abstract, by checking agents with no web access.
+"""Summary check: agents with no web access confirm each row's summary against its abstract.
 
-  --prepare   write summary_audit/batch_NN.json (summary + abstract pairs), a
-              brief for the checking agents, and a manifest
+  --prepare   write summary_audit/batch_NN.json (summary + abstract pairs, up to
+              --batch rows each, default 40), brief.md for the checking agents,
+              and manifest.json. Old batch and result files are deleted first.
   --ingest    read summary_audit/result_NN.json and record `summary_check` on
-              each row, with a hash of the summary it checked
+              each row, bound to the summary, paper ids and abstract it checked
 
-A row with no abstract is recorded as `no-abstract` (a warning the audit makes
-you acknowledge). A row whose abstract fetch FAILED (abstracts_failed.json) or
-whose abstract entry was recorded for other ids is refused at --prepare, which
-then exits 1. A summary edited after --prepare is refused at --ingest, and so is
-a ref whose paper (its DOI/arXiv id) or whose abstract text changed since
---prepare -- the manifest records both, so --ingest is checking against exactly
-what the checking agents saw. Each batch entry carries its `summary_sha`, and a
-result that does not echo it (or echoes another) is refused. A manifest written before that binding existed
-(no `ids`/`abstract_sha` maps at all) refuses every ref in it, rather than
-silently treating each one as unchanged.
+Rows already checked for their current summary are skipped unless --recheck. A
+row with no abstract is recorded as `no-abstract`, a warning the audit makes you
+acknowledge. --prepare refuses, and exits 1 on, a row whose abstract fetch FAILED
+(abstracts_failed.json) or whose abstract entry was recorded for other ids.
+
+--ingest checks each result against exactly what the checking agents saw. The
+manifest records each ref's summary, paper (DOI/arXiv id) and abstract text, and
+a ref whose summary, paper or abstract changed since --prepare is refused. Each
+batch entry carries its `summary_sha`, and a result that does not echo it (or
+echoes another) is refused. A manifest written before that binding existed (no
+`ids`/`abstract_sha` maps at all) refuses every ref in it, rather than treating
+each one as unchanged. --ingest exits 1 on any refused result, any ref with no
+result, or any summary judged "unsupported"; fix those summaries and --prepare
+again.
 
     python3 tools/summary_audit.py --rows rows.json --prepare
     python3 tools/summary_audit.py --rows rows.json --ingest

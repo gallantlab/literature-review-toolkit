@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Build a cross-citation index from a list of papers.
+"""Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite.
 
-For each paper with a DOI, fetch its reference list from CrossRef, or from
-Semantic Scholar for an arXiv paper or one CrossRef holds no list for.
-Build a frequency table: which DOIs are cited by ≥N of the input papers.
-Resolve unknown DOIs to titles via CrossRef metadata.
+For each paper, fetch its reference list from CrossRef, or from Semantic Scholar
+for an arXiv paper or one CrossRef holds no list for. A paper with no DOI but a
+`pdf` has the DOIs in its PDF read with pdftotext instead. Then count, for each
+cited DOI, how many input papers cite it, and rank those cited by at least
+--min-cites (default 3). --exclude drops DOIs the table already has, and
+--resolve-unknown looks up missing titles in CrossRef (slow).
 
 Input format (JSON list):
 [
@@ -16,17 +18,29 @@ Input format (JSON list):
   ...
 ]
 
-Run:  python3 xref.py --papers list.json --out xref.json --min-cites 3
-Or:   python3 xref.py --rows rows.json --out xref.json     # slug = row key, DOI from link
+  python3 tools/xref.py --papers list.json --out xref.json --min-cites 3
+  python3 tools/xref.py --rows rows.json --out xref.json     # slug = row key, DOI from doi/link
 
-arXiv papers' reference lists come from Semantic Scholar (CrossRef has none); so
-do those of papers whose CrossRef record has no list. Set S2_API_KEY. A CrossRef
-fetch that fails transiently gets a second try at the end of the run, after
---retry-wait.
+With --rows, an arXiv-only row is looked up by its arXiv DOI, and a row with
+neither a DOI nor a pdf is skipped. --internal-out also writes {slug:
+internal_indegree}, how many OTHER corpus papers cite each corpus paper, which
+families_figure.py and forward.py use to pick landmarks.
 
-Also writes `<out>.run.json` = {"complete", "incomplete": [slugs still unfetched],
-"at", "tool": "xref", "n_papers": papers with a DOI/arXiv id} beside --out, so
-candidates.py --add can tell a partial run from a full one.
+Semantic Scholar needs S2_API_KEY to be reliable. Because one key serves xref,
+citations and abstracts, run those tools in sequence. Its reference lists are
+fetched in chunks of 10, and a failed chunk gets one more try in half-size
+chunks. A CrossRef fetch that fails transiently gets a second try at the end of
+the run, after --retry-wait.
+
+Output: a JSON list of {doi, n_citations, cited_by: [slugs], title, year,
+author, journal, raw}, most cited first. It also writes `<out>.run.json` beside
+--out: {"complete", "incomplete": [slugs still unfetched], "at", "tool": "xref",
+"n_papers": papers with a DOI, arXiv DOIs included}. candidates.py --add reads it
+to tell a partial run from a full one.
+
+Exit 1 when any reference list could not be fetched, because those papers
+contributed no references and every count is low; re-run, or pass
+--allow-incomplete to accept the gap and say so.
 """
 import argparse
 import datetime

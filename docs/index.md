@@ -3,12 +3,12 @@
 **Scripts that let an LLM agent run a literature review without fabricating
 references.**
 
-Version 1.23.0 · MIT license · [AI disclosure](#ai-disclosure)
+Version 1.23.1 · MIT license · [AI disclosure](#ai-disclosure)
 
 The agent decides what to search, what matters, how to group it, and optionally
 how to write it up. The scripts handle the API calls, verification and
-bookkeeping: the work LLMs do worst, where one invented author or wrong DOI
-quietly corrupts a review.
+bookkeeping. That is the work LLMs do worst, and one invented author or wrong DOI
+can quietly corrupt a review.
 
 <div class="hero" markdown>
 
@@ -16,11 +16,10 @@ quietly corrupts a review.
 ![Lineage figure: six families of papers on how the brain represents complexity, 1948 to 2026](assets/figures/lineage_complexity.png){ loading=lazy }
 <figcaption markdown>
 **A finished lineage figure.** 190 verified papers on how the brain represents
-complexity, grouped into six theoretical families (lanes) on a timeline from
-1948 to 2026. Dot area shows citation count; labeled dots are landmarks the
+complexity, grouped into six theoretical families on a timeline from 1948 to
+2026. Dot area shows citation count, and the labeled dots are landmarks the
 toolkit chose automatically. Every dot is a verified, canonically formatted
-reference in the accompanying spreadsheet, so the figure can be trusted as a map
-of the literature.
+reference in the accompanying spreadsheet.
 </figcaption>
 </figure>
 
@@ -29,8 +28,8 @@ of the literature.
 ## Judgment versus ground truth
 
 A review needs human judgment at only three points. Everything between them has
-a ground truth (a DOI either resolves to the cited paper or it does not), so the
-toolkit checks it by script instead of trusting the agent's memory.
+a ground truth: a DOI either resolves to the cited paper or it does not. So the
+toolkit checks those steps by script instead of trusting the agent's memory.
 
 <div class="cards" markdown>
 
@@ -57,16 +56,20 @@ does not mechanize.
 
 </div>
 
-Between those points, every step runs automatically behind a gate:
+Between those points, every step runs automatically:
 
 - **Antecedents.** A required second search finds the field's methodological,
   empirical and theoretical roots, which a forward search misses.
-- **Verification.** Every citation is checked against PubMed, PMC, CrossRef and
-  arXiv. Search agents fabricate roughly **1 in 4**.
+- **Verification.** Every citation is checked against PubMed, PMC, CrossRef,
+  DataCite and arXiv. Search agents fabricate roughly **1 in 4**.
 - **Canonical references.** Every reference is rebuilt from its verified DOI into
-  APA-7, and an audit fails the build on any defect.
+  APA-7. References with no DOI get a hand check.
+- **Summary checks.** A checking agent with no web access compares every
+  summary with the paper's abstract.
 - **Citation counts.** Counts come from OpenAlex, checked against Semantic
   Scholar.
+- **The audit.** A failed check stops the build. The spreadsheet runs the full
+  audit and refuses a table that fails it.
 
 ## What you get
 
@@ -80,9 +83,9 @@ family and citation counts, colored by where the paper came from.
 
 <div class="card" markdown>
 ### :material-chart-timeline-variant: Lineage timeline
-Offered on every review. An interactive HTML figure, plus SVG, PNG and PDF, that
-lays out the families on a timeline: often the most useful thing a review
-produces.
+Offered on every review. An interactive HTML figure that lays out the families
+on a timeline, with an SVG copy, plus PNG and PDF when `rsvg-convert` or
+Inkscape is installed. It is often the most useful thing a review produces.
 </div>
 
 <div class="card" markdown>
@@ -113,6 +116,30 @@ drawn from the verified corpus.
 
 From verification on, both modes run the same pipeline. See
 [Choosing a front end](manual.md#4-choosing-a-front-end).
+
+## Get started
+
+You need Python 3, a contact email, and two free API keys. Without an OpenAlex
+key, every client on one IP address shares a single daily budget, and a campus
+network can spend it before you start. Keyless Semantic Scholar is heavily
+throttled.
+
+```bash
+git clone https://github.com/gallantlab/literature-review-toolkit.git
+cd literature-review-toolkit
+pip install -r requirements.txt
+export LITREVIEW_EMAIL=you@institution.edu   # NCBI and CrossRef require one
+export OPENALEX_API_KEY=...                   # https://help.openalex.org/api/authentication
+export S2_API_KEY=...                         # https://www.semanticscholar.org/product/api#api-key-form
+python3 tools/preflight.py --papers 600       # newer version? keys? today's OpenAlex budget?
+```
+
+Then open Claude Code in the directory that holds the clone and describe the
+review. The agent runs the preflight first and follows
+[`PLAYBOOK.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/PLAYBOOK.md).
+A full build takes hours. [Installation](manual.md#21-install) and
+[environment variables](manual.md#22-environment-variables) are covered in the
+manual.
 
 ## Next steps
 

@@ -3,23 +3,23 @@
 
 It also stamps the toolkit's version, computed from git history by version.py
 (uncommitted changes count as the next commit), into every file that states it.
-Run it just before committing, with everything you intend to commit, passing
+Run it just before committing, with everything you intend to commit, and pass
 the bump the commit will declare:
 
   python3 tools/gen_docs.py --bump minor   # then commit with "Version-Bump: minor"
+  python3 tools/gen_docs.py                # rewrite the block and the version in every target file
+  python3 tools/gen_docs.py --check        # exit 1 if anything is stale (CI runs this)
 
-Four documents used to hand-describe every tool, and they drifted (one said
-the gate did not catch mojibake while another said it did; two disagreed on
-the family-count limit). The index — script, phase, one-line purpose, flags —
-is mechanical, so it is generated from the modules themselves: the docstring's
-first sentence, the module's PHASE constant, and the argparse options reported
-by `--help`. The narrative around it stays hand-written.
+The index gives each script's phase, one-line purpose and flags. Four documents
+once described every tool by hand, and they drifted apart: one said the gate did
+not catch mojibake while another said it did, and two disagreed on the
+family-count limit. So the index is generated from the modules themselves: the
+docstring's first sentence, the module's PHASE constant, and the options that
+`--help` reports. The narrative around it stays hand-written.
 
-  python3 tools/gen_docs.py            # rewrite the block and the version in every target file
-  python3 tools/gen_docs.py --check    # exit 1 if anything is stale (CI runs this)
-
-Targets carry the block between two marker comments; everything outside them is
-left alone. A tool without a PHASE constant is listed with "—".
+Each target carries the block between two marker comments; everything outside
+them is left alone. A tool without a PHASE constant is listed with "—".
+gen_docs.py and version.py are maintainer tools, so they are not listed.
 """
 import argparse
 import ast

@@ -2,15 +2,21 @@
 
 Fill in the `{PLACEHOLDERS}` and pass the result as the `prompt` field of an
 Agent call (subagent_type: `general-purpose`). The agent has WebSearch +
-WebFetch and will return a curated list. Do NOT trust its citations — verify
-them all in Phase 3.
+WebFetch and writes one lane file (schema 2) that `tools/merge_lanes.py` reads.
+Do NOT trust its citations — verify them all in Phase 3.
+
+**Capped search.** Only if the user chose to cap the search at the Phase-0
+preflight, keep the "*Exception — a CAPPED search*" sentence under "What to
+return"; otherwise delete it before sending.
 
 **Antecedents variant (Phase 2b).** This same template is reused for the required
 antecedents pass. For that pass, FLIP the tier emphasis: the target is
 foundational / classic / highly-cited work that PRE-DATES the modern literature
 (methodology origins, foundational empirical results, or theory), not recent
 papers. Run one agent per axis, set `{TIER_BOUNDARY_YEAR}` so "classic" dominates,
-and expect some no-DOI books/chapters (handle per Phase 2b).
+and expect some no-DOI books/chapters (handle per Phase 2b). In the JSON example,
+change `"source": "search"` to `"source": "anteced"` (`"anteced-nosrc"` for a paper
+with no DOI), so the spreadsheet colors antecedents lilac.
 
 ---
 
@@ -25,7 +31,7 @@ ONE specific topic: **{TOPIC_NAME}**.
      contested claims, what's IN scope and what's OUT of scope (adjacent
      topics covered separately). -->
 
-## What I already have (DO NOT re-include these)
+## What the corpus already has (DO NOT re-include these)
 
 {ALREADY_HAVE_LIST}
 <!-- Bullet list of existing papers, each one line: First Author Year — title -->
@@ -41,7 +47,7 @@ ONE specific topic: **{TOPIC_NAME}**.
 
 The current date is {TODAY}. Search for papers up through today.
 
-## Aim for ~{TARGET_COUNT} papers, balanced across
+## Aim for ~{TARGET_COUNT} papers (a floor, not a cap: see "What to return"), balanced across
 
 1. Classic / foundational (pre-{TIER_BOUNDARY_YEAR}, high impact)
 2. Recent reviews and updates ({TIER_BOUNDARY_YEAR}-present)
@@ -58,8 +64,9 @@ Use WebSearch and WebFetch. Try multiple query variants for each angle:
      explicit recent years (2024, 2025, etc.) -->
 
 Search both Google Scholar (via `scholar.google.com` URLs) and PubMed
-(`pubmed.ncbi.nlm.nih.gov`). Verify each paper actually exists by fetching
-its abstract page before including it.
+(`pubmed.ncbi.nlm.nih.gov`). Google Scholar often blocks automated fetches; if
+it does, use PubMed, arXiv and publisher pages instead. Verify each paper actually exists by fetching its abstract page
+before including it.
 
 ## What to return
 
@@ -92,8 +99,7 @@ Write it incrementally if you are worried about time, so no work is lost.
   and set `lane_fit` to the better-fitting area; duplicates are removed later.
 - **The target is a floor, not a cap.** Never leave out an on-topic paper to stay near
   it — "lower priority" or "trimmed to target" is not a reason to drop a paper.
-  *Exception — a CAPPED search* (the user chose to cap it at the Phase-0 preflight;
-  include this sentence only then): the target is a hard cap of {TARGET_COUNT}; keep the
+  *Exception — a CAPPED search*: the target is a hard cap of {TARGET_COUNT}; keep the
   most important papers, and list every on-topic paper over the cap in `excluded` with
   reason `over the capped-search limit`, so it is shown, not lost.
 - `deferred` is ONLY for a paper you handed to a different, named lane (`to_lane`) that
@@ -101,9 +107,10 @@ Write it incrementally if you are worried about time, so no work is lost.
   `first_author` and `year` are required on every deferred entry: the merge step needs
   them to confirm a deferred paper by title alone, and fails the merge on any deferred
   paper no lane kept.
-- `excluded` is ONLY for a paper outside the review's scope, or a pre-{TIER_BOUNDARY_YEAR}
-  paper that does not clear the classic bar — with its `reason`, `first_author` and
-  `year`. Excluded papers are listed on the spreadsheet's "Considered and excluded" sheet.
+- `excluded` is ONLY for a paper outside the review's scope, a pre-{TIER_BOUNDARY_YEAR}
+  paper that does not clear the classic bar, or (in a capped search only) an on-topic
+  paper over the cap — each with its `title`, `reason`, `first_author` and `year`.
+  Excluded papers are listed on the spreadsheet's "Considered and excluded" sheet.
 - Set `status.returned` to the number of papers, and `websearch_exhausted` to true if
   your web search stopped working; say in `notes` how you continued.
 
@@ -112,7 +119,7 @@ Balance `tag` across: `classic` | `recent-review` | `recent-empirical` |
 
 Quality over quantity for pre-{TIER_BOUNDARY_YEAR}, err toward inclusion for recent work.
 
-**Important:** Many published papers have similar titles. Always confirm
-the first author and year by visiting the actual landing page (PubMed,
-journal, or arxiv). Do not invent author names or invert findings — the
+**Important:** Many published papers have similar titles. Confirm the first
+author and year on the actual landing page (PubMed, journal, or arXiv), not from
+memory or a search snippet. Do not invent author names or invert findings — the
 review needs accurate citations.

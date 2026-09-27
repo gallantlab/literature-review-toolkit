@@ -1,36 +1,49 @@
 #!/usr/bin/env python3
-"""Canonical reference builder — make EVERY reference perfect, in both modes.
+"""Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table.
 
-A reference's bibliographic text must never be trusted from a search agent's
-memory (topic mode) or OpenAlex's light metadata (lab mode). This rebuilds each
-`apa` from the *verified* DOI against the authoritative source — CrossRef for
-DOIs (falling back to DataCite when CrossRef has no such DOI: Zenodo, figshare,
-OSF and Dryad software/data-set/preprint deposits register there instead), the
-arXiv API for arXiv ids — through ONE formatter, then audits the result against
-a hard quality gate.
+A reference's text must never be trusted from a search agent's memory (topic
+mode) or from OpenAlex's light metadata (lab mode). So each `apa` is rebuilt
+through ONE formatter from the authoritative record: CrossRef for a DOI, the
+arXiv API for an arXiv id. When CrossRef has no such DOI, DataCite is tried,
+because Zenodo, figshare, OSF and Dryad register software, data-set and some
+preprint deposits there. When a row has both a journal DOI and an arXiv id, the
+journal DOI wins.
+
+Canon rebuilds only a row whose verify stamp is OK (or overridden with a reason)
+for its current ids, so it never prints a wrong paper in a correct format. It
+names every row it did not rebuild: not verified, a DOI no registry has, a source
+with no usable record (the old apa is kept), or a fetch that failed twice.
 
 Pipeline position:
-  topic mode:  search -> verify.py (catch fabrications) -> references.py (canonicalize)
-  lab  mode:   lab_corpus.py (OpenAlex) -> verify.py --rows -> references.py (canonicalize)
+  topic mode:  merge_lanes.py -> verify.py --rows -> references.py
+  lab  mode:   lab_corpus.py -> verify.py --rows -> references.py
 
-INPUT: a JSON list of rows. Each row needs a stable key (default "ref" else
-"label") and a DOI (from a `doi` field or a `https://doi.org/...` link) and/or an
-`arxiv` id. An optional `venue` is used only as a last-resort fallback (lab mode
-passes the OpenAlex venue). Rows with no DOI/arxiv keep their existing `apa` and
-are flagged `no-source` for manual attention.
+INPUT: a JSON list of rows. Each row needs a key (default "ref", else "label")
+and a DOI (a `doi` field or a `https://doi.org/...` link) and/or an `arxiv` id.
+An optional `venue` is used only as a last-resort fallback (lab mode passes the
+OpenAlex venue). A row with neither id keeps its `apa` and is listed for a check
+by hand (handcheck.py).
 
-  python3 tools/references.py --rows rows.json --out rows.json --email you@x.edu
-  python3 tools/references.py --rows rows.json --audit          # report only, exit 1 on any defect
+  python3 tools/references.py --rows rows.json --email you@inst.edu   # canon, in place
+  python3 tools/references.py --rows rows.json --audit                # report only
+  python3 tools/references.py --rows rows.json --list-acks            # unacknowledged warnings
+  python3 tools/references.py --rows rows.json --repair               # offline string repair
 
-OUTPUT (default): rewrites each row's `apa` (and `link` to the DOI URL), prints a
-per-defect audit. `--audit` reports without writing and exits nonzero if any row
-is imperfect — wire it into the build so a bad ref can never ship.
+Canon rewrites each rebuilt row's `apa` (and its `link` to the DOI URL), stamps
+`canonical_at`, and prints the audit. --audit prints the audit and writes
+nothing. On a gated table (any row verified, or built on or after the gates
+date), the audit also applies the reference gates: the verify stamp, the hand
+check, the summary check, the candidate ledger, and an acknowledgment in
+audit_acks.json for every warning. spreadsheet.py runs this same audit. Every
+mode needs --email or LITREVIEW_EMAIL.
 
 arXiv ids are fetched in batches of 50 (one request per 50 rows, 3 s apart, as
 arXiv asks), never one per row. A row whose fetch fails gets a second try at the
-end of the run after --retry-wait; a row that still fails is named and the run
-exits 1, because its `apa` is not canonical. `--only A-01,B-02` rebuilds just
-those rows and leaves every other row exactly as it is (the targeted re-canon).
+end of the run, after --retry-wait. `--only A-01,B-02` rebuilds just those rows
+and leaves every other row as it is (the targeted re-canon).
+
+Exit 1 when the audit fails or any row was not rebuilt (not verified, a DOI no
+registry has, or a failed fetch), so a bad reference cannot ship.
 """
 import argparse
 import datetime

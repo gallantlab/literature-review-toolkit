@@ -2,168 +2,229 @@
 
 **Purpose.** Build or extend a bibliography for an academic review topic, offer
 its lineage timeline on every review, and optionally write it up as a review.
-This is ONE tool with two front-ends — **topic mode** (start from a query) and
-**lab mode** (start from a lab's corpus) — that share the entire downstream
-pipeline; only the front-end differs. Per topic, aim for ~50-70 high-impact and recent papers, classified and
-summarized. Decide the mode first (Phase 0), then gather that mode's inputs.
+This is ONE tool with two front-ends, **topic mode** (start from a query) and
+**lab mode** (start from a lab's corpus), that share the entire downstream
+pipeline. Per topic, aim for ~50-70 high-impact and recent papers, classified and
+summarized.
+
+**How to read this file.** The operating contract and Phase 0 are the rules; read
+them first. The phases give each step's procedure once. "Quick start for a fresh
+Claude" at the end lists the steps in order. Every command below that touches the
+network needs a contact email: export `LITREVIEW_EMAIL` (or pass `--email` to each
+tool); the commands assume it is set.
 
 ## Operating contract — the rules that don't bend
 
-These are the load-bearing invariants. Everything below the contract is reference
-detail that elaborates them; when in doubt, obey this list. Section pointers are in
-parentheses. Treat bold emphasis elsewhere in this file as ordinary guidance — the
-genuinely inviolable rules are *only* the ten here.
+These ten rules are the invariants. Everything below elaborates them; when in
+doubt, obey this list. Bold elsewhere in this file is ordinary emphasis, not an
+eleventh rule.
 
-0. **Check for a newer toolkit and for API access before any search** (Phase 0). The
-   first thing to do when someone asks for a new search is `tools/preflight.py --papers
-   <planned size>`. Exit 0: proceed. Exit 2: stop and ask. If GitHub has a newer version,
-   offer to install it (the preflight prints the command; install only on a yes, then
-   rerun the preflight). If a key is missing or the OpenAlex budget is short, put its
-   three choices to the user — **get the API keys**, **cap the search**, or **be
-   prepared to wait** — and let them pick before any lane is launched. Keyless
-   OpenAlex is one daily budget shared by every client on the same IP address, so a
-   campus network can have spent it before the build starts.
-1. **Verify EVERY citation before it enters a deliverable** (Phase 3); `verify.py --rows`
-   stamps each row, canon refuses a row without an OK stamp for its current ids, and the
-   audit fails it. About 1 in 4 agent-returned refs has a fabricated author list, wrong
-   year, reversed conclusion, or bad DOI. No exceptions — preprints included.
-2. **Every reference is canonical** (Phase 3f). Rebuild each `apa` from the verified
-   DOI/arXiv with `references.py`; never ship an agent-typed or OpenAlex-typed
-   string. Canon's refusal to rebuild an unverified row is unconditional — on every
-   table, including one built before the gates existed. `references.py --audit` is a
-   hard gate (exit 1) — run it before every deliverable.
-3. **One row per DOI** — global dedup; a paper appears once in `rows.json`. Bites
-   hardest at the lab-mode merge, where one paper surfaces under several
-   theme-searches and a lab paper can resurface as "field" (Phase L4c). (Distinct
-   from the *one-family-per-paper* rule, which `families.py` enforces automatically
-   — Phase 6b. This contract item is only about row-level deduplication.)
-4. **Run the antecedents pass on every review, both modes** (Phase 2b). The forward
-   search misses the topic's methodological, empirical, and theoretical roots;
-   without it the field looks ~10 years old.
+0. **Check for a newer toolkit and for API access before any new search**
+   (Phase 0). Run `tools/preflight.py --papers <planned size>` first. Exit 0:
+   proceed. Exit 2: stop. Offer a newer version if it found one (install only on a
+   yes, then rerun the preflight). If a key is missing or the OpenAlex budget is
+   short, put its three choices to the user (**get the API keys**, **cap the
+   search**, or **be prepared to wait**) and wait for their pick before launching
+   any lane.
+1. **Verify EVERY citation before it enters a deliverable** (Phase 3), preprints
+   included. `verify.py --rows` stamps each row; canon refuses, and the audit
+   fails, a row without an OK stamp (or a reasoned override) for its current
+   DOI/arXiv id. A row with neither id needs a recorded hand check instead
+   (Phase 3e). Why: from briefs without a verification duty, about 1 in 4
+   agent-returned refs had a fabricated author list, a wrong year, a reversed
+   conclusion, or a bad DOI.
+2. **Every reference is canonical** (Phase 3f). `references.py` rebuilds each
+   `apa` from the verified DOI/arXiv id; never ship an agent-typed or
+   OpenAlex-typed string. The exceptions are a DOI-less item, whose hand-checked
+   `apa` stands, and a verified row whose source had no usable record, whose kept
+   `apa` is confirmed by hand and acknowledged (`kept-existing-apa`).
+3. **One row per paper.** `merge_lanes.py` dedups on DOI, arXiv id and title+year;
+   the audit's duplicate scan warns on preprint/published pairs, and each pair
+   needs a verdict. It bites hardest at the lab-mode merge, where one paper
+   surfaces under several themes and a lab paper can resurface as "field"
+   (Phase L4c). This is row-level dedup, distinct from the one-family-per-paper
+   rule that `families.py` enforces (Phase 6b).
+4. **Run the antecedents pass on every review, both modes** (Phase 2b). The
+   forward search misses the topic's methodological, empirical and theoretical
+   roots; without them the field looks ~10 years old.
 5. **Audit the temporal order of ideas before delivering any written review**
-   (Phase 7). Origin claims must cite the EARLIEST deserving paper, oldest-first —
-   not whichever ref fits the sentence.
-6. **`rows.json` is the live table after Phase 3f.** Edit it by hand for any later
-   change; never re-run the row-emitter (it wipes canonical `apa` + citation counts).
-7. **Don't ask before fetching** from PubMed/PMC/CrossRef/OpenAlex/Unpaywall/arXiv/
-   publishers — these are read-only academic GETs; do confirm destructive or
-   shared-state actions. Every link is a bare `https://doi.org/<doi>` (never a
-   libproxy URL). Set a contact email (`LITREVIEW_EMAIL` or `--email`) for the API
-   User-Agent.
-8. **PDFs are opt-in** (Phase 4) — default no, and never ask whether to fetch them.
-9. **The spreadsheet is the release gate.** `spreadsheet.py` runs the full audit and
-   refuses a failing table (verify stamps, hand checks for DOI-less rows, summary
-   checks, acknowledged warnings); `--draft` writes a file marked as a draft.
+   (Phase 7). An origin claim cites the EARLIEST deserving paper, and multiple
+   citations go oldest-first, not whichever ref fits the sentence.
+6. **`rows.json` is the live table from the first successful merge (Phase 2c).**
+   From then on, add rows only with `merge_lanes.py --append`, and change them
+   only by tool writes or hand edits. Never regenerate it: a fresh
+   `merge_lanes.py --raw --out` (or a project row emitter) drops every stamp,
+   hand check and fix written since, and after canon the canonical `apa`, the
+   counts and the families too. `common.write_rows` refuses to overwrite a
+   canonical table; do not pass `--force` to get past it.
+7. **Don't ask before fetching** from PubMed/PMC/CrossRef/DataCite/OpenAlex/
+   Semantic Scholar/Unpaywall/arXiv/publishers: these are read-only academic
+   GETs. Do confirm destructive or shared-state actions. Every link is a bare
+   `https://doi.org/<doi>`, never a libproxy URL.
+8. **PDFs are opt-in** (Phase 4): the default is no, and never ask whether to
+   fetch them.
+9. **The spreadsheet is the release gate** (Phase 5). `spreadsheet.py` runs the
+   full audit (`references.py --audit`: formatting defects, verify stamps, hand
+   checks, summary checks, the candidate ledger, acknowledged warnings) and
+   refuses to write a failing gated table. `--draft` writes `<out>_DRAFT.xlsx`
+   with a red banner, which is never the deliverable. Run
+   `references.py --rows rows.json --audit` before every other deliverable too.
 
-**Default tier criteria.** Pre-2021: only highly cited / foundational. 2022+:
-promiscuous (no citation-count gate — too recent to have accrued cites). The
-boundary is "today minus ~5 years"; advance it as the calendar moves.
+**Default tier criteria.** The tier boundary is today minus ~5 years (2021 in
+2026; advance it as the calendar moves). Before it: only highly cited or
+foundational work. From it on: promiscuous, with no citation-count gate, since
+recent papers have not had time to accrue cites.
 
 ---
 
 ## Documentation site — keep it in sync
 
-There is a public documentation website built from `docs/` (MkDocs + Material),
-live at **https://gallantlab.org/literature-review-toolkit/**. It is a *superset*
-of this PLAYBOOK and the README, not a fork. **When you change the toolkit — a
-tool, a phase, a command/flag, a guardrail or lesson — update the matching page
-under `docs/` in the same change** (fastest to drift: `docs/manual.md`, which
-carries every phase command, guardrail and flag). The tool index in `docs/tools.md`, `tools/README.md` and
-this file is **generated** — run `python3 tools/gen_docs.py` after adding a tool
-or a flag; `.github/workflows/tests.yml` fails on a stale copy, and also runs
-`ruff check .` and `tools/tests/test_formatting.py`. The site auto-deploys via
-`.github/workflows/docs.yml` on push to `main` (build runs `mkdocs build
---strict`). Full editing/figure/snippet details live in `docs/maintaining.md`.
-The repo is **public** (that's what enables free Pages); `site_url` uses the org's
-`gallantlab.org` custom domain, not `github.io`.
+The public site at **https://gallantlab.org/literature-review-toolkit/** is built
+from `docs/` (MkDocs + Material). It is a superset of this PLAYBOOK and the README,
+not a fork. **When you change the toolkit (a tool, a phase, a command or flag, a
+guardrail or lesson), update the matching page under `docs/` in the same change.**
+`docs/manual.md` drifts fastest, since it carries every phase command, guardrail
+and flag. The tool index in `docs/tools.md`, `tools/README.md` and this file is
+generated: run `python3 tools/gen_docs.py` after adding a tool or a flag. CI
+(`.github/workflows/tests.yml`) runs `ruff check .`,
+`tools/tests/test_formatting.py` and `gen_docs.py --check`, and fails on a stale
+index. The site deploys from `.github/workflows/docs.yml` on a push to `main` that
+touches `docs/` or `mkdocs.yml` (`mkdocs build --strict`). Editing, figure and
+snippet details are in `docs/maintaining.md`.
 
 ---
 
 ## Phase 0 — check the toolkit and API access, then choose the mode (do this first)
 
-**Step 0 — preflight (contract rule 0).** Before anything else, run
+**Step 0: preflight (contract rule 0).** Before anything else, run
 
 ```bash
 python3 tools/preflight.py --papers <lanes x target + lab papers>
 ```
 
-**First, the version.** The toolkit is updated often. The preflight reads the version
-stamped on GitHub's `main` and compares it with this copy. When GitHub is newer it prints
-the install command — `git -C <toolkit> pull --ff-only` for a clone (warning about
-uncommitted changes or another branch), the Claude Code `/plugin` menu or a fresh download
-otherwise. Offer it to the user and install only on a yes; then rerun the preflight. A
-build already under way keeps the version it started with (`--no-update-check`); only a
-new search is offered an update.
+(`--papers` defaults to 500. `--offline` checks only the environment variables:
+no probes and no version check.)
 
-It then checks `LITREVIEW_EMAIL`, `OPENALEX_API_KEY` and `S2_API_KEY`, probes both services
-(one OpenAlex credit), reads the OpenAlex budget left today, and estimates what the
-planned corpus needs. Exit 0: go on. Exit 2: stop and give the user its three choices,
-in its words, and wait for their pick:
+**The version.** The preflight compares the version stamped on GitHub's `main`
+with this copy. When GitHub is newer it prints the install command: `git -C
+<toolkit> pull --ff-only` for a clone (with a warning if the checkout has
+uncommitted changes or is not on `main`), otherwise the Claude Code `/plugin` menu
+or a fresh download. Offer it and install only on a yes; then rerun the preflight.
+A build already under way keeps the version it started with: pass
+`--no-update-check` when rerunning the preflight mid-build.
 
-1. **Get the API keys** — both are free and each has its own budget. OpenAlex:
+**Keys and budget.** It then checks `LITREVIEW_EMAIL`, `OPENALEX_API_KEY` and
+`S2_API_KEY`, probes both services (one OpenAlex credit), reads the OpenAlex budget
+left today, and estimates what the planned corpus needs. It exits 2 when a newer
+version exists, when the email is unset (export it and rerun), or when a key is
+missing or rejected or the budget is short. In the last case it prints three
+choices. Give them to the user in its words and wait for their pick:
+
+1. **Get the API keys.** Both are free and each has its own budget. OpenAlex:
    https://help.openalex.org/api/authentication. Semantic Scholar:
-   https://www.semanticscholar.org/product/api#api-key-form. Export them in the shell
-   profile and rerun the preflight.
-2. **Cap the search** — fewer lanes and a hard per-lane cap, sized so the build fits the
-   budget the preflight reports. Tell every lane brief the search is CAPPED
-   (`search_prompt_template.md`): an on-topic paper over the cap goes in `excluded`
-   with reason `over the capped-search limit`, so it is listed on the "Considered and
-   excluded" sheet rather than lost. Without `S2_API_KEY`, run `xref.py
-   --allow-incomplete` and say so at hand-off.
-3. **Be prepared to wait** — nothing is skipped. An OpenAlex step that runs out of budget
-   stops with `OpenAlexBudgetError`; rerun it after the reset (midnight UTC; the
-   preflight gives the local time). Semantic Scholar steps back off on every 429 and can
-   take hours on a large corpus.
+   https://www.semanticscholar.org/product/api#api-key-form. Export them in the
+   shell profile, open a new shell, and rerun the preflight.
+2. **Cap the search.** Fewer lanes and a hard per-lane cap, sized to the budget the
+   preflight reports. Tell every lane brief the search is CAPPED (the template's
+   capped-search sentence, Phase 2): an on-topic paper over the cap goes in
+   `excluded` with reason `over the capped-search limit`, so it is listed on the
+   "Considered and excluded" sheet rather than lost. Without `S2_API_KEY`, run
+   `xref.py --allow-incomplete` and say so at hand-off.
+3. **Be prepared to wait.** Nothing is skipped. An OpenAlex step that runs out of
+   budget stops at once with `OpenAlexBudgetError` (citations, abstracts,
+   forward and the hand-check DOI search all re-raise it); rerun it after the
+   reset at midnight UTC (the preflight gives the local time). Semantic Scholar
+   steps back off on every 429 and can take hours on a large corpus.
 
-The keyless OpenAlex budget is 1,000 credits a day per IP address, shared by everyone
-behind it; a key has its own 10,000. A filter (batch) request costs 1 credit, a title
-search 10, a single-work lookup 0 (read off OpenAlex's rate-limit headers, 2026-09-27).
-On 2026-09-27 a campus network's keyless budget was already spent at 06:30 UTC.
+**Why the budget matters.** Keyless OpenAlex gives 1,000 credits a day per IP
+address, shared by everyone behind it; a key has its own 10,000. A filter (batch)
+request costs 1 credit, a title search 10, a single-work lookup 0 (read off
+OpenAlex's rate-limit headers, 2026-09-27). That day a campus network's keyless
+budget was already spent at 06:30 UTC. `common.http` sends `OPENALEX_API_KEY` as an
+Authorization header to api.openalex.org only, and treats a 429 whose Retry-After
+exceeds 10 minutes as a spent budget rather than a throttle.
 
-
-One tool, two front-ends. Everything after the front-end — verify, citation
-counts, families, figure, spreadsheet — is the SAME shared machinery, run the
-same way. There are no mode-specific shortcuts.
+**Then choose the mode.** Everything after the front-end (verify, canon, counts,
+families, figure, spreadsheet) is the same machinery, run the same way; there are
+no mode-specific shortcuts.
 
 | Mode | Start from | User says… | Front-end | Then gather |
 |------|-----------|-----------|-----------|-------------|
-| **Topic** | a query/topic | "lit review on X", "extend the bibliography for Y" | Phase 1 (scope) → 2 (search) → **2b (antecedents)** | topic name + 1-paragraph definition, source doc if any, target spreadsheet path, tier criteria |
-| **Lab** | a lab's publications | "review lab Z's work", "how has Z's research evolved" | Phase L1–L3 (ingest corpus → derive themes) → **L4c** (+ **2b antecedents**) | the lab/author ids, the inclusion filter (e.g. human-only), target paths |
+| **Topic** | a query/topic | "lit review on X", "extend the bibliography for Y" | Phase 1 (scope) → 2 (search) + **2b (antecedents)** → 2c (merge) | topic name + 1-paragraph definition, source doc if any, target spreadsheet path, tier criteria |
+| **Lab** | a lab's publications | "review lab Z's work", "how has Z's research evolved" | Phases L1–L3 (ingest corpus → derive themes) → **L4c** (+ **2b antecedents**) | the lab/author ids, the inclusion filter (e.g. human-only), target paths |
 
-**Phase 2b (antecedents) is required in both modes** — the forward search misses a
-topic's methodological, empirical, and theoretical roots; do not skip it.
-
-Both then converge on the shared pipeline: **Phase 3 verify → 3f canonicalize refs → 5 spreadsheet →
-5b citation counts → 6 cross-citation → 6b families + timeline (offered every time; the user may
-decline) → 7 review article (optional) → 8 hand-off.** Lab mode's
-outward/contextualize layer (**L4c**) is not a lighter pass — it *runs the
-topic-mode front-end (Phases 2–6) once per theme*, with the identical
-verify/count/dedup guardrails. Topic mode is the next section; lab mode is under
-"Lab mode" below.
+Both converge on the shared pipeline: **3 verify → 3e hand checks → 3f canon →
+5b counts → 5c summary checks → 6 cross-citation → 6b families + timeline
+(offered every time; the user may decline) → 5 spreadsheet → 7 review article
+(optional) → 8 hand-off.** Lab mode's L4c is not a lighter pass: it runs the
+topic-mode front-end (Phases 2–6) once per theme, with the same guardrails. Lab
+mode is described under "Lab mode" below.
 
 ---
 
 ## Output artifacts (per topic batch)
 
-1. New rows appended to `<spreadsheet>.xlsx` with columns:
-   `Topic | Ref# | APA reference | Link | Summary | Tag | Family | Cite (OpenAlex) |
-   Cite (S2) | Verify note | PDF (local) | Xref` (`Family` / `Cite` / `Verify note`
-   appear automatically once any row carries them).
-   `Link` is always the DOI URL (`https://doi.org/<doi>`). `Family` (Phase 6b)
-   and the two `Cite` columns (Phase 5b) are auto-added by `spreadsheet.py`
-   whenever rows carry them.
-2. `citation_counts.json` — per-paper OpenAlex + Semantic Scholar counts (Phase 5b)
-3. `families.json` + `families.md`, and `<topic>_families.{html,svg,png,pdf}` —
-   the theoretical grouping and its interactive timeline (Phase 6b, offered on every
-   review; absent only if the user declined it)
-4. Cross-reference index at `xref_<topic_slug>.json` (after Phase 6)
-5. **Only if Phase 7 was opted into:** a narrative review article `<Topic>_review.docx`
-   (prose authored into `content.json`, rendered with `tools/review_paper.py`; APA-7 reference
-   list pulled from `rows.json`).
-6. **Only if Phase 4 was opted into:**
-   - PDFs at `papers/<topic_slug>/<paper_slug>.pdf`
-   - Browser-helper page `papers/<topic_slug>/_download_helper.html` for
-     paywalled / bot-blocked papers
+Deliverables:
+
+1. `<topic>_bibliography.xlsx`, built by `spreadsheet.py` from `rows.json`
+   (columns in Phase 5), plus its "Considered and excluded" sheet.
+2. `families.json` + `families.md` and `<topic>_families.{html,svg,png,pdf}`: the
+   theoretical grouping and its interactive timeline (Phase 6b; absent only if
+   the user declined it).
+3. **Only if Phase 7 was opted into:** `<Topic>_review.docx` (prose authored into
+   `content.json`, rendered by `tools/review_paper.py`, reference list from
+   `rows.json`).
+4. **Only if Phase 4 was opted into:** PDFs at
+   `papers/<topic_slug>/<paper_slug>.pdf`, and the helper page
+   `papers/<topic_slug>/_download_helper.html` for paywalled or bot-blocked papers.
+
+Working files, all beside `rows.json` (keep them; the gates read several):
+
+| File | Written by | Phase |
+|---|---|---|
+| `search_raw/<lane>.json` | each search agent | 2, 2b |
+| `rows.json` | `merge_lanes.py`, then every stamping tool | 2c on |
+| `merge_report.json` | `merge_lanes.py` (its `excluded` list feeds the spreadsheet) | 2c |
+| `verify_report.json` | `verify.py --out` | 3 |
+| `handcheck_doi_candidates.json`, `handcheck_input.json`, `handcheck_brief.md`, `handcheck_result.json` | `handcheck.py --prepare`; the hand-check agent writes the result | 3e |
+| `audit_acks.json` | you (Phase 3f, "Acknowledge warnings") | 3f |
+| `citation_counts.json` | `citations.py` | 5b |
+| `abstracts.json`, `abstracts_failed.json` | `abstracts.py` | 5c |
+| `summary_audit/` (`batch_NN.json`, `brief.md`, `manifest.json`, `result_NN.json`) | `summary_audit.py --prepare`; checking agents write the results | 5c |
+| `xref_<topic>.json`, `internal_citations.json`, `forward_candidates.json`, each with a `<out>.run.json` sidecar | `xref.py`, `forward.py` | 6 |
+| `candidates.json` | `candidates.py` | 6 |
+
+---
+
+## Running steps at the same time — two rules
+
+A build runs for hours, so overlap the waits. Two rules decide what may overlap:
+
+1. **One writer of `rows.json` at a time.** The tools that write it (`verify.py`,
+   `handcheck.py --adopt-dois` / `--ingest`, `references.py`, `summary_audit.py
+   --ingest`, `merge_lanes.py --append`, `families.py`, `sentence_case.py --apply`)
+   refuse to save over a file that changed since they loaded it ("rows.json changed
+   since it was loaded; re-run"). The second writer fails rather than silently
+   dropping the first one's stamps; rerun it. Tools that only read it
+   (`citations.py`, `abstracts.py`, `xref.py`, `forward.py`,
+   `handcheck.py --prepare`, `summary_audit.py --prepare`, `spreadsheet.py`) may
+   run alongside a writer.
+2. **One Semantic Scholar client at a time.** `citations.py`, `abstracts.py` and
+   `xref.py` share the one `S2_API_KEY`, and each paces only its own requests.
+   Because the per-key limit is strict, run them one after another, not side by
+   side.
+
+**What that allows.** Once verify's DOI corrections are in (Phase 3), start the
+Semantic Scholar chain in the background (`citations.py` → `abstracts.py` →
+`xref.py`) while canon runs; none of them needs canonical `apa` strings. Pitch the
+families at the same point (Phase 6b), since the user's reply is the one human wait
+in the run. `forward.py` reads `internal_citations.json` from xref and the attached
+counts, so it follows both.
+
+**Measured timings** (2026-09-27, 1,158 rows, both keys set): the nine search lanes
+took ~1.5 h of agent web search; verify ~8 min; canon ~11 min; citation counts
+~3 min; xref 35+ min (Semantic Scholar rate limits). xref is the long pole, which
+is why the chain starts as early as it can.
 
 ---
 
@@ -174,113 +235,116 @@ below.)
 
 ### Phase 1 — Scope the topic
 
-**1a. Read source if provided.** If the user has a source doc (`.docx`/`.pdf`),
-extract text. For docx: `unzip -p X.docx word/document.xml | python3 strip_xml.py`.
-Identify which references are actually cited in the **main text** (not just in
-the bibliography). The bibliography may have hundreds of refs the doc never
-discusses; only main-text-cited ones are baseline.
+**1a. Read the source document, if the user gave one.** For a `.docx`:
 
-**1b. Define the topic precisely.** Write 3-5 sentences of what counts as
-relevant. Include the contested theoretical positions, the methods / sub-areas /
-populations involved, and the boundary with adjacent topics. The
-search agent will use this verbatim.
+```bash
+python3 -c "import re,sys,zipfile; x=zipfile.ZipFile(sys.argv[1]).read('word/document.xml').decode(); print(re.sub(r'<[^>]+>','',re.sub(r'</w:p>','\n',x)))" X.docx
+```
 
-**1c. List "already-known" papers.** Pull from the existing spreadsheet
-(filter by `Topic`). The search agent must not re-find these.
+For a `.pdf`, `pdftotext` (poppler). Only the references the **main text** cites
+are the baseline; a bibliography can hold hundreds of refs the document never
+discusses.
 
-### Phase 2 — Spawn the literature search agent
+**1b. Define the topic precisely.** Write 3-5 sentences on what counts as
+relevant: the contested theoretical positions, the methods / sub-areas /
+populations involved, and the boundary with adjacent topics. The search agent uses
+it verbatim.
 
-Use the `general-purpose` Agent (or any web-enabled subagent). Give it a
-self-contained prompt — it has no context from this conversation. Use the
-template in `tools/search_prompt_template.md` and fill in:
-- `{TOPIC_NAME}` and `{TOPIC_DEFINITION}`
-- `{ALREADY_HAVE_LIST}` — bullet list of existing papers (don't rediscover)
-- `{REVIEW_TITLE}`, `{LAB_NAME}`, `{SEARCH_QUERIES}`, `{RELEVANT_METHODS}`,
-  `{DOMAIN_SPECIFIC_CATEGORY}` — the template's remaining placeholders; fill or
-  strip each one (grep for `{` before sending)
-- `{TODAY}` — current date (gives the agent a recency anchor)
-- `{TIER_BOUNDARY_YEAR}`
-- `{TARGET_COUNT}` — usually 25-40 papers
-- `{OUTPATH}` — the lane file path the agent writes its JSON object to; put it
-  inside a `search_raw/` directory beside `rows.json` (`search_raw/<lane>.json`),
-  since Phase 2c's `merge_lanes.py --raw search_raw` reads every file there
-- `{LANE_KEY}` — this lane's short key, used in `"lane"` and each `ref` prefix
+**1c. List the "already-known" papers** from the existing spreadsheet (filter by
+`Topic`), so the search agents do not re-find them.
 
-The agent writes one JSON object (schema 2: `status`, `papers`, `deferred`,
-`could_not_confirm`) to `{OUTPATH}`, per `search_prompt_template.md`. Keep each
-paper's claimed first author, year and title as `search_author` / `search_year` /
-`search_title`: they are what Phase 3 verifies against.
+### Phase 2 — Brief and launch the search lanes
 
-**With several lanes, no paper may fall between them.** The template already tells
-each agent never to drop an on-topic paper because another lane might own it —
-include it and name the lane it fits better (`lane_fit`), since the merge dedups on
-DOI and arXiv id. A paper handed to another lane goes in `deferred`, naming that
-lane (`to_lane`), with its `first_author` and `year` (required), so Phase 2c's merge
-can confirm a deferred paper by title alone. A paper left out as a decision — outside
-the bibliography's scope, or pre-tier and not classic — goes in `excluded`, with its
-reason; the spreadsheet lists it on the "Considered and excluded" sheet. **The target
-is a floor, not a cap:** a lane never trims an on-topic paper to hit it. On the first
-reference-gated build (2026-09-26) eleven lanes deferred 138 papers no lane kept, most
-of them "trimmed to target"; the merge failed on every one, and the lanes put them
-back. Do not cap DOI-less items per lane. Three recent builds lost
-14, 6 and 4 papers at their seams, and each loss cost a recovery lane after the fact
-— Phase 2c now catches this in code instead of relying on a session to notice.
+Launch one web-enabled subagent (`general-purpose`) per lane, each with a
+self-contained prompt built from `tools/search_prompt_template.md`; it has no
+context from this conversation. Launch the Phase-2b antecedent lanes in the same
+fan-out. Fill every placeholder, and grep the prompt for `{` before sending:
 
-**Do not act on the agent's output yet.** It will contain errors. Proceed
-to Phase 2b, then Phase 2c, then Phase 3.
+- `{TOPIC_NAME}`, `{TOPIC_DEFINITION}` (Phase 1b), `{REVIEW_TITLE}`, `{LAB_NAME}`
+- `{ALREADY_HAVE_LIST}`: the known papers, one line each (Phase 1c)
+- `{SEARCH_QUERIES}`, `{RELEVANT_METHODS}`, `{DOMAIN_SPECIFIC_CATEGORY}`
+- `{TODAY}` (the recency anchor) and `{TIER_BOUNDARY_YEAR}` (contract, "Default
+  tier criteria")
+- `{TARGET_COUNT}`: usually 25-40 papers
+- `{OUTPATH}`: `search_raw/<lane>.json` beside `rows.json`, because Phase 2c reads
+  every file in `search_raw/`
+- `{LANE_KEY}`: the lane's short key, used in `"lane"` and as each `ref` prefix
+  (`<LANE_KEY>-01`, …). Refs must be unique across all lanes; the merge refuses a
+  repeated ref.
+
+For a CAPPED search (Phase 0, choice 2), keep the template's capped-search
+sentence; otherwise delete it. Keep the template's verification duty (landing page,
+first author and year read off it, abstract read before summarizing). Seed with
+titles only, never remembered author names, and label the seeds as unverified
+(Lessons, "Lane briefs and search agents").
+
+**What a lane returns.** One schema-2 JSON object (`"schema": 2`, `lane`,
+`status`, `papers`, `deferred`, `excluded`, `could_not_confirm`) written to
+`{OUTPATH}`. Each paper's `first_author`, `year` and `title` become the row's
+claim (`search_author` / `search_year` / `search_title`), which Phase 3 verifies
+the DOI against.
+
+**No paper may fall between lanes.** The template tells each agent:
+
+- never to drop an on-topic paper because another lane might own it: include it
+  and name the better-fitting lane in `lane_fit` (the merge dedups);
+- `deferred` is only for a paper handed to a different, named lane (`to_lane`),
+  with `first_author` and `year` (required, so the merge can confirm it by title);
+- `excluded` is only for a paper out of scope, or pre-tier and not a classic, with
+  its reason. Excluded papers are listed on the spreadsheet's "Considered and
+  excluded" sheet;
+- **the target is a floor, not a cap**, except in a CAPPED search. A lane never
+  trims an on-topic paper to hit its target, and there is no per-lane cap on
+  DOI-less items.
+
+Why: three builds lost 14, 6 and 4 papers at their seams, and each loss cost a
+recovery lane. On the first reference-gated build (2026-09-26) eleven lanes
+deferred 138 papers no lane kept, most "trimmed to target"; the merge gate failed
+on every one and the lanes put them back.
+
+**Do not act on the lanes' output yet.** It will contain errors. Go to Phase 2c,
+then Phase 3.
 
 ### Phase 2b — Antecedents (the foundations pass) — REQUIRED
 
-The Phase-2 search is biased toward recent work and the topic's *current*
-framing, so it systematically misses the literature the topic was built on. A
-review that omits its antecedents reads as if the field began ~10 years ago. Run a
-dedicated antecedents pass in both modes (contract rule 4), after the main search
-and before verifying.
+The Phase-2 search is biased toward recent work and the topic's current framing,
+so it misses the literature the topic was built on (contract rule 4). Run
+antecedent lanes in both modes, **in the same fan-out as the Phase-2 lanes**: the
+merge dedups on DOI and arXiv id, so overlap costs nothing, while waiting costs a
+full search round. One lane per axis:
 
-Spawn a separate search agent **per axis** for the topic's intellectual roots:
+1. **Measurement / methodology origins**: the instrument, signal or technique the
+   work depends on, and the papers that established and validated it (for
+   human-fMRI work: the BOLD mechanism, the first functional studies, what the
+   signal measures).
+2. **Foundational empirical results**: the classic findings the topic builds on,
+   including older work in adjacent methods, species or eras (single-unit
+   physiology, psychophysics, the first description of an effect or region).
+3. **Theory / computational framework**: the conceptual claims that motivate the
+   work (efficient coding, a normative principle, a levels-of-analysis framing).
 
-1. **Measurement / methodology origins** — the instrument, signal, or technique
-   the work depends on, and the papers that established and validated it (e.g.
-   for human-fMRI work: the BOLD mechanism, the first functional studies, what
-   the signal actually measures).
-2. **Foundational empirical results** — the classic findings the topic builds on,
-   including older work in adjacent methods, species, or eras that the forward
-   search's recency bias skips (e.g. single-unit neurophysiology, psychophysics,
-   the first description of an effect or region).
-3. **Theory / computational framework** — the conceptual claims that motivate the
-   work (e.g. efficient coding, a normative principle, a levels-of-analysis
-   framing).
+Use `tools/search_prompt_template.md` with its "Antecedents variant": **flip the
+tier emphasis** to foundational, highly cited work that PRE-DATES the modern
+literature. Give each lane the already-have list (the seed list; add Phase-2
+results only if they exist yet), have it tag each paper with the best-fit
+**existing** theme, and have it set `"source": "anteced"` on its papers (the
+spreadsheet's lilac band). Antecedents fold into the existing lanes' topics; do
+not create new topics for them unless the user asks. They then go through Phase 3
+→ 3f → 5b like every other row.
 
-Reuse `tools/search_prompt_template.md`, but **flip the tier emphasis**: the
-target here is foundational / highly-cited / classic work that PRE-DATES the
-modern literature, not recent papers. **Launch the antecedent lanes in the same
-fan-out as the Phase-2 lanes**, not after them: the merge dedups on DOI and arXiv
-id, so overlap costs nothing, and waiting costs a full search round. Give each agent
-the already-have list (the seed list; add Phase-2 results only if they already
-exist) so it does not re-find them, and have it tag
-each paper with the best-fit **existing** theme/family. Antecedents fold into the
-existing lanes by default — do NOT spin up new lanes for them unless the user
-asks. Feed every returned paper through Phase 3 → 3f → 5b like any other.
+**Old classics often have no DOI** (pre-2000 papers, books, chapters). The lane
+writes the full APA-7 reference in `apa` from the title page or a library record
+(`"source": "anteced-nosrc"`), and the row gets a hand check (Phase 3e) instead of
+a verify stamp; `citations.py` leaves its counts blank. Beware reissue DOIs for
+old books: they re-date the work to the reprint year, so prefer a hand APA citing
+the original edition.
 
-**Old classics often have no DOI** (pre-2000 papers, books, book chapters). Keep
-them as hand-written canonical APA `no-source` rows (references.py flags them;
-the audit gate allows them) and exclude them from `citations.json` — the same
-pattern as any DOI-less item. Beware reissue DOIs for old books (they re-date the
-work to the reprint year); prefer a hand APA citing the original edition. Verify
-each by title/author against the publisher or a library record before trusting
-the agent's APA.
+**Lab mode:** the antecedents include the lab's OWN pre-paradigm work that the
+inclusion filter (Phase L2) drops. It belongs in the corpus as `source=lab`
+(starred), not excluded.
 
-**Lab mode:** the antecedents include the lab's OWN pre-paradigm work — the
-earlier-method, other-species, or pre-tool publications that the inclusion filter
-(Phase L2) drops. Reconsider that filter: a lab's foundational pre-paradigm papers
-are usually the most direct antecedent of its current program, and belong in the
-corpus as `source=lab` (starred) rather than excluded.
-
-**Effect on the figure:** antecedents widen the time span (often back to the
-mid-20th century) while most papers cluster in the last decade. Set the figure's
-`--min-year` to the earliest antecedent and add `--time-warp` so the sparse early
-decades compress and the dense recent years expand — otherwise the modern
-literature collapses into an unreadable clump at the right. See Phase 6b.
+**Effect on the figure:** antecedents stretch the time axis back decades; render
+with `--min-year` and `--time-warp` (Phase 6b).
 
 ### Phase 2c — Merge the lanes (`tools/merge_lanes.py`) — a gate
 
@@ -290,641 +354,533 @@ Once every Phase-2 and Phase-2b lane has written its file into `search_raw/`:
 python3 tools/merge_lanes.py --raw search_raw --out rows.json
 ```
 
-It dedups by DOI, then arXiv id, then normalized title + year, and records the
-other lanes that returned a paper (`also_lanes`). An arXiv-only paper gets its
-arXiv DOI (`10.48550/arXiv.<id>`), so the DOI-keyed coverage checks (`xref.py`,
-the candidate ledger) see it. A title+year match alone is
-only a hint, not a merge: it is treated as the same paper only when the lanes'
-claimed author/year agree and the rows do not carry two *different* journal DOIs
-(an arXiv preprint's DOI and its own journal DOI are the same paper and still
-merge). When the hint fails that check, both rows are kept and reported as a
-**possible pair** for a person to look at — the same warning the audit's
-duplicate scan raises. After the merge, it also title-scores every pair of kept
-rows (similarity ≥ 0.9, regardless of year or DOI) and lists any close pair as a
-possible duplicate too — a second, corpus-wide check independent of the dedup
-above.
+**How it dedups.** By DOI, then arXiv id, then normalized title + year; it records
+the other lanes that returned a paper (`also_lanes`). An arXiv-only paper gets its
+arXiv DOI (`10.48550/arXiv.<id>`), so the DOI-keyed checks (`xref.py`, the
+candidate ledger) see it. A title+year match alone merges only when the lanes'
+claimed author and year agree (surname against surname, the verify comparison)
+and the rows do not carry two *different* journal DOIs; a preprint's arXiv DOI
+beside its journal DOI still merges. When that check fails, both rows are kept and
+reported as a **possible pair**. It also title-scores every pair of kept rows
+(≥ 0.9, regardless of year or DOI) and lists close pairs as possible duplicates.
+DOI/arXiv hits whose claims disagree are printed ("the claims differ") for you to
+look at.
 
-**Every `deferred` entry must match a merged row** (an `excluded` entry need not;
-the merge records it in `merge_report.json`), by DOI, arXiv id, or title
-(`common.title_match`: similarity ≥ 0.9, or each title's words ≥ 90% contained
-in the other — a short title inside a longer one is not a match), confirmed by
-the deferral's `first_author`/`year`. Every title-only match is printed for you
-to check (`matched_by_title`). **`merge_lanes.py` fails on a lost deferral** — an
-entry no lane's papers matched — and on an **unconfirmed** one — a title-only
-match whose deferral gives neither `first_author` nor `year`, or an unreadable
-`first_author` such as "?" — and exits 1: add
-the missing fields and re-merge, or send the papers to one recovery lane, add
-its file to `search_raw/`, and re-merge. It also fails on a **rejected**
-paper — one with no DOI, no arXiv id and no APA string, which can be neither
-verified nor hand-checked — reported the same way: give it a DOI or arXiv id,
-or have the lane write its full APA string as a DOI-less item, then re-merge.
-A failed merge (lost, unconfirmed or rejected) writes `merge_report.json` but
-**not** `rows.json`, so nothing downstream runs on a table with a hole in it.
-A lane that returned under 60% of its target, or ran out of search budget, is
-printed as thin — resume it through SendMessage rather than re-spawning it.
+**When the merge fails.** It exits 1 and writes `merge_report.json` but **not**
+`rows.json`, so nothing downstream runs on a table with a hole in it:
 
-**Later additions** (xref/forward candidates via Phase 6, a recovery lane after
-Phase 2c itself) use `--append` instead, which never touches an existing row:
+| Failure | What it means | Fix |
+|---|---|---|
+| `LOST` | a `deferred` entry matched no merged row, by DOI or by title (`common.title_match`: similarity ≥ 0.9, or each title's words ≥ 90% in the other; a short title inside a longer one is not a match) confirmed by its `first_author`/`year` | if its `to_lane` names another lane: send it to one recovery lane, add that file to `search_raw/`, re-merge. If it names no other lane: put it back in the lane's `papers`, or move it to `excluded` with its reason |
+| `UNCONFIRMED` | matched by title only, with neither `first_author` nor `year`, or an unreadable `first_author` ("?") | add the fields to the deferral and re-merge, or send it to a recovery lane |
+| rejected | a paper with no DOI, arXiv id or APA string, which can be neither verified nor hand-checked | give it a DOI or arXiv id, or have the lane write its full APA string, then re-merge |
+
+An `excluded` entry never has to match a row; the merge records it for the
+spreadsheet. Every title-only deferral match is printed (`matched_by_title`) for
+you to check. A lane that returned under 60% of its target, or reported
+`websearch_exhausted`, is printed as thin: resume it through SendMessage (its
+transcript intact) rather than re-spawning it, and `--append` what it adds.
+
+**Later additions** (a recovery lane after the first successful merge, the Phase-6
+candidates) use `--append`, which never touches an existing row (contract rule 6):
 
 ```bash
 python3 tools/merge_lanes.py --append recovery.json --into rows.json
 ```
 
-A schema-1 lane file (a bare array, from an old prompt) is refused with the
-schema it expects, unless `--allow-v1` — in which case that lane's deferrals
-cannot be checked and the merge says so. `--append` refuses an empty `--into`
-table (it would key the new rows by `label` instead of `ref`, silently diverging
-from a fresh merge) — use `--raw`/`--out` for a first merge, `--append` only to
-grow one.
+It skips a paper already in the table and one with no DOI, arXiv id or APA
+string (each reported), flags a title+year clash that
+fails the check above as a possible duplicate, refuses a ref already used ("renumber
+the lane"), and prints the `verify.py --only` list for the new rows. `--append`
+does not check deferrals, and it refuses an empty `--into` (it would key the new
+rows by `label` instead of `ref`); use `--raw`/`--out` for the first merge. A
+schema-1 lane file (a bare array, from an old prompt) is refused unless
+`--allow-v1`, in which case that lane's deferrals go unchecked and the merge says
+so.
 
 ### Phase 3 — Verify EVERY citation (CRITICAL)
 
-In a previous run, the search agent fabricated 5 author lists, reversed
-one paper's conclusion, and invented a bioRxiv DOI that didn't exist.
-About 1 in 4 citations had errors. **Always verify before adding.**
+Why: in an early run the search agent fabricated 5 author lists, reversed one
+paper's conclusion, and invented a bioRxiv DOI; about 1 in 4 citations had errors.
+Lane briefs with a verification duty bring that close to zero (Lessons), but this
+phase is still the gate that proves it.
 
-`verify.py` returns one verdict per citation: **OK**, **MISMATCH** (first author,
-year, or title), **NOT-FOUND**, **ERROR**, or **UNCHECKED** (the row carried no
-claim to check, so a resolving DOI proved nothing — give it one). NOT-FOUND and ERROR are NOT the same and must be
-handled differently: NOT-FOUND means every lookup completed and none matched
-(chase it down — likely fabricated); ERROR means a lookup could not complete
-(rate-limit / network), so **re-run those** rather than treating them as missing.
-On a big run this matters — arXiv rate-limits hard, so the tool prefetches all
-arXiv ids in batches (many per `id_list` call); a genuinely real preprint that
-would otherwise 429 into a false NOT-FOUND now comes back OK (or, if the batch
-still fails, ERROR to re-run).
-The same discipline applies to the title-search fallback: when the DOI/PMID lookup
-errored and the fallback title search returns a record that does not match the
-claim, the verdict is ERROR, not MISMATCH (on a 588-row run ~30 throttled CrossRef
-calls each surfaced an unrelated PubMed paper and looked like agent fabrications).
+#### 3a. Run verify on the live table
 
-`verify.py` exits **0 only when every verdict is OK** — the same fail-loud
-contract as the audit gate and `cite_check.py` — so a chained Phase-3 run stops
-on a table that still needs attention.
+```bash
+python3 tools/verify.py --rows rows.json --out verify_report.json
+```
 
-Feed it the live table directly — `python3 tools/verify.py --rows rows.json --out
-verify_report.json`. **Keep each search agent's claim on its row** as
-`search_author` / `search_year` / `search_title` (the row template does). Before
-canon, `apa` is empty, so those fields ARE the expectations; after canon (a row
-stamped `canonical_at`) they still are, and the canonical `apa` must agree with the
-record as well. Do not write a per-project
-converter script: fourteen projects did, each with its own first-author regex, and
-five more wrote `make_verify_input.py` because the `apa`-only path verified nothing.
+Start it as soon as the merge passes, and run `handcheck.py --prepare` (Phase 3e)
+alongside it, since `--prepare` only reads `rows.json`. Never write a
+per-project converter script for verify's input: `--rows` derives each row's
+expectations from its claim (`search_author` / `search_year` / `search_title`;
+fourteen projects once wrote their own converter, each with its own first-author
+regex). After canon, a row's canonical `apa` must also agree with the record.
 
-What a verdict checks: the first-author **surname**, surname against surname. A
-record's first author is read by its source's contract: CrossRef, DataCite and
-PubMed give "Family INITIALS" (an arXiv author "Aaron van den Oord" is first turned
-into "van den Oord A"), so exactly one trailing token, the initials (in a
-mixed-case record any capitals of up to 4 letters), is dropped ("Collins AGE" is
-Collins, "Van DAM J" is Van DAM). That reading is trusted only when the registry
-deposited the first author structured. Every other first author is flagged, and
-the check reports "the record's first author was not deposited as a family name
-and a given name; confirm by hand" instead of guessing:
-- a DataCite first creator without BOTH familyName and givenName, unless its name
-  is "Family, Given" or it is a declared Organizational group. This covers a split
-  the toolkit had to guess ("Richard NGO", "Wei LI", "CHEN Hao"), a name kept whole
-  ("Hao CHEN") and a first creator with no name at all;
-- a CrossRef first author with no given name, or a first entry with no family (an
-  organization or a given name only, which made the second author look like the
-  first);
-- an arXiv name with a capitalized word that is not initials ("CHEN Hao"), since
-  it may be written family-first;
-- a bare name the contract cannot read: two or more words with no initial
-  ("Hae-Jeong Park", "John VAN DAM"), "John Smith JR", or a mixed-case word before
-  a capitalized one ("Hao CHEN J").
+`verify.py` exits **0 only when every verdict is OK**, like the audit and
+`cite_check.py`, so a chained run stops on a table that needs attention.
 
-Two shapes are known and accepted as they are: a bare record with spaced initials
-or a comma or semicolon list ("Kim J H", "Chen, Hao H", "Smith J, Jones K"), and a
-CrossRef author whose whole name was deposited as the family ({"family": "Hao
-Chen", "given": "H"}). A claim is read once, in whatever shape a search agent reported it
-("Smith J", "Smith JL", "J. Smith", "Smith, J.", "Lambon Ralph, Matthew A.", "LI
-J", "Van Essen DC", "Hagler DJ Jr", "Kowalski Ł", "CHEN Hao"; on a canonical row,
-also the apa's lead surname as it stands). A claim that cannot be read safely,
-a mixed-case word before a 3-4 letter capitalized word ("Hao CHEN" is given name +
-surname, "Collins AGE" is surname + initials), is reported as an ambiguous
-first-author form to confirm by hand. So initials never decide a match: "J. Smith"
-cannot match "Jones J", "Ma" cannot match "Smith MA", "Min" cannot match
-"Seung-Min Park", "Nowak Ł" cannot match "Kowalski Ł". A claim led by a
-capitalized particle ("DU Wei", "VAN Essen") matches only a record that carries
-the particle ("Du W", "Van Essen D"; not "Wei J"). A claim of given-first
-words ("John Smith") keys on its last word, and each other word must be a word of
-the record's surname or start with one of its initials. The
-claim's first surname word that is not a particle must be a whole word of the
-record's surname, or one part of a hyphenated one ("Heuvel" / "van den Heuvel",
-"Hanna" / "Andrews-Hanna"; not "Han", and "Van Essen" does not match "Van Dijk"),
-and any further word of a compound claim surname must appear in the record's name
-("Lambon Ralph" does not match "Ralph J"; a record that shortened a compound
-surname, "Quian Quiroga" to "Quiroga", is a mismatch to confirm by hand). A group
-author (a name with Collaboration, Consortium, Institute, Laboratory, University,
-Company, Research, Staff, Team, ... in it, or opening with "The") is compared
-whole, so "CMS Collaboration" does not match "ATLAS Collaboration"; "An" is a
-surname, not an article. Initials are 1-2 capitals, or 3-4 that could not be a
-word ("JLK", "EJM", "CYC"); "Cavanaugh JR" keeps JR as initials, while "jr", "Jr."
-and "Sr" are suffixes; a list "Smith J; Jones K" or "Smith J and Jones K" gives its first name. An unknown
-name on either side ("?", "anon", "Anonymous, A.", "[No authors listed]", or no
-readable word) fails the check.
-merge_lanes.py uses the same comparison for its duplicate and deferral checks:
-an unknown author never merges two rows or confirms a deferral. Then the year
-(±1, since a preprint and its version of record differ), and the **title**
-(agreement ≥ 0.5). Title agreement requires the two titles to actually match, not
-merely one to be *contained in* the other — a short claim such as "Deep learning"
-used to pass against an unrelated longer record ("Deep learning in neural
-networks: An overview") on containment alone. It still tolerates an agent dropping
-a subtitle: one title counting as the other's main title (the text before its
-first `:`, ` - ` or `?`) scores 1.0, but only when that main title has at least 3
-content words — a 1-2-word main title is too easily a coincidence to trust on its
-own. Otherwise it falls back to two-way containment (each title's words found in
-the other) alongside plain character similarity. On 2,473 past OK verdicts, 2 now
-fall below 0.5: a preprint retitled on publication, and a genuinely dropped
-subtitle whose main title is only 2 content words — accepted as a false alarm
-rather than risk another false pass on a short, coincidental main title. A row
-with **both** an arXiv id and a journal DOI has
-both checked, because canon cites the journal DOI: a wrong DOI beside a right
-arXiv id is a MISMATCH. The same holds for PubMed and PMC ids: **a journal DOI is
-verified only by its own CrossRef record** — or, on a clean CrossRef 404, its
-**DataCite** record (Zenodo, figshare, OSF and Dryad software, data-set and some
-preprint deposits register there instead of CrossRef; resolving in DataCite
-counts the same as resolving in CrossRef). A row with a PMID/PMCID and a DOI is
-checked against the DOI's record; a DOI that does not resolve in EITHER registry
-is a MISMATCH ("DOI ... does not resolve; pmid found ...") even when a PubMed or
-title search finds the claimed paper — a real title with a fabricated DOI once
-verified OK that way. Canon reports a DOI missing from both CrossRef and
-DataCite (404) as "DOI does not exist", not as a fetch failure to retry. Only a
-CrossRef **404** sends a DOI to DataCite, in verify and canon alike; any other
-CrossRef error (a 400, an unreadable body) is an ERROR to re-run. A DataCite
-404 stays a 404 even when the connection drops and the fetch falls back to
-curl, so a missing DOI is never mistaken for a network failure.
+#### 3b. Act on each verdict
 
-**Retries are built in.** An ERROR row gets a second try at the end of the run
-after a 60 s cool-down (`--retry-wait`), with smaller arXiv batches. Anything still
-ERROR is re-checked later with `--retry-from verify_report.json --out
-verify_report.json`, which re-verifies only the non-OK rows and splices the new
-verdicts into the report; `--only A-01,B-02` names rows explicitly. Never build a
-rerun input file by hand.
+| Verdict | Meaning | What to do |
+|---|---|---|
+| **OK** | the record matches the claim | nothing |
+| **MISMATCH** | first author, year or title disagrees, or the DOI does not resolve in CrossRef or DataCite | read the `issues`; open the landing page. Wrong DOI: fix `doi` and `link`, then `--only REF`. Fabricated: drop the row. A false alarm (a preprint retitled on publication; a "confirm by hand" first author you confirmed): `--override` (3d) |
+| **NOT-FOUND** | every lookup completed and none matched | chase it: likely fabricated. Find the real paper and its DOI, or drop the row. Never wave it through as "an arXiv paper" |
+| **ERROR** | a lookup could not complete (rate limit, network) | rerun it; it is NOT the same as NOT-FOUND |
+| **UNCHECKED** | the row carries no claim, so a resolving DOI proves nothing | give it `search_*` fields from the landing page, then `--only REF` |
 
-**`--rows` stamps the row, not just the report.** Each checked row gets a `verified`
-field (verdict, DOI/arXiv id, source, issues, date), so canon and the audit gate know
-what was checked and against which ids without re-reading `verify_report.json`
-(`--no-stamp` reports without writing). A false alarm a human clears — a preprint
-retitled on publication, say — is recorded with `verify.py --rows rows.json --override
-REF --reason "..."`; it is refused without an existing stamp, without a reason, or if
-the row's DOI/arXiv id changed since it was verified.
+To rerun the rows that were not OK, or name rows explicitly (never build a rerun
+input file by hand):
 
-**Re-verifying a canonical row keeps an earlier independent stamp.** Once a row is
-canonicalized, its `apa` is built from the very DOI verify would be checking, so a
-re-run that finds nothing else to check against produces only a circular
-`claim_basis: "canonical-apa"` OK. If the row already carried an independent OK
-(a search claim, or an apa from before canon) for the SAME ids, that earlier stamp
-is kept rather than overwritten — a re-verify must not downgrade a real
-verification into a self-check — and `reverified_at` records that the re-run
-happened. The stamp still lapses normally the moment the row's DOI/arXiv id
-changes.
+```bash
+python3 tools/verify.py --rows rows.json --retry-from verify_report.json --out verify_report.json
+python3 tools/verify.py --rows rows.json --only A-01,B-02 --out verify_report_fix.json
+```
 
-**Start verifying before the last lane lands.** Lanes finish minutes apart; run
-verify on each lane's rows as they arrive (`--only`), and dispatch the DOI-less
-hand check (Phase 3e) as soon as those rows exist, instead of after the merge.
+`--retry-from` re-verifies only the report's non-OK rows and splices the new
+verdicts into it. Every run already gives its ERROR rows a second try at the end,
+after a 60 s cool-down (`--retry-wait`) with smaller arXiv batches.
 
-For each paper the agent returned:
+**Fabrication patterns to look for** when you open a landing page: an author who
+is not among the paper's authors; a conclusion that is the OPPOSITE of the finding;
+a DOI that does not resolve, or resolves to an unrelated paper (agents invent
+plausible DOIs and mis-copy real ones, so confirm the *target*, not just that it
+resolves); an arXiv id that does not resolve.
 
-**3a. If a PMCID was given:** call NCBI esummary
-(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pmc&id=<num>&retmode=json`).
-Confirm first author, year, and title match. See `tools/verify.py`.
+**Do not judge a DOI by its shape; resolve it.** Prefixes and suffix formats drift.
+bioRxiv now issues `10.64898/...` DOIs alongside `10.1101/...`, and Imaging
+Neuroscience uses `10.1162/imag.a.NNNN` (dots; the underscore shape you might guess
+404s).
 
-**3b. If no PMCID but a title is given:** call PubMed esearch
-(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=<title>&retmode=json`)
-then esummary. Confirm match.
+As soon as the rows are verified, pitch the families to the user (Phase 6b, step
+2) and start the network chain ("Running steps at the same time").
 
-**3c. If only an arxiv ID:** WebFetch `https://arxiv.org/abs/<id>` and read
-title/authors from the page.
+#### 3c. What the checks compare
 
-**3d. If a publisher landing page (Nature, Springer, OUP):** WebFetch the
-page and confirm author/year. Don't rely on the agent's claim.
+- **Which record.** arXiv ids go to the arXiv API, prefetched 50 per `id_list`
+  request 3 s apart (a per-paper loop gets the IP banned, and real preprints then
+  read as NOT-FOUND). A row with **both** an arXiv id and a journal DOI has both
+  checked, because canon cites the journal DOI: a wrong DOI beside a right arXiv
+  id is a MISMATCH. **A journal DOI is verified only by its own record**: CrossRef,
+  or DataCite on a clean CrossRef 404 (Zenodo, figshare, OSF and Dryad deposits
+  register there). A PMID, PMCID or title search never stands in for it; a real
+  title with a fabricated DOI once verified OK that way. Only a CrossRef 404 sends
+  a DOI to DataCite; any other CrossRef error (a 400, an unreadable body) is an
+  ERROR. A title-search hit that does not match the claim, after an earlier lookup
+  errored, is also ERROR, not MISMATCH (on a 588-row run ~30 throttled calls each
+  surfaced an unrelated PubMed paper).
+- **First author: surname against surname; initials never decide a match.** "J.
+  Smith" cannot match "Jones J", "Min" cannot match "Seung-Min Park". Every word of
+  a compound claimed surname must be in the record ("Lambon Ralph" does not match
+  "Ralph J"); a record that shortened one ("Quian Quiroga" to "Quiroga") is a
+  mismatch to confirm by hand. A group author ("CMS Collaboration") is compared
+  whole. An unknown name on either side ("?", "Anonymous", "[No authors listed]")
+  fails. The record's first author is trusted only when the registry deposited it
+  structured (family + given name); otherwise the issue reads "the record's first
+  author was not deposited as a family name and a given name; confirm by hand". A
+  claim that cannot be read safely ("Hao CHEN": given name + surname, or surname +
+  initials?) is reported as an ambiguous first-author form to confirm by hand. The
+  full name grammar is in the `verify.py` docstrings (`_claim_parts`,
+  `surname_agrees`, `_no_given_name`). `merge_lanes.py` uses the same comparison,
+  so an unknown author never merges two rows or confirms a deferral.
+- **Year**: within ±1 (a preprint and its version of record differ).
+- **Title**: agreement ≥ 0.5, two-way. A short claim merely *contained in* a longer
+  record no longer passes ("Deep learning" vs "Deep learning in neural networks:
+  An overview"). A dropped subtitle still passes when the kept main title (the
+  text before the first `:`, ` - ` or `?`) has at least 3 content words. On 2,473
+  past OK verdicts this flags 2 (a preprint retitled on publication, a dropped
+  subtitle under a 2-word main title): accepted false alarms, cleared with
+  `--override`.
 
-**3e. Drop / fix:**
-- Citation completely fabricated (URL doesn't resolve, no PubMed match) → drop.
-- Wrong first author / wrong year → fix using the verified metadata.
-- Title matches but agent's summary contradicts the abstract → fix summary.
-- Suspicious DOI (e.g. unusual prefix, no resolution) → drop unless you can
-  confirm via web search.
+#### 3d. Stamps, overrides and re-verification
 
-**Hand-checking references with no DOI or arXiv id.** A book, report, thesis or web
-essay cannot be machine-verified, so a gated table needs a recorded hand check
-instead — the audit fails a DOI-less row without one. `tools/handcheck.py --prepare`
-searches CrossRef and OpenAlex for a DOI the row turns out to have (the same title
-by `common.title_match`, not merely contained in a longer one, and the same year)
-and writes the rest as a hand-check input plus a brief, each hand-check-input entry
-carrying `apa_sha` — a hash of the reference text it shows the agent (the row's
-`apa`, else its `search_apa`) as it stood at `--prepare`; `--prepare` renames an
-existing `handcheck_result.json` to `handcheck_result.stale-<timestamp>.json`
-(never deleting it), since its results answer the previous `--prepare`;
-`--adopt-dois` gives a row with exactly one candidate DOI that DOI, so it goes
-through `verify.py` like any other reference (a row with several candidates is left
-alone and named; one no longer in the table, because it was renamed or removed
-since `--prepare`, is reported on stderr rather than silently skipped); `--ingest`
-records each checked row as `hand_verified` — `confirmed`, `corrected` (with the
-corrected APA), or `not-found` — with the source actually checked (a library
-catalog, the publisher's page, the post itself; never another paper's citation of
-it) and a hash of the `apa` it confirmed (`apa_sha`): editing that `apa` afterward
-lapses the hand check, and the audit fails the row as `hand-check-missing` until it
-is re-checked. `--ingest` is also bound to what `--prepare` recorded (`--input FILE`,
-default `handcheck_input.json` beside `--rows`): a result is refused if the row's
-`apa` has changed since `--prepare` wrote that entry's `apa_sha` (the reference
-changed while the agent was checking it), if the ref never went through
-`--prepare` at all, or if the `--input` file predates `apa_sha` altogether —
-re-run `--prepare` in each case, rather than trust a hand check against an `apa`
-the agent never actually saw. Each result must also echo its entry's `apa_sha`
-(the brief says so): a result without it, or with another one, is refused ("result
-was for a different version of the reference; re-check it"). That catches an old
-result ingested after the `apa` was edited and re-prepared, when the row already
-matches the new input. Dispatch this as soon as a lane's DOI-less rows
-exist, alongside verify (see "Start verifying before the last lane lands" above), but
-run `--ingest` only once verify has finished: every tool that writes `rows.json`
-(verify, handcheck, summary_audit --ingest, references, merge_lanes --append)
-refuses to save over a file that changed since it loaded it, so a concurrent
-writer fails loudly ("rows.json changed since it was loaded; re-run") instead of
-silently dropping the other's stamps.
+**`--rows` stamps each row**, not just the report: a `verified` field with the
+verdict, the DOI/arXiv id checked, source, issues and date. Canon and the audit
+read it, and it lapses the moment the row's DOI or arXiv id changes. `--no-stamp`
+reports without writing.
 
-Common fabrication patterns to flag:
-- Author name that doesn't appear in any of the paper's actual authors.
-- Conclusion that is the OPPOSITE of the paper's actual finding.
-- A DOI that does not resolve, or that resolves to an unrelated paper (agents
-  invent plausible DOIs and also mis-copy real ones — confirm the *target*, not
-  just that it resolves).
-- arxiv preprint IDs that don't resolve.
+**Clearing a false alarm** is recorded on the row:
 
-**Don't treat an unfamiliar DOI shape as fabrication evidence — resolve it.**
-Prefixes and suffix formats drift, so a DOI not matching the shape you expect is
-often just a newer pattern, not a fake. Seen in real builds: bioRxiv now issues
-`10.64898/...` DOIs alongside the older `10.1101/...`; Imaging Neuroscience uses
-`10.1162/imag.a.NNNN` (dots, not the `imag_a_NNNNN` underscores you might guess —
-the wrong shape 404s). Always judge a DOI by what it resolves to, never by its
-string.
+```bash
+python3 tools/verify.py --rows rows.json --override REF --reason "retitled on publication; checked the landing page"
+```
+
+It is refused without an existing stamp, without a reason, or if the row's
+DOI/arXiv id changed since it was verified.
+
+**Re-verifying a canonical row keeps an earlier independent stamp.** After canon,
+a row's `apa` is built from the same DOI verify checks, so a re-run with no search
+claim yields only a circular `claim_basis: "canonical-apa"` OK. When the row already
+carries an independent OK for the SAME ids, that stamp is kept and `reverified_at`
+records the re-run. A canonical row verified only against its own `apa` gets the
+audit warning `identity-not-reestablished` (confirm the DOI by hand, then
+acknowledge it).
+
+#### 3e. Hand-check rows with no DOI or arXiv id (`tools/handcheck.py`)
+
+A book, report, thesis or web essay cannot be machine-verified, so a gated table
+needs a recorded hand check instead; the audit fails a DOI-less row without one
+(`hand-check-missing`).
+
+```bash
+python3 tools/handcheck.py --rows rows.json --prepare
+python3 tools/handcheck.py --rows rows.json --adopt-dois handcheck_doi_candidates.json
+# dispatch one hand-check agent: handcheck_input.json + handcheck_brief.md -> handcheck_result.json
+python3 tools/handcheck.py --rows rows.json --ingest handcheck_result.json
+```
+
+1. **`--prepare`** (reads only; run it alongside verify) searches CrossRef and
+   OpenAlex for a DOI the row turns out to have: the same title by
+   `common.title_match` and the same year. Rows with a candidate go to
+   `handcheck_doi_candidates.json`; the rest go to `handcheck_input.json` plus
+   `handcheck_brief.md`. Each input entry carries `apa_sha`, a hash of the
+   reference text it shows the agent (the `apa`, else `search_apa`). An existing
+   `handcheck_result.json` is renamed to `handcheck_result.stale-<timestamp>.json`,
+   because it answers the previous `--prepare`.
+2. **`--adopt-dois`** (a writer; after verify finishes) gives each row with exactly
+   one candidate that DOI, so it then goes through `verify.py --only`. A row with
+   several candidates is left alone and named: keep the right one in the file and
+   rerun `--adopt-dois`. (If none is the right paper, `--prepare` will propose the
+   same candidates again, so the row never reaches the hand-check input; raise it
+   with the user.) An adopted DOI that is wrong fails verify against the row's
+   claim. A candidate for a ref no longer in the table is reported, not skipped
+   silently.
+3. **The hand-check agent** checks every author, the year, title, edition,
+   publisher and pages or report number against a real source (a library catalog,
+   the publisher's page, the post itself; never another paper's citation of it),
+   and copies each entry's `apa_sha` into its result.
+4. **`--ingest`** (a writer; after verify finishes) records each result as
+   `hand_verified`: `confirmed`, `corrected` (with the corrected APA) or
+   `not-found`, with `source_checked` and a hash of the `apa` it confirmed. It is
+   bound to what `--prepare` recorded (`--input`, default `handcheck_input.json`):
+   a result is refused if the row's reference changed since `--prepare`, if the ref
+   never went through `--prepare`, if the input entry predates `apa_sha`, or if the
+   result does not echo its entry's `apa_sha` ("result was for a different version
+   of the reference; re-check it"). A `not-found` row makes `--ingest` exit 1:
+   remove the row or re-check it.
+
+Editing a hand-checked `apa` afterward lapses the check, and the audit fails the
+row as `hand-check-missing` until it is re-checked.
 
 ### Phase 3f — Canonicalize EVERY reference (`tools/references.py`)
 
-Verification (3a–3e) confirms a citation is *real*; this makes its `apa` string
-*perfect* (contract rule 2). Never ship a reference typed from an agent's memory
-(topic mode) or OpenAlex's light metadata (lab mode) — rebuild every `apa` from the
-verified DOI against the authoritative source. `references.py` is the single
-canonical formatter and a hard gate, used identically in both modes:
+Verification (Phase 3) confirms a citation is *real*; canon makes its `apa` string
+*correct* (contract rule 2). `references.py` is the single formatter and a hard
+gate, used identically in both modes:
 
+```bash
+python3 tools/references.py --rows rows.json --out rows.json   # rebuild, then print the audit
+python3 tools/references.py --rows rows.json --audit           # gate: report only, exit 1 on any failure
+python3 tools/references.py --rows rows.json --only A-01,B-02  # targeted re-canon; every other row untouched
 ```
-python3 tools/references.py --rows rows.json --out rows.json   # rebuild + report
-python3 tools/references.py --rows rows.json --audit           # gate: exit 1 on any defect
+
+**Canon rebuilds only verified rows, on every table.** A row is rebuilt only when
+its verify stamp (or a reasoned override) is OK for its current DOI/arXiv id, and
+this holds on every table, including one built before the reference gates
+existed. A row never verified, or whose ids changed since, keeps its `apa`, is
+named, and the run exits 1: re-verify it (`verify.py --rows rows.json --only
+REF`), then re-canon. A whole legacy table is brought up to date through
+"Upgrading an old corpus" below.
+
+**Sources.** CrossRef for a journal DOI (preferred over arXiv when a row has both:
+it is the version of record); DataCite when CrossRef has no such DOI (404); the
+arXiv API for an arXiv id or `10.48550/arXiv.*` DOI, 50 ids per request, 3 s apart.
+(Until 2026-09-25 canon sent one arXiv request per row, and a 475-ref arXiv-heavy
+build spent most of 53 minutes asleep in 429 backoff.) The output is APA-7: the full
+author list (more than 20: 19 + ellipsis + last), correct initials and particles
+(`de Heer`, `Dupré la Tour`), fixed name casing (`ANDERSON` → `Anderson`), a
+leading initial moved out of a family field (CrossRef's `family="A. Moffat"`),
+unescaped and sentence-cased ALL-CAPS titles, a CrossRef `subtitle` joined as
+`Title: Subtitle`, a chapter as `In Book (pp. x-y). Publisher.`, and a real venue,
+including preprint servers CrossRef leaves bare (`bioRxiv`, `PsyArXiv`, `arXiv`).
+A DataCite deposit renders as `Authors (Year). Title (Version v) [Data set|Computer
+software|Preprint]. Publisher.`, the version and bracket omitted when absent.
+
+**How a canon run ends.** It prints the full audit and exits 1 when the audit
+fails, or when any row was not rebuilt:
+
+| Printed | Meaning | Fix |
+|---|---|---|
+| `not verified for its current DOI/arXiv id` | the gate above | `verify.py --only`, or `--override` a false alarm, then re-canon |
+| `fetch failed twice` | the row got a second try after `--retry-wait` (60 s) and still failed; its `apa` is not canonical | `--only REF` later |
+| `DOI does not exist` | 404 from CrossRef and DataCite | fix or drop the DOI, re-verify |
+| `the source returned no usable record` (a warning) | an author-less editorial, an id missing from the feed; the old `apa` is kept | confirm it by hand; acknowledge `kept-existing-apa:<hash>` if the audit raises it |
+
+**The audit's defects** (each fails `--audit` and the spreadsheet): `no-year`,
+`no-authors`, `et-al` in the author list, `html-entity`, `markup-tag` (JATS/HTML
+left in a title), `double-terminal-punctuation` (`?.`, `!.`), `missing-space`
+(words fused by stripped markup, `cockroachPeriplaneta`), `mangled-punct` (a `?`
+standing in for a quote or dash), `unicode-hyphen` (U+2010/U+2011 in a name),
+`malformed-initial` (including a hyphenated given name missing its second part,
+`Poline, J. -.`), `replacement-char` (U+FFFD mojibake), a truncated or empty
+venue, and an `uppercase-title run`. On a gated table the reference gates add:
+`unverified`, `link-doi-mismatch`, `hand-check-missing` (Phase 3e),
+`summary-unchecked` / `summary-flagged` (Phase 5c), and the candidate-ledger
+defects (Phase 6). A DOI-less item is not a defect; it is listed as a manual ref
+and needs its hand check.
+
+**Acknowledge warnings.** Some findings need a human verdict, not a fix. On a gated
+table an unacknowledged warning fails the audit like a defect; on a legacy table it
+is only printed. Record each verdict in `audit_acks.json` beside `rows.json`:
+`{ref: {warning_id: "why this is fine"}}` (`*` for corpus-wide ones).
+`references.py --list-acks` prints every unacknowledged warning as
+`REF<TAB>WARNING_ID<TAB>TEXT` to build the file from; it exits 1 while any is
+unacknowledged, never on a defect, so `--audit` stays the gate. A stale
+acknowledgment (its warning no longer fires) is reported, not failed: delete it.
+
+| Warning id | What it flags | Verdict needed |
+|---|---|---|
+| `possible-duplicate:<ref>` | near-identical titles (often a preprint and its journal version) | two distinct papers, or keep the version of record and drop the other |
+| `multi-word-surname:<name>` | `Lambon Ralph` (real) and `Thomas Yeo` (CrossRef folding given names into the family) look alike | fix the split in `rows.json`, or acknowledge a real compound surname |
+| `single-letter-surname:<name>` | `S, D. J.`: almost always an initial split off as the surname | fix it, or acknowledge a real one (`O`) |
+| `deposit-year:<doi-year>/<apa-year>` | the DOI encodes another year (publisher back-file digitization re-dates old papers) | which year is right |
+| `cached-year:<cached>/<apa>` | a cached `year` field disagrees with the `apa` | fix whichever is wrong, or delete the stale cache |
+| `glued-footnote:<word>` | a footnote digit stuck to the last title word (`psychological science1`) | check the source |
+| `datacite-unsplit-author:<name>` | a DataCite creator with no given name that could not be split safely (`The pandas development team`, `Hao CHEN`) | a group (acknowledge), or a person (fix the `apa`) |
+| `datacite-deposit` | a DataCite record that is not software or a data set (or whose publisher is "Unpublished"): a repository copy of a paper | cite the version of record's DOI if one exists |
+| `kept-existing-apa:<hash>` | verified, but canon could not rebuild it; keyed to the `apa`, so an edit lapses it | confirm the `apa` by hand |
+| `identity-not-reestablished` | a canonical row verified only against its own `apa` (Phase 3d) | confirm the DOI is the intended paper |
+| `no-abstract` | a summary with no abstract to check it against (Phase 5c) | acknowledge, or add a landing-page abstract |
+| `*`: `no-candidate-ledger`, `no-xref-run` / `no-forward-run`, `incomplete-xref-run` / `incomplete-forward-run`, `partial-xref-run` / `partial-forward-run` | Phase 6 was not run, did not finish, or read fewer papers than the table now has | run the pass (Phase 6), or acknowledge why this review goes without it |
+
+**Hand fixes come after the last canon.** Canon re-fetches on every run, so a fix
+made before it is overwritten: U+FFFD mojibake (`Bürgel`), compound-surname
+splits, and anything else you edit in the `apa` (Lessons, "Reference records"). `references.py --repair` fixes markup, Unicode-hyphen and `?.`
+damage offline without re-fetching.
+
+**Sentence-case titles after canon (`tools/sentence_case.py`).** Strict APA-7 wants
+sentence case, and canon does not impose it, because correct casing needs
+proper-noun judgment (Lessons, "Casing and foreign-language titles"). The tool proposes, you
+review, then `--apply`. Keep the corpus's proper nouns in a per-project
+`--proper` file (`{"words": [...], "phrases": [...]}`) so a generic word lowercases
+while a named entity does not (`yoga practitioners` but `Sahaja Yoga`). On a large
+corpus review with `--vocab` (the distinct token changes) instead of every title;
+a mis-cased proper noun is obvious there and invisible in a long diff. Non-English
+titles are skipped by default (`--include-foreign` overrides). A DataCite
+deposit's `(Version …)` and bracket descriptor are not part of the title, so
+casing never touches them.
+
+```bash
+python3 tools/sentence_case.py --rows rows.json --proper proper.json --vocab
+python3 tools/sentence_case.py --rows rows.json --proper proper.json --apply
 ```
-
-It pulls CrossRef (DOIs) or the arXiv API (arXiv ids / `10.48550/arXiv.*` DOIs) —
-and, when CrossRef has no such DOI, DataCite (Zenodo, figshare, OSF, Dryad
-software/data-set/preprint deposits): `Authors (Year). Title (Version v)
-[Data set|Computer software|Preprint]. Publisher.`, the bracket and version
-omitted when absent. The title is DataCite's main title (the one with no
-`titleType`) plus its `Subtitle` after ": ". A creator DataCite gives no given
-name is split when that is safe ("Doe, John" on its comma; a Personal name such as
-"Jagroop Singh Doad" on its last word, giving "Doad, J. S."; one deposited
-family-first with trailing initials is split before them, "Doad J S" giving "Doad,
-J. S." and "Kim J-H" "Kim, J.-H."; a `familyName`, when DataCite gives one, is the
-surname if `name` contains it as a whole word, and "Doad" is not a word of "Anna
-Doad-Smith"). A split never takes initials, a single letter or a 3-4 letter
-capitalized word as the surname; a name that cannot be split safely ("The pandas
-development team", "J S", "Collins AGE", "Hao CHEN", "John Smith JR") is kept whole
-and flagged
-`datacite-unsplit-author:<name>`, and a DataCite record that is not software or a
-data set (or whose publisher is "Unpublished") is flagged `datacite-deposit`: a
-repository copy of a paper, which should cite the version of record's DOI if one
-exists. Canon stores these on the row as `canon_warnings`, and the audit asks you
-to acknowledge each one — then builds APA-7 with: full author list (>20 → 19 + ellipsis + last), correct
-initials and nobiliary particles (`de Heer`, `Dupré la Tour`), fixed name casing
-(`ANDERSON`→`Anderson`, `zhang`→`Zhang`), HTML-unescaped + sentence-cased
-all-caps titles, and a real venue — including preprint servers CrossRef leaves
-bare (`bioRxiv`, `PsyArXiv`, `arXiv`). The `--audit` gate fails the build on any
-defect (missing author/year, `et al.` **in the author list**, HTML entity, `U+FFFD` replacement-char
-mojibake, truncated/empty venue, uppercase title, **JATS/HTML markup left in a
-title** (`<scp>`, `<i>`), **a `?.` or `!.` double terminal punctuation**, **a
-U+2010/U+2011 Unicode hyphen in a name**, **a `?` standing in for a quote or dash
-(`mangled-punct`)**, **words fused by stripped JATS tags (`missing-space`,
-`cockroachPeriplaneta`)**, and **a hyphenated given name deposited with its second
-part missing (`Poline, J. -.`, a second `malformed-initial` shape)**; it warns on a
-**footnote digit glued to the last title word (`glued-footnote`, `psychological
-science1`)**). The ONLY allowed non-fatal
-case is a DOI-less item (book, report, old proceedings) — it keeps its
-hand-written `apa` and is reported as a
-manual ref; verify those by hand. **Run the gate before every deliverable.**
-
-**Canon's refusal to rebuild an unverified row is unconditional.** It rebuilds only
-rows verified for their current DOI/arXiv id — on EVERY table, including one built
-before the reference gates existed. A row whose ids changed since verification, or
-that was never verified, keeps its existing `apa`, is named, and the run exits 1;
-re-verify those rows first (`verify.py --rows rows.json --only A-01,B-02`), then
-re-canon. Re-canoning rows of an old corpus with `references.py --only ...` needs the
-same `verify.py --rows ... --only ...` pass first — see "Upgrading an old corpus"
-below for bringing a whole legacy table up to date at once.
-
-**Acknowledging warnings.** Some audit findings need a human verdict, not a fix — a
-possible duplicate that turns out to be two distinct papers, a summary with no
-abstract to check it against, a multi-word surname that is genuinely compound. On a
-gated table, an unacknowledged warning fails the audit just like a defect. Record the
-verdict in `audit_acks.json` beside `rows.json` (`{ref: {warning_id: "why this is
-fine"}}`); `references.py --list-acks` prints every unacknowledged warning as
-`REF<TAB>WARNING_ID<TAB>TEXT` so you can build the file from it. `--list-acks` only
-lists — it exits nonzero when a warning is unacknowledged, never on a defect;
-`--audit` is the actual gate. A stale acknowledgment (the warning it named no longer
-applies) is reported, not failed; delete it. The reference gates add their own: `no-abstract`; `kept-existing-apa:<hash>` (a
-verified row canon could not rebuild, keyed to its `apa`, so editing the `apa`
-lapses the acknowledgment); `identity-not-reestablished` (a canonical row verified
-only against its own `apa`); and, under `*`, `no-candidate-ledger`, `no-xref-run`,
-`no-forward-run`, `incomplete-xref-run` / `incomplete-forward-run` (the last
-recorded run of that pass did not finish — some fetches failed), and
-`partial-xref-run` / `partial-forward-run` (the last run read fewer papers than the
-table now has with a DOI or arXiv id — rows were added since). Canon's own
-`canon_warnings` are acknowledged the same way: `datacite-unsplit-author:<name>`
-and `datacite-deposit` (see canon above).
-
-**arXiv is read in batches.** Canon prefetches every arXiv-routed id 50 per request,
-3 s apart (`common.arxiv_batch`, shared with verify). Until 2026-09-25 it sent one
-request per row, and a 475-ref arXiv-heavy build spent most of 53 minutes asleep in
-429 backoff; the
-same fetch is now about 30 s. A row whose fetch fails gets one more try at the end
-of the run (`--retry-wait`, default 60 s); a row that still fails is **named, not
-stamped, and the run exits 1**, because its `apa` is not canonical. A row whose
-source answers with no usable record (an author-less editorial, an id missing from
-the feed) keeps its existing `apa` and is named as a warning — confirm it by hand.
-**Targeted re-canon is a flag:** `--only A-01,B-02` rebuilds those rows and leaves
-every other row byte-for-byte as it was, so a splice script is never needed.
-
-Five things the gate reports as **warnings**, because none can be decided
-automatically: a near-duplicate row pair; a **multi-word surname** that may be
-a mis-split given name; a **one-letter surname** (`S, D. J.`, almost always an
-initial split off as the surname, from any source; a real one such as `O` is
-acknowledged as `single-letter-surname:<name>`); a **deposit-year conflict** (the DOI encodes a different
-year than the reference — publisher back-file digitization re-dates old papers);
-and a **cached `year` field that diverged from the apa** (fix whichever is wrong,
-or delete the stale cache). `Lambon Ralph` is a real compound surname and `Thomas Yeo`
-is CrossRef folding B. T. T. Yeo's given names into the family field; they are
-indistinguishable to a machine, so each needs a human verdict. (A *leading initial*
-in a family field — CrossRef's `family="A. Moffat"` — IS unambiguous and is now
-repaired automatically, since no surname begins with an initial.)
-
-**Sentence-case titles after canon with `tools/sentence_case.py`.** Strict APA-7
-wants sentence case, and canon deliberately does not impose it (see Lessons). The
-tool proposes, you review, then `--apply`. Keep the corpus's proper nouns in a
-per-project `--proper` allowlist file so a generic word lowercases while a named
-entity does not (`yoga practitioners` but `Sahaja Yoga`). On a large corpus use
-`--vocab` to review the ~N distinct token changes rather than 150 title diffs — a
-mis-cased proper noun is obvious there and invisible in a long diff. A DataCite
-deposit's `(Version …)` and bracket descriptor (`[Data set]`, `[Computer
-software]`, `[Preprint]`) are not part of the title: the shared APA grammar ends
-the title before them, so sentence casing never touches them and verify compares
-only the title itself.
 
 ### Phase 4 (OPTIONAL) — Download PDFs
 
-**Skip this phase by default.** Run only if the user explicitly asks for
-PDFs. The default workflow is Phase 1 → 2 → 3 → 5 → 6 → 7. PDF acquisition
-will eventually be replaced by a separate dedicated tool; treat the
-machinery below as legacy that still works on demand.
+**Skip this phase by default.** Run it only if the user explicitly asks for PDFs.
+A dedicated replacement is planned; treat this machinery as legacy that still
+works on demand.
 
-If opted in, try sources in this order (`tools/download.py` does this
-automatically):
+```bash
+python3 tools/download.py --papers pdf_list.json --out-dir papers/<topic_slug>/ \
+        --email you@inst.edu --manual-list papers/<topic_slug>/_needs_manual.txt
+```
 
-1. **arxiv direct** — `https://arxiv.org/pdf/<id>.pdf`. Always works for
-   arxiv preprints. Only one risk: rate-limit (429) if you hit too fast;
-   use 2s sleeps between calls.
+`pdf_list.json` is a list of `{slug, doi, arxiv, pmcid}`. The tool tries arXiv
+direct, then every Unpaywall OA location (`best_oa_location` first, non-PMC URLs
+before PMC), then Europe PMC (`?pdf=render`); it skips hosts that block bots
+(`BLOCKED_HOSTS`: PMC PDF URLs, bioRxiv/medRxiv, PNAS, OUP, MIT Press,
+ScienceDirect, Wiley, Cell), and keeps a download only if its first 4 bytes are
+`%PDF` (a 200 can be an HTML challenge page). Failures are appended to
+`--manual-list`.
 
-2. **Unpaywall API** — `https://api.unpaywall.org/v2/<doi>?email=<user_email>`.
-   Returns `oa_locations` with PDF URLs. **Prefer non-PMC URLs first**, since
-   PMC has aggressive bot blocking. Often gives author institutional repos
-   (`.edu` / `.ac.uk` pages) that work with simple curl.
+**Route the failures to a browser-helper page**, not to retries: those hosts work
+in a real browser. Write `papers/<topic_slug>/_download_helper.html`, one row per
+failed paper (author, year, slug, title) with an Open link: plain
+`https://doi.org/<doi>` for paywalled papers (the user has institutional access;
+never a libproxy URL), `https://pmc.ncbi.nlm.nih.gov/articles/<PMCID>/` for
+OA-on-PMC, `https://www.biorxiv.org/content/<doi>v1` for bioRxiv. The user opens
+it, downloads each PDF with the publisher's button into `~/Downloads`, and then:
 
-3. **Direct journal URL via Unpaywall's `best_oa_location.url_for_pdf`** —
-   `https://www.nature.com/articles/<id>.pdf` typically works for OA Nature,
-   Nat Commun, Nat Neuro, Nat Hum Behav, Sci Rep.
+```bash
+python3 tools/reconcile_downloads.py --manifest papers/<topic_slug>/_manifest.json \
+        --out-dir papers/<topic_slug>/
+```
 
-4. **Europe PMC** — `https://europepmc.org/articles/<PMCID>?pdf=render`
-   works for many NIH-funded papers.
+It matches each PDF (filename ↔ DOI substring, else first-author + year + title
+words on the first page via `pdftotext`), moves it into place under its slug, and
+leaves any PDF it is unsure of. The manifest is a list of
+`{slug, title, first_author, year, doi}`; `--dry-run` previews.
 
-5. **Manual fallback via browser-helper page (preferred over `_needs_manual.txt`).**
-   For papers that fail the auto-download, generate
-   `papers/<topic>/_download_helper.html`: one row per failed paper with
-   author/year/slug/title and an Open link to the journal landing page (use
-   plain `https://doi.org/<doi>` for paywalled — the user has institutional
-   access; do **not** wrap in libproxy URLs, those land on a generic library
-   page). Use direct PMC `/articles/<PMCID>/` URLs for OA-on-PMC papers and
-   `https://www.biorxiv.org/content/<doi>v1` for bioRxiv preprints.
-   Open the helper with `open <path>` so it loads in the user's browser. The
-   user clicks through, downloads each via the publisher's own PDF button,
-   PDFs land in `~/Downloads` with publisher-chosen filenames. Then run
-   `tools/reconcile_downloads.py --manifest <topic>/_manifest.json
-   --out-dir papers/<topic>/` to read each PDF's first-page title via
-   pdftotext, fuzzy-match to the manifest, and move into place with the
-   right slug name.
+### Phase 5 — Build the spreadsheet (the release gate)
 
-**Verify each download is actually a PDF** (first 4 bytes == `%PDF`).
-A 200 response can still return an HTML challenge page.
+```bash
+python3 tools/spreadsheet.py --rows rows.json --out <topic>_bibliography.xlsx
+```
 
-**Do NOT attempt** these sources — they all reliably fail to bots:
-- PMC direct PDF URLs (`https://pmc.ncbi.nlm.nih.gov/articles/<PMCID>/pdf/`):
-  Cloudflare Proof-of-Work challenge.
-- bioRxiv / medRxiv direct: Cloudflare bot mitigation (403).
-- PNAS direct PDF (`pnas.org/doi/pdf/...`): 403 via curl.
-- OUP `academic.oup.com/.../article-pdf/...`: 403.
-- MIT Press `direct.mit.edu/imag/article-pdf/...`: 403.
-- Elsevier ScienceDirect `.../pdfft`: 403.
-- Wiley `onlinelibrary.wiley.com/doi/pdfdirect/...`: 403.
+Build it last, once Phases 3–6b are done: it runs the same audit as
+`references.py --audit` and refuses to write a failing gated table (contract
+rule 9). `--draft` writes `<out>_DRAFT.xlsx` with a red banner naming the failure
+count; never hand that file off. A legacy (ungated) table is written despite its
+findings. `spreadsheet.py` rebuilds the whole file from `rows.json` each time
+(xlsxwriter is write-only), freezes the header, sets column widths and 110-pt rows.
 
-These all work fine in a real browser, so route them to the helper page
-described in step 5 — don't keep retrying programmatically.
+Columns: `Topic | Ref # | APA reference | Link | Summary | Tag` then, when any row
+carries them, `Family` (Phase 6b), `Cite (OpenAlex) | Cite (S2)` (Phase 5b),
+`Verify note` (hand-check notes), `Summary checked against` (Phase 5c: the abstract
+source, or "no abstract"), then `PDF (local) | Xref`. The "Considered and
+excluded" sheet lists the ledger's `exclude` decisions (Phase 6) and the lanes'
+`excluded` papers from `merge_report.json`, minus any another lane kept.
 
-### Phase 5 — Update the spreadsheet
+What each row field should hold:
 
-Use `xlsxwriter` (no install if already present; if not, write CSV instead
-and tell the user). Schema:
+- `topic`: one of the project's topic categories (e.g. "Multimodal networks").
+- `ref`: the lane ref (`<LANE_KEY>-NN`). Refs must stay unique across batches:
+  give each later batch a new lane key, since `--append` refuses a used ref.
+- `apa`: the canonical `apa` from Phase 3f.
+- `link`: `https://doi.org/<doi>`, never a PubMed/PMC URL. A paper with only a
+  PMID/PMCID gets its DOI looked up first.
+- `summary`: 3-5 sentences on what the paper did and why it matters for the topic.
+  Every factual claim must come from the abstract: the summary check (Phase 5c)
+  flags anything else. A closing sentence on relevance is fine if it asserts no
+  finding.
+- `tag`: the template's tag vocabulary (`classic`, `recent-review`, …).
+- `pdf`: a relative path if downloaded, else empty. `xref`: the cross-citation
+  count from Phase 6, else empty.
 
-| Topic | Ref # | APA reference | Link | Summary | Tag | Family | Cite (OpenAlex) | Cite (S2) | Verify note | PDF (local) | Xref |
-|-------|-------|---------------|------|---------|-----|--------|-----------------|-----------|-------------|-------------|------|
-
-(`Family` appears only after Phase 6b, and the two `Cite` columns only when
-Phase 5b has populated them.)
-
-- `Topic`: one of the project's topic categories (e.g. "Multimodal networks").
-- `Ref #`: numeric for source-document refs; use `<topic-letter><n>` for
-  added refs (e.g. `M1`-`M40` for first multimodal batch, `M41`-`M70` for xref
-  batch). Keep numbering monotonically increasing across batches.
-- `APA reference`: the canonical `apa` from Phase 3f — full author list (APA-7:
-  up to 20; 19 + ellipsis + last beyond that). Never `et al.` in the author list;
-  the audit gate
-  fails on it.
-- `Link`: DOI URL in `https://doi.org/<doi>` form — verified to resolve.
-  PubMed/PMC URLs are NOT used as the primary link. If a paper has only a
-  PMID/PMCID, look up its DOI before adding the row.
-- `Summary`: 3-5 sentences. State what the paper did and why it matters for
-  the topic. Don't just paraphrase the abstract.
-- `Tag`: see Phase 2 list.
-- `PDF (local)`: relative path if downloaded, else empty.
-- `Xref`: citation count from cross-reference analysis (Phase 6), else empty.
-
-**Color-code rows** so origin is visible (`source` field; the rules live in
-`spreadsheet.py`'s `COLORS`, and an unknown value renders white with a warning):
-- White: refs from the source paper (`source-doc`).
-- Cream `#FFF7E0`: refs added in the search passes (`search`).
-- Green `#E2F0D9`: refs added via cross-citation analysis, Phase 6 (`xref`, or
-  `forward` / `survey` for candidates only those passes found).
-- Blue `#DDEBF7`: the lab's own papers in lab mode (`lab`).
-- Lilac `#F3E6F5`: Phase-2b antecedents (`anteced`; `anteced-nosrc` for
-  hand-cited classics with no DOI).
-
-`tools/spreadsheet.py` does the rebuild from a JSON of rows: it freezes the
-header, sets the column widths and 110-pt row heights, and adds the `Family` and
-`Cite` columns when the rows carry them.
-
-**The spreadsheet is the release gate (contract rule 9).** `spreadsheet.py` runs the
-same audit as `references.py --audit` (verify stamps, hand checks, summary checks,
-acknowledged warnings) and refuses to write a failing gated table. Pass `--draft` to
-write one anyway, as `<out>_DRAFT.xlsx` with a red banner naming the failure count —
-never hand that file off as the deliverable. A candidate ledger entry marked
-`"decision": "exclude"` gets its own "Considered and excluded" sheet. A row with a
-checked summary carries a "Summary checked against" column, naming the abstract
-source or "no abstract".
+**Row colors** come from `source` (rules in `spreadsheet.py`'s `COLORS`; an
+unknown value renders white with a warning): white `source-doc` (refs from the
+source document); cream `#FFF7E0` `search`; green `#E2F0D9` `xref`, `forward`,
+`survey` (Phase 6); blue `#DDEBF7` `lab`; lilac `#F3E6F5` `anteced` and
+`anteced-nosrc` (Phase 2b).
 
 ### Phase 5b — Citation counts (standard; do this on every review)
 
-Add per-paper citation counts. **Google Scholar is not usable** — it has no
-API and CAPTCHA-blocks automated queries after a handful of requests, so it
-cannot be pulled for a whole bibliography. Use `tools/citations.py`, which
-queries two databases by DOI:
+Google Scholar has no API and CAPTCHA-blocks automated queries after a handful of
+requests, so it cannot be used. `tools/citations.py` queries two databases by DOI:
 
-- **OpenAlex** — primary source. Free, no key, reliable, near-complete by DOI,
-  batchable. (Undercounts arXiv-only preprints, which it often files under a
-  separate record from the published version — cross-check those with S2.)
-- **Semantic Scholar** — secondary. Often higher for CS/AI venues and gives an
-  `influentialCitationCount`. Its free endpoints rate-limit hard (HTTP 429/400)
-  from shared IPs and silently drop papers; treat as best-effort. Set
-  `S2_API_KEY` in the environment to make it reliable.
+- **OpenAlex**, the primary source: near-complete by DOI, 50 DOIs per filter
+  request (1 credit each against the daily budget, Phase 0), with a single-work
+  lookup (0 credits) for any DOI the batch missed or whose count is under half a
+  Semantic Scholar count of 50 or more. It undercounts arXiv-only preprints filed under a separate record.
+- **Semantic Scholar**, secondary: often higher for CS/AI venues, and gives
+  `influentialCitationCount`. 500 ids per request. An id S2 rejects is isolated
+  and named (treated as not in S2) and a chunk that fails is named; either way the
+  OpenAlex counts stand. Without `S2_API_KEY` expect gaps.
 
 ```bash
-python3 tools/citations.py --rows rows.json --out citation_counts.json \
-        --email you@inst.edu --asof <YYYY-MM-DD>
+python3 tools/citations.py --rows rows.json --out citation_counts.json --asof <YYYY-MM-DD>
+python3 -c "import sys; sys.path.insert(0, 'tools'); import common; r = common.load_json('rows.json'); print(common.attach_counts(r, common.load_json('citation_counts.json')), 'rows'); common.dump_json(r, 'rows.json')"
 ```
 
-Citations and xref (Phase 6) read only DOIs, so start both in the background as soon
-as verify's DOI corrections are applied, while canon runs; none of the three waits on
-another. S2 is queried 500 ids per request; a 400 stops S2 for the run (it never
-recovered on retry in any logged build) and OpenAlex counts stand.
-
-Then attach the counts to each row (`cite_openalex` / `cite_s2` keys) in your
-`build_data.py`/rows pipeline and rebuild — `spreadsheet.py` auto-adds the two
-`Cite` columns when it sees them. Counts are a snapshot at run time; re-run to
-refresh. Papers with no DOI (books, blog/tech-report releases) stay blank.
-
-**Per-version data scripts:** if you split batch data across importing Python
-files, guard the xlsx-writing block under `if __name__ == "__main__":` so an
-import doesn't rewrite the spreadsheet as a side effect — or just keep all rows in
-one JSON and rebuild via `tools/spreadsheet.py` (the simpler path; see Lessons →
-On the spreadsheet).
+`citations.py` only reads the rows (it may run during canon), but the second line
+writes `rows.json`, so run it when no other writer is running ("Running steps at
+the same time"). It copies the counts onto the rows as `cite_openalex` / `cite_s2`
+/ `cite_s2_influential`, which `spreadsheet.py`, the figure and `forward.py` read.
+Counts are a snapshot: record `--asof` and re-run to refresh. Rows with no DOI
+stay blank. Attach counts only after the refs are final; they are keyed by ref.
 
 ### Phase 5c — Abstracts and the summary check
 
-A summary can drift from what a paper actually found, the same way a citation can be
-fabricated, so check it the same way: against an authoritative record, by an agent
-that cannot see anything but that record.
+A summary can drift from what a paper found, the same way a citation can be
+fabricated, so it is checked the same way: against an authoritative record, by an
+agent that sees nothing but that record.
 
 ```bash
-python3 tools/abstracts.py --rows rows.json --email you@inst.edu
+python3 tools/abstracts.py --rows rows.json
 python3 tools/summary_audit.py --rows rows.json --prepare
-# dispatch one checking agent per summary_audit/batch_NN.json; brief: summary_audit/brief.md
+# dispatch one checking agent (no web access) per summary_audit/batch_NN.json; brief: summary_audit/brief.md
 python3 tools/summary_audit.py --rows rows.json --ingest
 ```
 
-`abstracts.py` fetches every row's abstract once, from the most authoritative source
-that has it — the arXiv API for arXiv papers, then OpenAlex, then Semantic Scholar,
-then PubMed — into `abstracts.json`. Each entry records the `doi` and `arxiv` it was
-fetched for, so an abstract stays bound to its paper: when a row's ids change, its
-fetched entry is fetched again, and `summary_audit.py --prepare` refuses any entry
-recorded for other ids. A hand-added entry (`"source": "landing-page"`, which must
-carry the row's `doi`/`arxiv`) is never overwritten; if its ids no longer match the
-row it is reported as stale for you to fix. A fetch failure is reported separately
-from a genuine no-abstract miss and written to `abstracts_failed.json`;
-`summary_audit.py --prepare` refuses those rows (exit 1) instead of filing them as
-"no abstract" — re-run `abstracts.py`, or add a landing-page entry.
-`summary_audit.py --prepare` splits the rows needing a check into batches of 40 (`--batch`) with each summary and its abstract, plus a brief; dispatch
-one checking agent per batch, with no web access — it judges only whether the
-abstract supports the summary, "supported" or "unsupported" with the unsupported
-clause quoted exactly. The manifest `--prepare` writes records, per ref, the row's
-ids and a hash of the abstract it was checked against — exactly what the checking
-agent saw — and `--ingest` binds every result to that manifest, not to whatever
-`rows.json` or `abstracts.json` now say: a check is refused if the summary was
-edited (keyed to a hash of the summary text), if the row's ids changed since
-`--prepare`, or if the abstract text itself changed since `--prepare`, in each case
-telling you to re-run `--prepare`. Each batch entry also carries its
-`summary_sha`, which the checking agent copies into its result; a result without
-it, or with another one, is refused. A manifest written before this binding existed
-(no ids/abstract-hash maps at all) refuses every ref in it the same way, rather
-than silently treating each one as unchanged. A row with no abstract is recorded as
-`no-abstract` — a warning the audit makes you acknowledge (see the acknowledgments
-note under Phase 3f). A flagged summary is a defect: fix it and run `--prepare`
-again.
+**`abstracts.py`** fetches each row's abstract once, from the most authoritative
+source that has it (the arXiv API for arXiv papers, then OpenAlex, then Semantic
+Scholar, then PubMed for rows with a PMID), into `abstracts.json`. Each entry
+records the `doi` and `arxiv` it was fetched for, so when a row's ids change its
+entry is fetched again. A fetch that could not complete goes to
+`abstracts_failed.json` and makes the run exit 1: that is not "no abstract", so
+re-run it. For a paper no source has, add a hand entry from the landing page:
+`{"text": "...", "source": "landing-page", "url": "...", "doi": "<row's doi>",
+"arxiv": "<row's arxiv>"}`. A landing-page entry is never overwritten; if its ids
+stop matching the row it is reported as stale.
+
+**`summary_audit.py --prepare`** writes the rows needing a check into batches of 40
+(`--batch`), each entry with its summary, abstract and `summary_sha`, plus the brief
+and a `manifest.json`. It refuses (exit 1) any row whose abstract fetch failed or
+whose abstract entry records other ids. It **deletes old `batch_*.json` and
+`result_*.json`**, so ingest every finished result before re-preparing. Each
+checking agent judges only whether the abstract supports the summary: "supported",
+or "unsupported" with the unsupported clause quoted exactly, echoing each entry's
+`summary_sha`.
+
+**`--ingest`** binds every result to the manifest, not to whatever `rows.json` or
+`abstracts.json` now say. It refuses a result if the summary was edited, the row's
+ids changed, or the abstract text changed since `--prepare`, or if the result does
+not echo the batch's `summary_sha`; each refusal names its fix (re-run
+`--prepare`, or re-check the entry). A
+manifest from before this binding existed refuses every ref in it. A row with no
+abstract is recorded as `no-abstract`, a warning to acknowledge (Phase 3f). A
+flagged summary is a defect: fix it and run `--prepare` again (then `--ingest`).
 
 ### Phase 6 — Cross-citation analysis (second pass)
 
-Run after Phase 5 is committed. The point: find high-impact papers the
-initial search missed, both by what the papers we DO have cite repeatedly
-(backward, `xref.py`) and by what cites our own landmark papers (forward,
-`forward.py`). Every paper either pass suggests gets a recorded decision
-(`candidates.py`) — the audit gate fails while any candidate is still pending.
+Finds high-impact papers the search missed, two ways: what the corpus papers cite
+repeatedly (backward, `xref.py`) and what cites the corpus's landmarks (forward,
+`forward.py`). Every paper either pass suggests gets a recorded decision in the
+candidate ledger (`candidates.py`); the audit fails while any is pending.
 
-**6a. Backward: fetch reference lists (`tools/xref.py`).** For each paper with a
-DOI, call CrossRef: `https://api.crossref.org/works/<doi>`. The
-`message.reference[]` field has the cited refs. For an arXiv DOI, and for any
-paper whose CrossRef record has no reference list, xref asks **Semantic
-Scholar** instead (`paper/batch` with reference ids, chunked; `paper/{id}/references`
-paged for long lists) — set `S2_API_KEY`. A cited arXiv id is normalized to
-`10.48550/arxiv.<id>` so it matches a corpus DOI. A probe on 2026-09-25 found
-reference lists for 16 of 20 sampled arXiv papers this way (OpenAlex had 4 of
-39). The batch requests carry whole reference lists, so they go 10 papers at a
-time, with one half-size retry of a failed batch: on a 677-row build, 100-paper
-batches drew a 429 or a truncated body and failed 400 papers even with the key
-to itself. Run xref, citations.py and abstracts.py one after another, not side by
-side: they share the one S2 key, and each paces only its own requests. A paper whose references could not be fetched makes the run **incomplete**
-and xref exits 1, same as a genuine fetch failure — pass `--allow-incomplete`
-to accept a partial table (it says so in its output) rather than re-running
-immediately. Either way, xref writes `<out>.run.json` (`{complete, incomplete,
-at, tool, n_papers}`) beside its output, so `candidates.py --add` can tell a
-partial run from a full one without re-reading the run's own stderr, refuse it
-under the wrong `--source`, and record how many papers the run read.
+**Order and prerequisites.** Start once verify's DOI corrections are applied (both
+passes read only DOIs/arXiv ids). `xref.py` runs in the Semantic Scholar chain, one S2
+client at a time; `forward.py` follows xref (it reads `internal_citations.json` to pick
+landmarks) and the attached counts (`cite_openalex` breaks ties; Phase 5b). It uses
+OpenAlex only, so it may overlap the S2 steps. See "Running steps at the same time".
+
+**Backward: `xref.py`.** For each paper it reads the CrossRef reference list
+(`message.reference[]`). For an arXiv DOI, or a paper whose CrossRef record has no
+list, it asks Semantic Scholar instead (`paper/batch`, 10 papers per request, one
+half-size retry of a failed chunk; long lists paged through `paper/{id}/references`).
+Chunks are small because each record carries its whole reference list: 100-paper
+chunks drew a 429 or a truncated body and failed 400 papers of a 677-row build even
+with the key to itself. On a 2026-09-25 probe S2 had lists for 16 of 20 sampled arXiv
+papers (OpenAlex had 4 of 39). A cited arXiv id is normalized to `10.48550/arxiv.<id>`
+so it matches a corpus DOI. An incomplete CrossRef fetch is retried once at the end
+of the run (`--retry-wait`, default 60 s).
 
 ```bash
 python3 tools/xref.py --rows rows.json --out xref_<topic>.json --min-cites 4 \
         --resolve-unknown --internal-out internal_citations.json
 ```
 
-**6b. Build the frequency table.** For each cited DOI, count how many of your N
-papers cite it — `xref.py` does this as part of the same run above, and retries
-an incomplete CrossRef fetch once at the end of the run before it reports the
-table as undercounted.
+- The output ranks every DOI cited by at least `--min-cites` corpus papers (default
+  3). On a ~40-paper topic, 4 is a strong signal and 3 borderline (take a 3 only if
+  clearly foundational); raise it for a large corpus, since every entry becomes a
+  pending candidate.
+- `--resolve-unknown` looks up titles for ranked DOIs CrossRef returned bare.
+- `--internal-out` writes each corpus paper's within-corpus in-degree. Always emit
+  it: `forward.py` and the figure's landmark criterion (2) read it from beside
+  `rows.json`.
+- CrossRef coverage varies by publisher (Nature, Cell, OUP, JNeurosci deposit
+  reference lists; some small journals deposit none).
+- A reference list that could not be fetched makes the run **incomplete**: xref
+  names the papers, says the table is undercounted, and exits 1. Re-run, or pass
+  `--allow-incomplete` to accept it (say so at hand-off).
 
-**6c. Resolve unknowns.** `--resolve-unknown` looks up titles for top-cited DOIs
-that came back with no title/author (many cited refs have only a DOI in the
-CrossRef response).
-
-**6d. Forward: papers citing our landmarks (`tools/forward.py`).** Picks the
-corpus's landmarks (top 30 by within-corpus in-degree — from
-`--internal-out` above — then citation count), asks OpenAlex for the most-cited
-papers citing each one (up to 200 per landmark), and scores each citing paper
-by how many corpus papers it also cites. A citing paper that cites at least 3
-corpus papers becomes a candidate. Because each pull is ordered by citation
-count, very recent papers are under-represented — the output says so. A
-corpus row with no DOI (or whose OpenAlex id lookup failed) cannot be excluded
-from the candidates, so it may reappear as its own "candidate"; check by hand.
-A landmark whose pull failed makes `forward.py` exit 1 (its citing papers are
-missing from the candidates); re-run it, or pass `--allow-incomplete`. It too
-writes the `<out>.run.json` sidecar `xref.py` does.
+**Forward: `forward.py`.** Picks the landmarks (top `--landmarks` 30 by
+within-corpus in-degree, then `cite_openalex`), asks OpenAlex for the most-cited
+papers citing each (up to `--per-landmark` 200), and keeps a citing paper that cites
+at least `--min-shared` 3 corpus papers.
 
 ```bash
 python3 tools/forward.py --rows rows.json --out forward_candidates.json
 ```
 
-**6e. Every candidate gets a recorded decision (`tools/candidates.py`).** Add
-both passes' results to one ledger, decide each with a reason, and export the
-included ones as a lane file:
+- Pulls are ordered by citation count, so very recent papers are under-represented;
+  the output says so.
+- A corpus row is recognized by its OpenAlex id or DOI. A row with no DOI (or whose
+  id lookup failed) cannot be excluded, so it may come back as its own candidate:
+  exclude it by hand.
+- A failed landmark pull exits 1 (its citing papers are missing); re-run, or pass
+  `--allow-incomplete`. A spent OpenAlex budget raises `OpenAlexBudgetError` at once
+  (Phase 0).
+
+Both tools write a run sidecar `<out>.run.json` (`complete`, `incomplete`, `at`,
+`tool`, `n_papers`) beside their output. `candidates.py --add` reads it to record
+whether the run finished and how many papers it read.
+
+**Decide every candidate: `candidates.py`.** One ledger (`candidates.json` beside
+`rows.json`) holds both passes:
 
 ```bash
 python3 tools/candidates.py --rows rows.json --add xref_<topic>.json --source xref
@@ -935,299 +891,297 @@ python3 tools/candidates.py --rows rows.json --decide 10.1038/xxxxx \
 python3 tools/candidates.py --rows rows.json --export-included xref_lane.json --lane X
 ```
 
-Aim for ~25-35 *included* additions per pass. More than that and the spreadsheet
-becomes unwieldy; less and you've under-mined. The excluded ones are not
-discarded — they stay in `candidates.json` with their reason, and
-`spreadsheet.py` lists them on a "Considered and excluded" sheet, so a paper
-missing from the review is visibly one that was considered. The audit gate
-fails while any candidate is pending, or while an `include`d candidate is not
-actually in the table. Each `--add` also records the run in the ledger (`_runs`:
-source, date, count, `complete` and `n_papers` — read from the `<out>.run.json`
-sidecar beside the file it's adding; a missing or incomplete sidecar records
-`complete: false`, and a sidecar written by the other tool than `--source` names is
-refused), and on a gated table the audit warns `no-xref-run` /
-`no-forward-run` under `*` until both passes have been added,
-`incomplete-xref-run` / `incomplete-forward-run` if the last recorded run of a
-pass did not finish, and `partial-xref-run` / `partial-forward-run` if it read fewer
-papers than the table now has with a DOI or arXiv id (rows appended since: re-run
-the pass and `--add` it again) — acknowledge one only if this review genuinely
-skipped that pass, or genuinely proceeds without full coverage. A hand-edited or truncated
-`candidates.json` is refused by name (which entry, and why) rather than crashing
-partway through the audit or the spreadsheet.
+- `--add` skips DOIs already in the corpus and records the run under `_runs`
+  (`at`, `n`, `complete`, `n_papers`, from the sidecar). A missing or incomplete
+  sidecar records `complete: false`; a sidecar written by the other tool than
+  `--source` names is refused.
+- `--reason` is required for every decision. Excluded candidates stay in the ledger
+  and are listed on the spreadsheet's "Considered and excluded" sheet, so a missing
+  paper is visibly one that was considered.
+- Expect ~25–35 included additions per topic pass (almost half as many again as the
+  search found). Many more makes the spreadsheet unwieldy; far fewer usually means
+  under-mining.
+- A hand-edited or truncated `candidates.json` is refused by name (which entry, and
+  why) by `candidates.py`, the audit and the spreadsheet.
 
-**6f. Repeat Phases 3, 3f and 5b** for the new batch: `merge_lanes.py --append
-xref_lane.json --into rows.json` adds the exported rows without touching any
-existing row, then `verify.py --rows --only <new refs>`, `references.py`, and
-`citations.py` bring them up to the same standard as every other row (with the
-green color and Xref column populated).
+The audit fails while any candidate is pending, or while an `include`d candidate is
+not in the table. On a gated table it also warns, under `*`: `no-xref-run` /
+`no-forward-run` (pass never added), `incomplete-xref-run` / `incomplete-forward-run`
+(the last recorded run did not finish), and `partial-xref-run` /
+`partial-forward-run` (the last run read fewer papers than the table now has with a
+DOI or arXiv id). Acknowledge one (Phase 3f) only when the review genuinely skipped
+that pass or proceeds without full coverage. Rows appended by this very phase trip
+the `partial-*` warnings: re-run the pass on the grown table and `--add` it again, or
+acknowledge why the new rows need no pass.
+
+**Bring the included papers in.** Exported rows are refs `<lane>-01…`, `source`
+`xref` or `forward` (green in the spreadsheet), with the candidate's author, year
+and title as the claim. Then:
+
+1. `python3 tools/merge_lanes.py --append xref_lane.json --into rows.json` (never
+   touches an existing row). A second export needs a new `--lane` key: `--append`
+   refuses a ref already in the table.
+2. `verify.py --rows rows.json --only <new refs>` (the append prints the list), then
+   `references.py --rows rows.json --only <new refs>`.
+3. Re-run `citations.py` and attach the counts; re-run `abstracts.py` (it fetches
+   only what is missing or stale).
+4. Write each new row's `summary` (from its abstract) and `topic`: the export leaves
+   both empty, and the audit does not flag an empty summary.
+5. Assign the new rows a family if Phase 6b is already under way (`families.py`
+   fails on an unassigned row).
+
+The spreadsheet's `Xref` column shows a row's `xref` field, which no tool fills.
 
 ### Phase 6b — Families and the timeline (offered on EVERY review)
 
 The lineage timeline is the deliverable users find most useful, so **always offer
-it — do not wait to be asked.** It needs the papers grouped into a few **theoretical
-families** — a conceptual axis *orthogonal to the Topic column* (Topic captures
-method/sub-area; families capture what each paper is fundamentally *for*). Adds a
-`Family` column, a `families.md` (grouped tables + a family×topic cross-tab), and the
-timeline. **Pitch the families as soon as the rows are verified (after Phase 3),
-not after xref.** The proposal needs only titles and summaries, and the user's reply
-is the one human wait in the run: let canon, citations and xref run in the
-background while they decide. Rows that xref adds later join the same assignment
-batch (`families.py` fails loud on any unassigned row). On a 475-ref build the pitch
-came last, and 56 minutes passed between the pitch and the finished figure.
+it; do not wait to be asked.** It groups the papers into a few **theoretical
+families**, an axis *orthogonal to the Topic column* (Topic is method/sub-area; a
+family is what a paper is fundamentally *for*). It adds a `Family` column,
+`families.md` (grouped tables plus a family × topic cross-tab), and the figure.
 
-The user's one decision is at step 2, and it covers the timeline too: **use the
-proposed families, change them, or skip the timeline.** Everything after that runs
-without stopping; the mechanical part is owned by `tools/families.py` and
-`tools/families_figure.py`:
+**Pitch as soon as the rows are verified (after Phase 3), not after xref.** The
+proposal needs only titles and summaries, and the user's reply is the one human wait
+in the run: let canon, counts and xref run while they decide. On a 475-ref build the
+pitch came last, and 56 minutes passed between the pitch and the finished figure.
 
-1. **Propose** (agent, reading the corpus via `tools/families.py --digest`):
-   propose ~3-8 families, each `{key, name, claim, lineage}`, and state the one
-   organizing principle. The hard constraint: families must cut *across* the
-   Topic lanes — a good family unites textually-dissimilar papers and splits
-   similar ones. **Do NOT cluster embeddings** to make families; that yields
-   surface-similarity groups, not theoretical ones. Use the prompt in
-   `tools/family_prompt_template.md`.
-2. **Pitch** — offer the timeline and show *just the ~6 family definitions* it would
-   be drawn from (name + one-line claim each). Ask the user to pick one of three:
-   **use these**, **change them** (iterate on the definitions until they approve), or
-   **skip the timeline** (then stop Phase 6b: no `Family` column, no figure, and say
-   so at hand-off). This is the cheap, high-leverage checkpoint: iterating on six
-   definitions is free; redoing the assignment is not.
-3. **Assign** — against the frozen spec, assign every paper to one family
-   (dominant commitment). Assign in batches for large corpora; never one rushed
-   250-paper pass. Write `families_input.json`
-   (`{principle, families, assignments:{ref:key}}`).
-4. **Validate + render:**
+1. **Propose.** Read the corpus with `python3 tools/families.py --rows rows.json
+   --digest` and use `tools/family_prompt_template.md`. Propose ~3–8 families (the
+   tool accepts 2–9), each `{key, name, claim, lineage}`, and one organizing
+   principle. Families must cut *across* the Topic lanes: a good family unites
+   textually dissimilar papers and splits similar ones. **Do not cluster
+   embeddings**; that yields surface-similarity groups, not theoretical ones.
+   The `claim` and `lineage` are shown to readers on hover, so they need citation
+   discipline: **compose each lineage from rows already in the corpus** (grep
+   `rows.json` for the canonical lead surname and year) rather than from memory. On
+   the cortical-layers build a remembered lineage put Senzai et al. 2019 in
+   `contingency` when its contribution (laminar landmarks from spike power and
+   sink-source distributions) belongs in `boundary`.
+2. **Pitch.** Offer the timeline and show *just the family definitions* (name +
+   one-line claim). The user picks: **use these**, **change them** (iterate until they
+   approve), or **skip the timeline** (then no `Family` column and no figure; say so
+   at hand-off). Iterating on six definitions is cheap; redoing an assignment is not.
+3. **Assign** every paper to one family (its dominant commitment) against the frozen
+   spec, in batches for a large corpus, never one rushed 250-paper pass. Write
+   `families_input.json` (`{principle, families, assignments: {ref: key}}`). Ask the
+   assignment agents to report their hard calls (papers that fit the spec badly) and
+   read them: the agents are told not to argue with the spec, so a hard call is the
+   only place a wrong family definition shows up. (In the Senzai case an agent
+   flagged the conflict, deferred to the spec, and the error propagated until the
+   flag was read.)
+4. **Validate and stamp.**
    ```bash
    python3 tools/families.py --rows rows.json --assign families_input.json \
            --out families.json
    ```
-   It enforces exhaustive / exclusive (fails loud otherwise; imbalance — one family
-   holding >60%, or a singleton — is only a stderr warning, so read it), stamps
-   `family` onto rows.json, writes `families.json` (the reproducible cache, like
-   `citation_counts.json`) + `families.md`, and `spreadsheet.py` auto-adds the
-   `Family` column on the next rebuild. Re-run only when the taxonomy changes.
+   It fails on an unassigned ref, an unknown ref or an unknown family key, and warns
+   (stderr only, so read it) on a family holding >60% of papers or a single paper.
+   It stamps `family` (the display name) onto `rows.json`, writes `families.json`
+   (the reproducible cache) and `families.md` (to the current directory unless
+   `--md`), and `spreadsheet.py` adds the `Family` column on the next build. Re-run
+   only when the taxonomy or the row set changes. It writes `rows.json`, so do not
+   run it while another writer (canon, verify, …) is running.
+5. **Render.**
+   ```bash
+   python3 tools/families_figure.py --rows rows.json --families families.json \
+           --out-prefix <topic>_families --title "<Topic> — theoretical families"
+   ```
+   Add `--time-warp 0.85` when the corpus spans many decades (usual after the
+   antecedents pass). The defaults are the standard settings: dots sized by citation
+   count (`--size-by-citations sqrt`), `internal_citations.json` read from beside
+   `rows.json`, and the exact arguments written to `figure_render_args.txt` when that
+   file is missing (an existing one holds tuning notes and is never overwritten; the
+   tool says when a render is not recorded in it).
 
-5. **Render the timeline** — an interactive HTML (not a static png), produced by
-   `tools/families_figure.py` from `rows.json` + `families.json`. The standard settings
-   are its defaults: dots sized by citation count, `internal_citations.json` (from the
-   Phase-6 `xref.py --internal-out`) read from beside `rows.json`, and the exact
-   arguments written to `figure_render_args.txt` when that file is missing (an existing
-   one holds tuning notes and is never overwritten; the tool says when a render is not
-   recorded in it):
+The output is a self-contained `<prefix>.html` plus a standalone `.svg`, and `.png` +
+`.pdf` when `rsvg-convert` or `inkscape` is present (`--no-raster` skips them). In
+the HTML: family lanes with their claims, every paper as a dot beeswarm-packed by
+year, landmarks as big labeled dots; hover a node for its reference, click for the
+citation and DOI plus Prev/Next (arrow keys) walking the papers in year order; hover
+or focus a family's name for its claim, full lineage and paper count while its papers
+are spotlighted. The exports carry the same family text in SVG `<title>`s. `--xlsx`
+embeds the spreadsheet with a download button.
 
-```bash
-python3 tools/families_figure.py --rows rows.json --families families.json \
-        --out-prefix <topic>_families --title "<Topic> — theoretical families"
-```
+**Dot size.** `sqrt` (area-proportional) is the default and the one to use; `log`
+reads flat; `none` gives binary dots (big = landmark) that say nothing about how
+cited a paper is. Both scales normalize at the 95th percentile and clamp above it.
+Papers with no count draw **hollow**, keyed in the legend. When presenting, say that
+citation count is partly an age variable, so the right edge of any timeline runs
+small.
 
-   Add `--time-warp 0.85` when the corpus spans many decades (it usually does after the
-   antecedents pass), and read the "qualified / labeled / dropped" line it prints.
+**Landmark labels are automatic; do not hand-build a labels overlay.** A paper is
+labeled if ANY of:
 
-It writes a self-contained `.html` (family lanes with their defining sentences,
-every paper as a dot beeswarm-packed by year, landmark studies as big labeled dots;
-hover any node for its full reference, click for citation + DOI, **hover or focus a
-family's NAME for a panel giving that family's claim and its full lineage** while its
-papers are spotlighted) plus a standalone `.svg` and — if `rsvg-convert`/`inkscape`
-is present — `.png` + `.pdf` for slides/papers. This replaces the old static figure.
+1. it is among the top `--per-family` (default 4) most-cited in its family, by
+   max(OpenAlex, S2);
+2. it is cited by ≥ `--motif-min` (default 3) corpus papers (needs
+   `internal_citations.json`; skipped without it);
+3. it is a home-lab paper: `source == "lab"`, or an author surname given by
+   `--lab-author` (repeatable) or `LITREVIEW_LAB_AUTHOR` (comma-separated; the flag
+   wins). Surname matching is **off by default** (the toolkit is lab-neutral).
+   Home-lab papers are starred (★) and ringed in `--lab-color` (default gold,
+   moved automatically if it matches a lane color; quote the hex in the shell).
 
-**Dots are sized by citation count (`--size-by-citations sqrt`) — standard since
-2026-09-19 and the default since 1.14.0.** `--size-by-citations none` gives binary dots
-(big = labeled landmark, small = the rest), which say nothing about how much a paper
-is actually cited. `sqrt`
-is area-proportional and is the one to use; `log` reads flat. Both normalize against
-the 95th percentile and clamp above it, because counts span four orders of magnitude
-and one runaway classic otherwise flattens the rest. Landmark status moves entirely
-onto the ring, leader line and label. Papers with no citation count draw HOLLOW, not
-at the floor — "unknown" is not "zero" (see Lessons). The figure gains a size legend
-automatically.
+Labels are capped at `--max-labels` (default 28). When the cap binds, the home-lab
+papers and each family's top 2 survive, the rest of the budget goes by in-degree, and
+the tool prints `N papers qualified, M labeled (K dropped …)`. Read that line.
 
-**Next/Prev walks each year's column top to bottom.** All papers of one year share an
-x, so a year is a vertical column; the walk-through tie-breaks on the dot's own drawn
-y. Nothing to configure — but if you touch the ordering, re-run
-`verify_nav_order.mjs` (project root), which executes the figure's own sort against
-its own data.
+- **`--motif-min` does not scale with corpus size.** On a 396-paper corpus 175
+  papers cleared the default 3 and the cap silently discarded 147, so the figure read
+  "here are the landmarks" when it meant "28 of 175". Raise `--motif-min` (25 was
+  right there) instead of letting the cap choose.
+- **Raising a threshold must never remove a label already shown.** A higher
+  `--motif-min` shrinks the qualified pool, not just the cap. On
+  structure_representation, `--motif-min 10` lost Smolensky 1990, Schuck 2016 and
+  Liu 2019 (in-degree 8–9), which the old cap had picked from a larger pool. Tune by
+  diffing the before/after label sets: take the highest `--motif-min` with **zero
+  removals**, then set `--max-labels` above the resulting qualified count. Six figures
+  were retuned this way on 2026-09-19 (+72 landmarks, 0 lost).
+- **In-degree undercounts papers whose reference lists were not fetched.** On a
+  475-paper AI-alignment corpus built before xref read arXiv lists from Semantic
+  Scholar, the auto-landmarks favored old journal classics (Simon, Jensen, Arrow)
+  over the field's own arXiv canon. If xref ran incomplete or without `S2_API_KEY`,
+  raise `--per-family`/`--max-labels` (checking zero removals) or add each family's
+  lineage papers through a `--spec` labels map.
+- `--emphasize-source lab` draws every row of one source as a big dot (lab mode);
+  `--no-auto-landmarks` turns labeling off.
 
-**Write the family `claim` as prose and let the figure clamp it.** The lane label
-draws the claim under the family name, and until 2026-09-18 nothing bounded how many
-lines that was — a claim of a few hundred characters ran straight through the NEXT
-family's title and drew on top of it. Since the full claim is now one hover away,
-the drawn copy is clamped to the room the lane actually has and ellipsized
-(`claim_lines()`). So write the claim for the reader who hovers, not for the
-40-character column: the figure will show as much as fits and no more.
+**Time axis.** `--min-year` clamps the start (older papers pin to the left edge).
+`--time-warp <0–1>` blends the linear axis with the empirical CDF of all paper years,
+globally: `0` linear, `1` fully density-equalizing, **~0.85** keeps old foundations
+legible while decluttering the modern clump. Faint gridlines mark the labeled years,
+and the axis labels single years wherever they fit. Always note a nonlinear axis in
+the figure caption.
 
-**The hover panel sits ON the lane legend, not beside it.** Anchored to the label's
-right edge it landed over the start of the plot and hid the earliest papers — on a
-density-warped axis, exactly where the foundational work sits. It is now anchored to
-the label's LEFT edge and sized to the legend band (`r.right - r.left`), minus a
-small inset, with a 240px readability floor for narrow windows. Width is applied
-before `offsetHeight` is read, or the vertical clamp measures the old width.
+**Editorial overlay (the remaining human checkpoint).** Cross-family arrows and notes
+are judgment; curate them with the user via `--spec figure_spec.json`
+(`{labels, arrows: [{from, to, color, label}], notes: [{at, text, color}], order,
+subtitle}`, all optional). A `labels` map overrides auto-selection entirely. Do not
+expect a good arrow set to be generated.
 
-**An SVG `<g>` is not hoverable — give it a hit target.** A `<g>` has no geometry of
-its own and `<text>` only receives pointer events on the rendered glyph strokes, so a
-handler bound to the lane-label group fires when the cursor is exactly on a letter and
-nowhere else. That reads to a user as "the hover does not work", which is how it was
-reported. Every node group already carried an invisible
-`<circle class="hit" fill="none" pointer-events="all">` for this reason; the lane label
-now carries an equivalent transparent rect over its whole left-margin band. The same
-trap applies to any future affordance attached to SVG text.
+**Write the `claim` as prose for the hover reader.** The figure clamps the drawn copy
+under the lane name to the room the lane has and ellipsizes it (`claim_lines()`);
+before that clamp, a long claim ran through the next family's title.
 
-**The family definitions must be readable FROM the figure.** `families.json` has always
-carried each family's `claim` and `lineage`, but until 2026-09-18 the figure drew only a
-truncated claim beside the lane name and never showed the lineage at all — so the one
-artifact a reader actually opens could not tell them what a family *meant*, and they had to
-go find `families.md`. Hovering or focusing a lane title now opens a panel with the claim,
-the lineage and the family's paper count. The exported `.svg`/`.png`/`.pdf` carry the same
-text in a native SVG `<title>`, because no JavaScript runs there. Nothing to configure —
-write a good `claim` and `lineage` into the family spec and the figure surfaces them.
+**If you change `families_figure.py`**, these bugs each shipped once:
 
-**Landmark labeling is AUTOMATIC — do not hand-build a labels overlay.** A paper is
-labeled as a landmark (big dot) if ANY of: (1) it is among the **most-cited in its
-family** (top `--per-family`, default 4, by max(OpenAlex, S2)); (2) it is **foundational
-within this review** — cited by ≥ `--motif-min` (default 3) of the corpus's own papers
-(this is criterion (2) and needs `internal_citations.json` from `xref.py --internal-out`,
-read from beside `rows.json` automatically; skipped if absent — so emit it in Phase 6); or (3) it is a **home-lab
-paper** — an author surname listed in `--lab-author` or the `LITREVIEW_LAB_AUTHOR` env
-var, or a row with `source=="lab"` — these are **starred (★) and gold-ringed** so the
-lab's own work stands out. Total labels are capped at `--max-labels` (default 28); what
-survives the cap is the home-lab papers plus the top-2 most-cited per family, with the
-rest of the budget filled by within-review in-degree.
-
-**Raising a cap must never REMOVE a label that was already shown.** The obvious fix
-for a capped figure — raise `--motif-min` until the qualified set is small enough to
-label in full — can silently drop papers the capped figure was already showing,
-because a higher threshold shrinks the *qualified pool*, not just the cap. On
-structure_representation, going to `--motif-min 10` lost Smolensky 1990, Schuck 2016
-and Liu 2019 (in-degree 8-9): the old cap had been selecting them by in-degree from a
-much larger pool, and the new threshold put them outside it. Tune by measuring the
-before/after label sets, not by reasoning about the numbers: pick the highest
-`--motif-min` at which the diff shows **zero removals**, then set `--max-labels`
-above the resulting qualified count so the cap never binds. Six figures were retuned
-this way on 2026-09-19 (+72 landmarks, 0 lost).
-
-**`--motif-min` does not scale with corpus size, so watch the drop count.** The default
-of 3 is tuned for a ~50-paper review. On a 396-paper corpus whose papers cite each other
-heavily, 175 papers cleared it and the cap silently discarded 147 of them — a figure
-that reads as "here are the landmarks" when it is really "here are 28 of 175". The tool
-now **prints how many qualified and how many were dropped** on every run. If that number
-is large, raise `--motif-min` (25 was right for 396 papers) rather than letting the cap
-choose for you.
-
-> **Home-lab favoring is OFF by default** — this is a shared, lab-neutral toolkit, so
-> criterion (3) does nothing until you opt in. Turn it on per project by passing
-> `--lab-author Surname` (repeatable), or set it once for your environment with
-> `export LITREVIEW_LAB_AUTHOR=Surname` (comma-separated for several surnames). The CLI
-> flag overrides the env var. Rows tagged `source=="lab"` (from Lab mode) are always
-> starred regardless of the switch.
-
-**Time axis.** `--min-year` clamps the axis start (older papers pin to the left edge).
-When the corpus spans many decades but is recency-heavy — the usual shape after a
-**Phase-2b antecedents pass** — add `--time-warp <0–1>`. It blends the linear axis with
-the empirical CDF of all paper years, GLOBALLY (not per-region): sparse early spans
-compress, dense recent spans expand. `0` = linear, `1` = full density-equalizing; **~0.85**
-keeps old foundations legible while decluttering the modern clump. Faint gridlines mark the
-labeled years so the nonlinear scale stays readable. Always note the nonlinear axis in the
-figure caption (independence principle).
-
-**Only the editorial *arrows/notes* remain a human checkpoint** (cross-family convergence
-arrows and annotations are judgment). Curate those via an optional `--spec figure_spec.json`
-(`{arrows:[{from,to,color,label}], notes:[{at,text,color}], order, subtitle}`); a `labels`
-map there still overrides auto-selection if you ever need to force a specific set. Don't
-expect a good arrow set auto-generated.
+- *Unknown is not zero.* The first size encoding put a paper with no count at the
+  floor, where a zero-citation paper sits; on reverse_polish_notation (67% coverage) a
+  third of the corpus silently claimed to be uncited. Before mapping any column onto a
+  visual channel, count how many rows have it (67–100% across 15 corpora) and decide
+  what a blank looks like.
+- *Order follows the drawn geometry.* Next/Prev sorted on `(year, reference string)`,
+  but the beeswarm fans a year's papers out from the lane center, so the walk hopped
+  up and down: 137 backward steps within year columns on a 555-paper corpus. It now
+  tie-breaks on the dot's drawn y. The sort looked right through two code reviews.
+- *Run interactive code; do not read it.* The ordering bug was caught by executing
+  the figure's own `ORDER` expression against its embedded data
+  (`verify_nav_order.mjs`), the same tactic as `verify_hover.mjs`. Both harnesses
+  live in the BIBLIOGRAPHY workspace, not in this repo.
+- *Renders must be deterministic.* Landmarks were picked into a `set` of strings,
+  whose order Python randomizes per process: two renders of identical input moved 5
+  of 57 labels, so the re-render harness (which diffs against the delivered file) was
+  reading noise. Sort keys are now `(year, ref)` and `(x, ref)`. Before trusting a
+  "re-rendering changes nothing" check, render twice with unchanged code.
+- *A marker must not share the palette of what it marks.* The home-lab ring
+  `#d4a017` was also `PALETTE[4]`, so on a figure with five or more families a lab
+  paper in family 5 got a gold ring on a gold dot (live in gallant_lab_in_context).
+  `--lab-color` is now resolved against the lane colors in use, and the starred
+  label's ink is derived from it. Also check whether a parameter already exists
+  before adding one: which lab gets starred was `--lab-author` all along.
+- *An SVG `<g>` is not hoverable.* It has no geometry, and `<text>` receives pointer
+  events only on glyph strokes, so the lane-label hover fired only on a letter and was
+  reported as "the hover does not work". Give any SVG-text affordance a transparent
+  hit target (the lane label has a rect over its left-margin band; nodes carry an
+  invisible `<circle class="hit" pointer-events="all">`).
+- *The hover panel sits on the lane legend.* Anchored to the label's right edge it
+  covered the earliest papers, exactly where a warped axis puts the foundations. It is
+  anchored to the label's left edge, sized to the legend band minus an inset (240px
+  floor), and its width is set before `offsetHeight` is read.
 
 ### Phase 7 — Write the review article (OPTIONAL)
 
-Turn the finished corpus into a narrative **review article** as a `.docx`. Run only when
-the user asks for a written review (not for the bibliography itself). Prerequisites: Phase 3f
-(canonical `apa`) and 5b (counts) are done. Phase 6b's families and timeline normally exist too
-(they are offered on every review): the families are the natural section structure, and the
-timeline is the review's figure.
+Run only when the user asks for a written review. Prerequisites: Phase 3f (canonical
+`apa`) and 5b (counts). The Phase 6b families are the natural section structure and
+the timeline is the review's figure.
 
-**Authorship and honesty (non-negotiable when an LLM writes it).** If the article is
-AI-authored, say so plainly. Put the model's name in `authors`, add an `author_note` that
-identifies it as an AI, and include a `disclosure` paragraph stating that the bibliography was
-machine-assembled and machine-verified and that the author has read only abstracts/metadata, not
-full texts. Language models fabricate citations; the Phase-3/3f verification is what makes an
-AI-written review trustworthy, and the disclosure must make that provenance explicit.
+**Authorship and honesty (non-negotiable when a model writes it).** Put the model's
+name in `authors`, an `author_note` saying it is an AI, and a `disclosure` stating
+that the bibliography was machine-assembled and machine-verified and that the author
+read only abstracts and metadata, not full texts. State it once, in the masthead.
 
-**Prose.** Author the prose with the `scientific-writing` skill (one idea per sentence, forward
-flow, reserve "represent" for brain representations). Organize sections by the **Phase-6b
-families** — the theoretical axis orthogonal to the topic lanes makes a better narrative than the
-method/region lanes. The title should convey the question, the answer, and why it matters. Every
-in-text citation is **APA author–date** (`(Huth et al., 2016)`) and MUST name a paper that exists
-in `rows.json`, so the reference list backs it.
+**Prose.** Write with the `scientific-writing` skill (one idea per sentence, forward
+flow, "represent" reserved for brain representations). Organize sections by the
+families, not the topic lanes. The title gives the question, the answer, and why it
+matters. Every in-text citation is APA author–date (`(Huth et al., 2016)`) and must
+name a row in `rows.json`. Keep the prose in a per-project emitter (`write_review.py`
+→ `content.json`, or `build_review_page.py` for the web page) and **edit the
+emitter, never the rendered `.docx` or HTML**: a fix applied to the output is lost at
+the next render and leaves the output disagreeing with its script.
 
-**Concision pass (required before delivering; `tools/prose_audit.py`).** A model-written review
-is rarely wrong and often unreadable, and the defect is always the same one: four or five findings
-chained through semicolons into a single 60–120 word sentence, each clause carrying its own
-citation. Every fact is right, the citations all resolve, and no reader can follow it. `cite_check.py`
-cannot see this, because it only asks whether the citations resolve.
+**Priority: cite the earliest deserving paper (contract rule 5).** The most common
+failure of a model-written review is crediting whichever paper fits the sentence
+rather than the one that established the idea. A sentence making an **origin claim**
+(*emerges, first, established, identified, introduced, was mapped, showed that, had
+been, early work, foundational, began, demonstrated, discovery*) cites the earliest
+paper that deserves priority, with multiple citations oldest-first. Four inversions
+seen in real drafts (2026-06-13):
 
-Measure before rewriting, because "wordy" is a number:
+- a later **review** credited for an earlier **primary** finding (Tanaka 1996 vs.
+  Desimone et al. 1984 for object/face selectivity in IT);
+- a later **model** credited for an earlier **empirical** result (Reynolds & Heeger
+  2009 vs. McAdams & Maunsell 1999 for attention changing gain/tuning);
+- a later, narrower paper preferred over an earlier, **more general** one of the same
+  year (Dumoulin & Wandell 2008 pRF vs. Kay et al. 2008's per-voxel model);
+- in **lab mode**, the lab's own foundational paper relegated while another group's
+  follow-up takes the priority slot (Hegdé & Van Essen 2000 vs. Gallant et al. 1993
+  for complex-form selectivity in V4). The lab's antecedents (Phase 2b / L4c) exist so
+  priority can be assigned correctly.
+
+**Priority audit (required before delivering).** After drafting, dispatch one
+independent agent with the draft prose and `rows.json` (every paper with its year).
+It scans every origin-claim sentence, checks whether an earlier paper in `rows.json`
+(or an undisputed classic) deserves priority, and reports each inversion as
+`claim → currently cites (year) → earlier source (year) → fix`. Apply the confirmed
+fixes: reorder oldest-first, add the originating paper, demote the later work to
+"later", and reword as history. Self-review misses these because the drafting model is
+biased toward its own story.
+
+**Concision pass (required; `tools/prose_audit.py`).** A model-written draft is
+accurate and unreadable, and the defect is compression, not vocabulary: four or five
+findings chained through semicolons into one 60–120 word sentence, each with its own
+citation. A filler-word scan of one 10,800-word draft found nothing to cut while 54
+sentences ran past 50 words. `cite_check.py` cannot see this.
 
 ```bash
 cp build_review_page.py /tmp/before.py         # or: cp content.json /tmp/before.json
-python3 tools/prose_audit.py --page build_review_page.py            # diagnose
+python3 tools/prose_audit.py --page build_review_page.py             # diagnose
 #   ... revise ...
 python3 tools/prose_audit.py --page build_review_page.py --baseline /tmp/before.py   # GATE
 ```
 
-Aim for a **mean sentence of ~24 words** with almost nothing over 50; a first draft typically
-lands near 31 with dozens of 50-plus sentences. The rewrite is mechanical once the long sentences
-are listed: give each finding its own sentence and cut the semicolon chains. On a 555-reference
-review this moved the mean 31 → 24 and sentences of 50+ words 54 → 8, for a 3.8% word saving —
-the gain is in followability, not length, and the two should not be confused.
+(`--content content.json` for the `.docx` route.) It reports words, mean sentence
+length and sentences of ≥ `--long` words (default 45) per block. Aim for a mean near
+24 words with almost nothing over 50; first drafts land near 31. Give each finding its
+own sentence and cut the semicolon chains. On a 555-reference review this moved the
+mean 31 → 24 and 50+-word sentences 54 → 8 for a 3.8% word saving: the gain is
+followability, not length. Long sentences are reported, never gated.
 
-**A concision pass silently drops citations, so it needs its own gate.** Rewriting a
-five-clause sentence into three is exactly how a reference falls out of the works cited, and
-nothing downstream notices: the renderer prints what it is given and the reference list is built
-only from what remains cited. `prose_audit.py --baseline` compares the distinct-citation set
-before and after and exits 1 if any reference was lost. Keep the pre-revision copy outside the
-project (it is a temporary, not a deliverable).
+- **`--baseline` is the gate.** Splitting sentences is exactly how a reference falls
+  out of the works cited, and nothing downstream notices. It compares the cited set
+  before and after and exits 1 on any loss. Keep the pre-revision copy outside the
+  project.
+- **Two blocks sharing many references tell the same story twice.** It reports block
+  pairs sharing ≥ `--overlap` (default 8) citations. On the cortical-layers review
+  the humans/species section and the laminar-fMRI comparison shared 35; folding one
+  into the other cut 372 words and lost nothing, because each of its 27 references was
+  cited elsewhere. Check that before cutting.
 
-**Two sections resting on the same references are telling the same story twice.** `prose_audit.py`
-reports block pairs sharing 8+ citations. On the cortical-layers review the humans/species section
-and the laminar-fMRI comparison shared **35** — the fMRI case was argued in full in both places.
-Folding one into the other cut 372 words and, because every one of its 27 references was cited
-elsewhere too, lost nothing from the works cited. Check that before cutting, not after.
-
-**Respect the temporal order of ideas — distil the intellectual history, do not force refs into
-the narrative (contract rule 5; confirmed by user 2026-06-13).** The single most common failure of an
-AI-written review is crediting the wrong paper for an idea: it picks whichever citation fits the
-sentence it wants to write, rather than the paper that actually established the idea first. When a
-sentence makes an **origin claim** — signalled by *emerges, first, established, identified,
-introduced, was mapped, showed that, had been, early work, foundational, began, demonstrated,
-discovery* — it MUST cite the **earliest** paper that deserves priority, and order multiple
-citations oldest-first. Four recurring inversions to watch for (each example is a real miss caught
-2026-06-13):
-- crediting a later **review** for a finding an earlier **primary paper** made (e.g. Tanaka 1996
-  review vs. Desimone et al. 1984 for object/face selectivity in IT);
-- crediting a later **model/normalization/synthesis** for a phenomenon earlier **empirical** work
-  established (e.g. Reynolds & Heeger 2009 model vs. McAdams & Maunsell 1999 for attention changing
-  gain/tuning);
-- crediting a later, narrower paper while ignoring an earlier, **more general** one from the same
-  year (e.g. Dumoulin & Wandell 2008 pRF vs. Kay et al. 2008's more general per-voxel model);
-- in **lab mode**, relegating the lab's OWN foundational paper to a later section while a follow-up
-  from another group gets the priority slot (e.g. Hegdé & Van Essen 2000 vs. Gallant et al. 1993
-  for complex-form selectivity in V4). The lab's antecedents (Phase 2b / L4c) exist precisely so
-  the review can assign priority correctly — use them.
-
-**Priority audit (before delivering the review; contract rule 5).** After drafting `content.json`, run a
-dedicated audit pass — analogous to the Phase-3 citation verify and the Phase-2b antecedents pass.
-Dispatch one agent with the draft prose plus `rows.json` (which carries every candidate paper and
-its `year`) and instruct it to: scan every origin-claim sentence; for each, check whether an
-**earlier** paper in `rows.json` (or an undisputed classic) deserves priority for that specific
-idea; and report each inversion as `claim → currently cites (year) → earlier source (year) → fix`.
-Apply the confirmed fixes (reorder citations oldest-first, add the originating paper, demote the
-later review/model to "later", and adjust wording so the sentence reads as history not narrative).
-This pass catches what self-review misses because the drafting model is biased toward its own story.
-
-**Mechanics — `tools/review_paper.py`.** The tool owns only the mechanical render; it does not
-write prose. It reads `rows.json` and builds the **APA-7 reference list straight from the
-canonical `apa` strings** (deduped, in APA-7 order — authors, then year, then title — hanging indent, with DOI links), embeds the
-families figure with a standalone caption, and lays out the title/author/disclosure block + the
-abstract + sections. Keep the prose in a small per-project emitter that dumps `content.json`
-(see the schema in `review_paper.py`); render with the shared tool:
+**Render the `.docx` (`tools/review_paper.py`).** It writes no prose. It lays out the
+title/author/disclosure block, abstract, sections and the figure with its caption,
+and builds the reference list from **every row's** canonical `apa` (deduped, APA-7
+order: authors, then year, then title; hanging indent; DOI links). The schema is in
+the module docstring.
 
 ```bash
 python3 write_review.py            # project file: authors prose -> content.json
@@ -1236,661 +1190,354 @@ python3 tools/review_paper.py --rows rows.json --content content.json \
         --figure <topic>_families.png --out <Topic>_review.docx
 ```
 
-**`cite_check.py` is a gate, not a nicety.** The renderer prints whatever prose it
-is given, so a citation naming no row in `rows.json` ships silently and the reader
-cannot follow it. The tool also warns when one author-year matches TWO references —
-on a 396-row corpus that happened five times (two Hölzel 2011s, two Kral 2022s, two
-Yang 2025s, two Haudry 2025s, two Gusnard 2001s). Fix those with **APA-7 §8.19**:
-name enough subsequent authors to distinguish them, `(Kral, Davis, et al., 2022)`.
-The other APA disambiguator, a `2025a`/`2025b` year suffix, is accepted by the audit
-gate but means editing the canonical `apa` strings, so it usually costs more.
+**`cite_check.py` is a gate.** It exits 1 on a citation that names no row. It warns
+when one author-year matches two rows: five times on a 396-row corpus (two Hölzel
+2011s, two Kral 2022s, two Yang 2025s, two Haudry 2025s, two Gusnard 2001s). Fix with
+APA-7 §8.19, naming enough further authors to tell them apart: `(Kral, Davis, et al.,
+2022)`. A `2025a`/`2025b` suffix is also accepted but means editing the canonical
+`apa` strings, which usually costs more.
 
-The reference list comes from `rows.json`, so it is automatically canonical and complete; verify
-by opening the `.docx` and confirming the figure renders and the section/citation structure reads
-correctly. Worked example: `distributed_conceptual_network/` (`write_review.py` + `content.json`
-→ an AI-authored review with all 370 refs in APA-7). Output artifact:
-`<Topic>_review.docx` (plus the project's `content.json`).
+Open the `.docx` and confirm the figure renders and the structure reads. Worked
+example: `distributed_conceptual_network/` (`write_review.py` + `content.json`, 370
+references).
+
+**The review web page.** The readable deliverable is a self-contained HTML page from
+a project-local `build_review_page.py`: the prose, the interactive timeline
+(`<topic>_families.html`) in an iframe, and a numbered works-cited list, built with
+`review_paper.reference_list(rows)` so it cannot disagree with the `.docx`. Nothing
+else: the timeline's side panel already shows every paper's reference, family,
+topic, DOI, summary and counts, and a second reference browser was cut from the first
+review that shipped with both. `tools/bib_viewer.py` is for a corpus with **no**
+timeline (standalone: `--rows --families --out --title --author --author-note`; or
+embedded via `bib_viewer.render()` with `provenance=False` under a masthead that
+already carries the disclosure).
+
+**A toolkit fix reaches a delivered review only when you re-render it.**
+`reference_list` once sorted each author's works by title instead of year (67
+inversions across 7 delivered reviews, fixed 2026-09-23). Before overwriting a
+delivered file, render to scratch and diff the prose: if it differs, the delivered
+file holds edits or is an older draft, and re-rendering would destroy them.
 
 ### Phase 8 — Hand off
 
 Tell the user:
-- Total rows in spreadsheet, broken down (source / search / xref).
-- The timeline (`<topic>_families.html`, open it in a browser) and its families — or,
-  if the user skipped it, that it was offered and declined.
-- Any verification corrections you made (e.g. fabricated PMCIDs, wrong
-  first authors).
-- **Only if Phase 4 was run:** PDFs downloaded vs. failed, and the path to
-  the browser-helper page or `_needs_manual.txt` for paywalled papers.
+- Total rows, broken down by source (search / antecedents / xref / forward / lab),
+  and how many candidates were considered and excluded.
+- The spreadsheet path (never a `_DRAFT` file) and the timeline
+  (`<topic>_families.html`, open in a browser) with its families, or that the
+  timeline was offered and declined.
+- Any pass that ran capped or incomplete (`--allow-incomplete`, a capped search,
+  acknowledged `incomplete-*`/`partial-*` warnings), and why.
+- Verification corrections you made (fabricated ids, wrong first authors, DOIs that
+  resolved to another paper).
+- **Only if Phase 4 ran:** PDFs downloaded vs. failed, and the path to the
+  browser-helper page or `_needs_manual.txt`.
 
 ---
 
 ## Lab mode — review a lab's corpus in the context of the field
 
-The workflow above is **topic mode**: it starts from a query and searches
-outward. **Lab mode** inverts the front end — it starts from a known body of
-work (a lab's publications), derives the lab's research themes and how they
-shifted over time, then searches outward to place that work in the field.
-Everything downstream (verify, count, families, figure) is the same machinery.
+Topic mode starts from a query and searches outward. **Lab mode** starts from a
+known body of work (a lab's publications), derives the lab's research themes and how
+they shifted, then searches outward to place that work in the field. Everything
+downstream (verify, canon, counts, families, figure, gates) is the same machinery.
+The three human checkpoints mirror topic mode: **(1) the corpus** (not a topic),
+**(2) the themes**, **(3) the figure**.
 
-**Phase L1 — ingest the corpus.** `tools/lab_corpus.py` pulls the lab's full
-publication list from OpenAlex by author id (use `--search` to find it; pass
-several `--author` ids for PI + key lab members, **or for one person whose record
-is split across ids**). Output `lab_papers.json`. `--search` prints each
-candidate's ORCID and publication year span and warns on the failure shapes that
-are visible from the listing alone — read those rather than picking by
-institution, which is wrong more often than it is right (see L2).
-Every row carries a `built_at` date, so the table is gated from the start: after
-L2, run `tools/verify.py --rows lab_papers.json` before `tools/references.py`
-(canon refuses unverified rows, and the audit and spreadsheet fail them).
+**Phase L1 — ingest the corpus.** `tools/lab_corpus.py --search "<name>"` lists
+candidate OpenAlex author ids with works count, year span, ORCID and institutions,
+and warns on the shapes visible from the listing (see L2). Then
+`--author <id> --out lab_papers.json`, repeating `--author` for key lab members **or
+for one person whose record is split across ids** (works are deduplicated). Rows are
+refs `L1…` with an OpenAlex-built `apa`, `cite_openalex`, `topics`, and the OpenAlex
+abstract (or the title) in `summary`; rewrite those summaries before the summary
+check. Every row carries `source: "lab"` (the blue spreadsheet color and the starred
+figure landmarks key on it); keep it through the merge. Every row carries
+`built_at`, so the table is gated from the start: after L2, run `verify.py --rows
+lab_papers.json` before `references.py` (canon refuses unverified rows).
 
-**Phase L1b — enrich abstracts (REQUIRED).** OpenAlex metadata is not enough:
-its abstracts are missing for a sizable minority of papers and its `topics` tags
-are coarse, so classifying from them alone mislabels papers. Fill missing
-abstracts from Semantic Scholar (`/paper/batch`, by DOI) and/or PubMed first.
+**Phase L1b — abstracts (REQUIRED).** OpenAlex abstracts are missing for a sizable
+minority of papers and its `topics` tags are coarse, so classifying from them
+mislabels papers. Run `tools/abstracts.py --rows lab_papers.json` (arXiv, OpenAlex,
+Semantic Scholar, PubMed) and classify from `abstracts.json`.
 
-**Phase L2 — define the lab & verify the corpus (HUMAN CHECKPOINT #1).** The
-load-bearing gate: author-id disambiguation is the #1 correctness risk (OpenAlex
-ids split / merge / collide; trainees move between labs). Have an agent classify
-every paper **from its actual content — not database topic tags** — into the
-buckets the user wants (e.g. for "human work only": `human` / `primate` /
-`other`), and **web-verify (PubMed / publisher) every paper without an abstract
-and every ambiguous call**. Prune false-positives; keep what the user asked for.
-**But do not let the inclusion filter discard the lab's foundational pre-paradigm
-work** (the macaque physiology, the pre-tool methods papers): those are the lab's
-own antecedents and should re-enter as `source=lab` (starred) in the Phase-2b
-pass even when the headline filter is, say, "human fMRI only." Flag them for the
-user at this checkpoint rather than silently dropping them.
+**Phase L2 — define the lab and verify the corpus (HUMAN CHECKPOINT #1).** Author-id
+disambiguation is the #1 correctness risk (OpenAlex ids split, merge and collide;
+trainees move between labs). Have an agent classify every paper **from its content,
+not database topic tags**, into the buckets the user wants (e.g. `human` / `primate` /
+`other` for "human work only"), and **web-verify every paper without an abstract and
+every ambiguous call**. Prune false positives. **Do not let the inclusion filter
+discard the lab's foundational pre-paradigm work** (e.g. macaque physiology, pre-tool
+methods papers): those are the lab's own antecedents and re-enter as `source=lab` in
+the Phase 2b pass even under a "human fMRI only" filter. Flag them to the user here
+rather than dropping them.
 
-*Resolving the author id — five real bootstraps, four distinct failure shapes.*
-The institution label is the obvious discriminator and it was misleading in three
-of the five. Do not pick by it.
+*Resolving the author id: five real bootstraps, four failure shapes.* The institution
+label misled in three of the five; do not pick by it.
 
 | Shape | What it looked like | What decided it |
 |---|---|---|
 | **Wrong-university** | The id labeled with the right university had 3 works; the correct one showed an unrelated institution and had 130 | Works count, then reading titles |
-| **Moved lab** | *Two* candidates carried the university being searched for and neither was the person; one was a glaciologist. The correct id was still labeled with the PI's previous university | **Distinct ORCIDs** settle it instantly; otherwise the raw affiliation strings on the newest works |
-| **Merged** | A *single* candidate, spanning 1976–2026, holding at least five different people | The **year span** — `--search` warns above 45 years |
-| **Split** | *Three* candidates, all the same person, one holding a single high-profile paper | Same ORCID / same institutions / adjacent years; pass every id to `--author` |
+| **Moved lab** | *Two* candidates carried the searched university and neither was the person (one was a glaciologist); the correct id still showed the PI's previous university | **Distinct ORCIDs** settle it; otherwise the raw affiliation strings on the newest works |
+| **Merged** | A *single* candidate spanning 1976–2026, holding at least five people | The **year span**: `--search` warns above 45 years |
+| **Split** | *Three* candidates, all the same person, one holding a single high-profile paper | Same ORCID / institutions / adjacent years; pass every id to `--author` |
 
-Two rules follow, and they are easy to get backwards:
+1. **A single candidate is the dangerous case.** OpenAlex often merges colliding
+   namesakes into one id, so "only one match" can mean "all the contamination is in
+   here".
+2. **ORCID confirms authorship; it does not refute it.** One PI's 18 papers of
+   psychiatric neuroimaging looked like a collision and were her own pre-PhD work;
+   pruning on topic would have deleted a third of a real record. Profiles go stale
+   (another PI's ORCID listed 18 works against OpenAlex's 39), so absence from ORCID
+   is not evidence a paper is someone else's.
 
-1. **A single candidate is the DANGEROUS case, not the safe one.** When namesakes
-   collide OpenAlex frequently merges them into one id rather than splitting them,
-   so "only one match" can mean "all the contamination is in here".
-2. **ORCID confirms authorship; it does not refute it.** Use it to establish that
-   a surprising paper *is* the PI's — one lab's 18 papers of psychiatric
-   neuroimaging looked exactly like a collision and were her own pre-PhD work, and
-   pruning on topic would have deleted a third of a real record. But profiles go
-   stale: another PI's ORCID listed 18 works against OpenAlex's 39, so **absence
-   from ORCID is not evidence a paper belongs to someone else.**
+**L2 is a completeness check as well as a purity check.** Nothing fails when a record
+is merely missing, so check explicitly for a split id, and say in writing how many
+records were added as well as pruned.
 
-**L2 is therefore a completeness check as well as a purity check.** Every
-bootstrap before the split case only ever needed records removed, and nothing
-fails when a record is merely missing — so check explicitly for a split id, and
-say in writing how many records were added as well as pruned.
+*Keep papers that are the PI's but not the lab's program.* Early-career work (a PhD in
+another field, a postdoc elsewhere) is real authorship, but its vocabulary skews any
+step that reads titles: in one corpus such papers were 35% of the total and the
+keyword derivation proposed *schizophrenia* for a speech lab. Keep them, and note
+which groups are off-program so later steps reject their vocabulary.
 
-*Keeping papers that are genuinely the PI's but not the lab's program.* Early
-career work (a PhD in another field, a postdoc in another lab) is real authorship
-and L2 has no basis to prune it — but its vocabulary will skew any downstream step
-that reads titles. In one corpus such papers were 35% of the total and the keyword
-derivation duly proposed *schizophrenia* for a speech lab. Keep them, and record
-which groups are off-program in the notes so the next step knows to reject their
-vocabulary rather than rediscovering the problem.
+**Phase L3 — derive themes (HUMAN CHECKPOINT #2).** Run the Phase 6b families steps
+(`family_prompt_template.md` → user approves the themes → assign every kept paper →
+`families.py`). The families are now the lab's research programs.
 
-**Phase L3 — derive themes (HUMAN CHECKPOINT #2).** Run the families step
-(`family_prompt_template.md` → user approves the ~N themes → assign every kept
-paper). The "families" are now the lab's research programs; `tools/families.py`
-validates/stamps and emits `families.json` + `families.md`.
+**Phase L4 — the lab's trajectory.** `families_figure.py` gives themes × year with the
+lab's papers as the spine: this *is* "the lab's topics and how they changed over
+time". `spreadsheet.py` gives the bibliography.
 
-**Phase L4 — render the lab's trajectory.**
-- **Trajectory figure:** `tools/families_figure.py` — themes × year, the lab's
-  papers as the spine (milestones labeled, the rest dots). This *is* "the lab's
-  topics and how they changed over time."
-- **Bibliography:** `tools/spreadsheet.py` (lab papers get the `lab` row color).
+**Phase L4c — contextualize: a FULL topic-mode review per theme.** Not optional and
+not lighter: run Phases 2–6 for each theme with the same guardrails. Treating it as a
+quick "context" add-on is how a sloppy, half-fabricated field set gets into an
+otherwise careful review. For each theme:
 
-**Phase L4c — contextualize: a FULL topic-mode review, once per theme.** This is
-NOT an optional or "lighter" pass. Placing the lab in its field means running the
-*entire* topic-mode workflow (Phases 2–6) for each theme — same rigor, same
-guardrails, no shortcuts. The recurring failure mode is treating this as a quick
-"context" add-on and skipping the machinery; that is exactly how a sloppy,
-half-fabricated field set sneaks into an otherwise careful review. For each
-theme:
-1. **Search (Phase 2)** with `search_prompt_template.md` — precise theme
-   definition, the lab's papers in that theme as the "already have"/exclude list,
-   two-tier criteria (foundational vs recent), a capped target (~30–40), multiple
-   query angles. One agent per theme.
-2. **Verify EVERY citation (Phase 3)** with `tools/verify.py`.
-   It resolves arXiv/conference papers against the arXiv API (batched) — so a
-   NOT-FOUND is a real failure to investigate, never "an arXiv paper, skip it."
-   Re-run any ERROR verdicts (transient rate-limit/network — distinct from
-   NOT-FOUND). Expect ~1 in 4 to need a fix (fabricated author lists, wrong arXiv
-   ids, garbage DOIs).
-3. **Citation counts (Phase 5b)** with `tools/citations.py` for every field
-   paper — bibliographies always carry counts.
-4. **Consolidate with two guarded steps (fail loud):**
-   (a) **cross-theme dedup** — a paper found by several themes must be assigned to
-   exactly ONE (`families.py` checks ref-level exclusivity but NOT duplicate
-   DOIs, so dedup by DOI yourself first); (b) **exclude the reviewed lab's own
-   DOIs** — the agents only excluded each theme's seed list, so a lab paper from
-   theme A can resurface as "field" in theme B. Assert zero field↔lab DOI
-   collisions and zero cross-theme duplicate DOIs before merging.
-5. **Merge** into the context corpus (lab rows `source=lab`, field rows
-   `source=search`) and re-run families + figure (`--emphasize-source lab` to
-   keep the lab papers as the labeled spine over the field dots).
+1. **Search (Phase 2)**, one agent per theme, with `search_prompt_template.md`: a
+   precise theme definition, the lab's papers in that theme as the already-have list,
+   the two-tier criteria, a target of ~30–40 (a floor unless the search is CAPPED),
+   several query angles.
+2. **Verify every citation (Phase 3)**, preprints included (contract rule 1).
+3. **Citation counts (Phase 5b)** for every field paper.
+4. **Consolidate, then assert.** Add each theme's lane file to the lab table with
+   `merge_lanes.py --append <lane file> --into rows.json`: it skips any paper already
+   in the table (a lab paper, or one an earlier theme added) by DOI, arXiv id or
+   title+year, and prints title-only pairs for a verdict. `--append` does not check
+   `deferred` entries, so check those by hand. Agents excluded only their own theme's
+   seeds, and one landmark turned up under three themes, so assert zero duplicate
+   DOIs in the merged table before going on (contract rule 3).
+5. **Re-run families and the figure** on the merged table (lab rows `source=lab`,
+   field rows `source=search`), with `--emphasize-source lab` to keep the lab's
+   papers as the labeled spine over the field dots.
 
-The three human checkpoints mirror topic mode: **(1) the corpus** (not a topic),
-**(2) the themes**, **(3) the figure**.
-
-The lab's foundational pre-paradigm papers (gathered in L2 + Phase 2b) exist so a Phase-7 review
-can assign priority to the lab's own earlier work over later follow-ups from other groups — enforce
-that with the priority audit (contract rule 5; Phase 7).
+In a Phase 7 review, the lab's foundational papers (from L2 and Phase 2b) let the
+priority audit credit the lab's earlier work over later follow-ups (contract rule 5).
 
 ---
 
 ## Lessons learned (don't repeat these mistakes)
 
+Each entry is a rule plus the incident that established it. Rules that a phase
+already states are kept there; the incidents behind them are here.
 
-### Casing and foreign-language titles (learned on a 493-ref history corpus, 2026-08-29)
+### Lane briefs and search agents
 
-Four failure modes, all now handled by the tools and covered by regression tests
-in `tools/tests/test_formatting.py`:
+- **Put an explicit verification-duty section in every lane brief.** It drives the
+  ~25% error rate of contract rule 1 to about zero: on the 541-ref cortical-layers
+  build Phase 3 returned 535 OK, 2 MISMATCH and 0 NOT-FOUND, both exceptions being
+  diacritics the agent dropped (`Hertag` for `Hertäg`), which canon restored. The
+  section, roughly:
+  1. Visit each paper's landing page; read the author list **off the page**.
+  2. Confirm first author and year there before writing the row.
+  3. Confirm the DOI **resolves to the paper you think it is**, not merely that it
+     resolves (the DOI in circulation for Nandy et al. 2017 resolves to a different
+     Neuron paper).
+  4. Read the abstract before writing the summary; do not invert the finding.
+  5. Do not judge a DOI by the shape of its string.
+  6. If you cannot confirm a paper, leave it out and list it under
+     `could_not_confirm`.
 
-- **A non-English title must never be sentence-cased.** The pass lowercases German
-  nouns, turning "Der Kumpan in der Umwelt des Vogels" into "der kumpan in der
-  umwelt des vogels". `sentence_case.py` now detects German/French titles and
-  **skips them by default**, printing which refs it skipped; `--include-foreign`
-  forces the old behavior. Getting the language test right took three attempts:
-  **`von` and `de` are not usable markers** (they sit inside personal names in
-  English titles — "Karl von Frisch", "fin-de-siècle"), and neither is **`man`**
-  ("the nervous system of vertebrates, including man"). Allowlisting German nouns
-  one by one is the wrong fix; skip the title.
-- **A partly ALL-CAPS title is shouting, not an acronym.** `references.norm_title`
-  only sentence-cases a title that is *entirely* caps, and `case_token` protects
-  all-caps tokens as possible acronyms — so "BEHAVIORAL MUTANTS OF *Drosophila*
-  ISOLATED BY COUNTERCURRENT DISTRIBUTION" passed through both untouched and only
-  showed up as an audit `uppercase-title run` that nothing fixed. `sentence_case.py`
-  now lowercases a **run of ≥3 consecutive all-caps words** while still protecting
+  Phase 3 still runs: it is the gate that proves this happened. The
+  `could_not_confirm` lists are where the useful findings come from (a misattributed
+  classic, a wrong stored DOI, a title that does not exist).
+- **Seed briefs with titles only, never remembered author names, and label them as
+  unreliable.** Author-name seeding injected fabricated attributions into three
+  builds. Remembered titles fail too: on the cortical-layers build about 40 of ~170
+  seeded titles did not exist ("Cortical microcircuitry of attention", "The draining
+  vein problem in laminar fMRI"). It cost little because the briefs said "TITLES ONLY,
+  from memory, some may be wrong; if one does not exist under any similar title, drop
+  it and say so", and every agent substituted the real nearest work. Better still,
+  seed from a real source (a sibling corpus, a review's reference list).
+- **The session's WebSearch quota (200 calls) is shared by all subagents.** With 14
+  lanes it ran out after about two; the other twelve used the Europe PMC, PubMed
+  E-utilities, CrossRef, bioRxiv and arXiv REST APIs, which is not a degradation
+  (dated, field-restricted sweeps are more systematic; the weak spot is work that
+  does not use the topic's vocabulary in its title). Tell briefs up front that the API
+  route is first-class. A thin lane is resumed through SendMessage (transcript intact),
+  never re-spawned, which discards everything it verified.
+- **Give a concrete target, never "as many as possible".** Asking for 40 gave 40–44;
+  "as many as possible" gave sprawl with more fabrications. The target is a floor
+  (Phase 2), not a license to pad.
+- **Give an exhaustive already-have list** (Phase 1c): without one, an agent re-found
+  3 of 44 papers already in the spreadsheet.
+- **Agents invert findings.** One described "X > Y" for a paper that found the
+  opposite. That is why every summary is checked against its abstract (Phase 5c).
+- **NOT-FOUND is a real failure; ERROR is not NOT-FOUND** (rules in Phase 3). Before
+  verify.py queried arXiv directly, preprints came back NOT-FOUND and were waved
+  through: a "Vo et al." attention paper was really Foster et al., and two Jain & Huth
+  arXiv ids pointed at unrelated papers. On a ~90-paper world_models run, 8 real
+  preprints came back NOT-FOUND only because a per-paper arXiv loop drew a 429 ban;
+  verify now batches arXiv ids and reports ERROR when a lookup cannot complete.
+
+### Casing and foreign-language titles
+
+From a 493-ref history corpus (2026-08-29); all now handled by the tools and covered
+by `tools/tests/test_formatting.py`.
+
+- **Never sentence-case a non-English title.** The pass lowercases German nouns ("der
+  kumpan in der umwelt des vogels"). `sentence_case.py` skips German/French titles by
+  default and names them; `--include-foreign` forces casing. `von`, `de` and `man` are
+  not usable language markers ("Karl von Frisch", "fin-de-siècle", "including man").
+  Skip the title rather than allowlisting German nouns one by one.
+- **A partly ALL-CAPS title is shouting, not an acronym.** `common.norm_title` fixes
+  only an entirely-caps title, and `sentence_case.case_token` protects all-caps tokens,
+  so "BEHAVIORAL MUTANTS OF *Drosophila* ISOLATED BY COUNTERCURRENT DISTRIBUTION"
+  passed both. `sentence_case.py` now lowercases runs of ≥3 all-caps words and keeps
   isolated acronyms (`fMRI`, `MEG`).
-- **Model-organism genera are proper nouns in any corpus.** Canon's ALL-CAPS
-  sentence-caser emitted "the genetics of caenorhabditis elegans" from Brenner
-  1974's uppercase deposit. `common.GENERA` is now shared: `common.norm_title`
-  restores the capital, and `sentence_case.PROPER` includes the list, so no
-  project has to allowlist *Drosophila* or *Aplysia* again.
-- **A `?` inside a title or venue is mangled punctuation, not a question.** CrossRef
-  could not encode the quotes and dash in Wehner 1987 and returned
-  `?Matched filters? ? neural models of the external world`; the same deposit bug put
-  `Journal of Comparative Physiology ? A` in the venue of five other rows while forty
-  rows carried it correctly. The gate's existing check only caught a `?.` double
-  terminal, so all six shipped silently. The audit now fails on a `?` glued to a
-  letter or floating between spaces, while leaving a real question mark alone
-  ("What is (was?) the fixed action pattern?").
-- **Stripping JATS markup glues words together.** `common.MARKUP.sub("")` removes an
-  `<i>` tag but leaves no separator, so a wrapped species name fuses with the word
-  before it: `the cockroachPeriplaneta americana`, `desert ants, genusCataglyphis`,
-  `the marine mollusc,Tritonia`. The audit now reports `missing-space` for
-  punctuation glued to the next word, and for a `common.GENERA` name glued to a
-  preceding lowercase letter. Found on the same rows as the venue bug — a deposit
-  that is broken in one way is usually broken in several.
+- **Model-organism genera are proper nouns.** Canon emitted "the genetics of
+  caenorhabditis elegans" from Brenner 1974's uppercase deposit. `common.GENERA`
+  restores them in `common.norm_title` and feeds `sentence_case.PROPER`.
+- **A `?` inside a title or venue is mangled punctuation.** CrossRef returned Wehner
+  1987 as `?Matched filters? ? neural models…` and five rows' venue as `Journal of
+  Comparative Physiology ? A`. The audit now fails `mangled-punct` and leaves a real
+  question mark alone.
+- **Stripped JATS markup glues words** (`the cockroachPeriplaneta americana`). The
+  audit reports `missing-space`. Found on the same rows as the venue bug: a deposit
+  broken one way is usually broken in several.
+- **Why canon does not sentence-case Title Case.** Correct casing needs proper-noun
+  judgment (`Bayesian`, `Atari`, `Weber`, `Tolman-Eichenbaum` stay capitalized;
+  `Active`, `World`, `Model` do not), and a mechanical caser mis-cases proper nouns in
+  a way the audit cannot catch. So `sentence_case.py` proposes, a person reviews
+  (`--vocab`, a per-project `--proper` allowlist; eyeball product names such as
+  `Matrix-Game`), then `--apply` (Phase 3f).
 
-### A publisher back-file deposit re-dates an old paper (2026-08-29)
+### Reference records: what CrossRef gets wrong
 
-Digitized back catalogs are deposited with the **digitization year** as the issued
-date while the true year survives in the DOI string. Three cases in one corpus:
-Seyfarth & Zottoli 1991 deposited as 2008, Lorenz 1943 and Schleidt 1962 both
-deposited as 2010 (`10.1111/j.1439-0310.1943.tb00655.x` — the year is right there in
-the suffix). `references.py --audit` now warns via `deposit_year_conflict()` when a
-DOI's embedded year disagrees with the reference's year by more than one. It is a
-**warning, not a defect**: only a human can say which year is right.
+- **Back-file deposits re-date old papers.** Digitized back catalogs carry the
+  digitization year: Seyfarth & Zottoli 1991 deposited as 2008, Lorenz 1943 and
+  Schleidt 1962 as 2010 (`10.1111/j.1439-0310.1943.tb00655.x`: the year is in the
+  suffix). The audit warns `deposit_year_conflict()`; only a human can say which year
+  is right. `doi_year()` matches only the Wiley `.<year>.tb<n>` shape on purpose: a
+  broad 4-digit scan gave 15 false positives and no true ones on 493 refs (page
+  numbers, article ids, ISSN fragments). Seyfarth's `10.1159/000114363` carries no
+  year; verify's year check is what catches that one.
+- **Deposited names can be plain wrong.** `family="A. Moffat"` (now auto-repaired: no
+  surname starts with an initial), `family="(Bud) Craig"` (nickname now stripped), and
+  `Sprby` for Terje Sparby, a misspelling caught only by finding the name spelled
+  correctly on a sibling paper. The last kind is caught only by reading.
+- **Compound and particle surnames get mis-split** (`Lambon Ralph` → `Ralph, M. A.
+  L.`; `de Heer` → `Heer, W. A. D.`; the reverse, `J. Adam Noah` → family `Adam
+  Noah`). The audit warns on every multi-word surname; expect some legitimate ones
+  (Spanish, Vietnamese, Italian double surnames). Fix by hand in `rows.json` after
+  canon.
+- **`U+FFFD` mojibake is unrecoverable at the source** (`Bürgel`, `Zeitschrift für
+  Anatomie`), and a full re-canon pulls it back in. Hand-fix mojibake and surname
+  splits after the last full canon; a targeted `references.py --only` re-canon leaves
+  every other row untouched.
+- **Subtitles.** CrossRef keeps a series part or subtitle in a separate field; until
+  2026-08-22 canon dropped it, so Creutzfeldt 1989 parts I and II rendered as one
+  identical title, and a `possible duplicate (1.00)` warning was the only tell. Canon
+  now joins them (`common.crossref_record`). Corpora canonicalized before that date
+  need subtitles restored by hand; a re-canon would wipe their other hand fixes.
+- **Book chapters.** CrossRef deposits `container-title` as `[series, book]`; canon
+  builds `In Book (pp. x-y). Publisher.` from the last entry
+  (`common.build_chapter_apa`). Most chapters have no deposited editors, and Springer
+  sometimes deposits the WRONG book (Biggio 2013 carried another volume's title and
+  ISBN), so spot-check chapter rows; book titles still need hand sentence case.
+- **Formatter defects sit in finished work.** JATS markup in titles, `?.` double
+  terminals and U+2010/U+2011 hyphens in surnames (`Fischer‐Baum`) shipped in five
+  delivered bibliographies before the gate caught them. After a formatter change,
+  re-run `--audit` over old projects (`references.py --repair` fixes these classes
+  offline; see "Upgrading an old corpus").
+- **A whole-string check condemns legitimate titles** (for anyone adding an audit
+  check). Forbidding `et al.` anywhere failed Nature's "<Author> et al. reply"
+  titles; the check now reads only `parse_apa`'s author segment, falling back to the
+  whole string when the reference will not parse. Ask which APA segment a defect lives
+  in before checking.
 
-`doi_year()` is deliberately **narrow** — it matches only the Wiley legacy
-`.<year>.tb<n>` shape. The first version scanned for any plausible 4-digit year
-anywhere in the DOI and produced **fifteen false positives and no true ones** on a
-493-ref corpus, matching page numbers (`science.167.3926.1745`), article ids
-(`nrn1606`, `nmeth.1694`) and ISSN fragments (`s1874-6055`). A narrow check that
-fires rarely and correctly beats a broad one the reader learns to ignore. Note that
-Seyfarth's `10.1159/000114363` carries no year at all, so no DOI-based check can
-catch it — that one is caught by `verify.py` comparing the claimed year to CrossRef.
+### Versions, duplicates and the version of record
 
-### Three network failures that look alike and are not (2026-09-18)
+- **Canon prefers the journal DOI over arXiv** when a row has both; keep both ids and
+  let canon choose.
+- **Not every "published" DOI is the version of record.** Curran/Proceedings.com
+  `10.52202/*` DOIs for printed NeurIPS volumes resolve and match title searches, but
+  moving 6 gallant_lab rows to them would have cut OpenAlex counts ~3–4× (MindEye 40 →
+  11) for nothing. ACL Anthology (`10.18653/*`), IEEE/CVF (`10.1109/*`) and journal
+  DOIs are real upgrades (MindBridge 2 → 41). Before promoting a preprint row, compare
+  the candidate DOI's OpenAlex count with the arXiv record's; if it is much lower, keep
+  arXiv and name the venue in prose.
+- **The same paper can enter twice under two DOIs** (preprint from one lane, journal
+  version from another); three such pairs sat in a 362-row corpus for six weeks. The
+  merge (Phase 2c) and the audit's duplicate scan both flag possible pairs as
+  warnings; real distinct papers also collide (a 2014 toolbox and its 2026 successor),
+  so each pair needs a verdict. Keep the version of record, drop the preprint, and
+  re-check any in-text citation whose year moves (2025 → 2026).
 
-A run that will not finish is almost always one of these. They are distinguished by
-*timing and determinism*, not by the exception type — all three arrive as
-`http.client.HTTPException` and so are all correctly classed transient.
+### Network failures that look alike and are not
 
-| Symptom | What it is | Fix |
+A run that will not finish is almost always one of these. All three arrive as
+`http.client.HTTPException` and are correctly classed transient; they differ in
+timing and determinism.
+
+| Symptom | What it is | Fix (in `common.http`) |
 |---|---|---|
-| Random requests fail, succeed on retry | genuine rate limiting | backoff (already there); raise `--sleep` |
-| The **same** records fail at the **same byte count**, small ones fine | response truncation of a large uncompressed body | `Accept-Encoding: gzip` + `common.decompress` |
-| The **same** records fail **instantly** (~0.3s) every time, curl fetches them fine | HTTP-stack / proxy incompatibility | `common.curl_get` fallback |
+| Random requests fail, succeed on retry | genuine rate limiting | backoff; raise `--sleep` |
+| The **same** large records fail at the **same byte count**, small ones fine | truncation of a large uncompressed body (`IncompleteRead(1782210 bytes read, 399724 more expected)`) | `Accept-Encoding: gzip, deflate` + `common.decompress` |
+| The **same** records fail **instantly** (~0.3 s), curl fetches them fine | HTTP-stack / proxy incompatibility | `common.curl_get` at the first network failure |
 
-Only the first is fixed by waiting. The other two are deterministic, and a retry
-loop against them is an infinite loop that reports as slowness. On the
-cortical-layers build all three appeared: 117 canon rows lost to truncation, then 71
-of 536 xref reference-list fetches lost to the stack issue. `common.http` now tries
-`curl` at the **first** network failure rather than after the full 2+4+8+16s backoff
-— for the affected records that is 0.7s instead of 32s, and for genuine load nothing
-changes because curl fails too and the backoff still runs.
+Only the first is fixed by waiting; against the other two a retry loop runs forever
+and reports as slowness. On the cortical-layers build, uncompressed: 117 of 537 rows
+failed canon and xref managed ~19 papers per 7 minutes; compressed, the same records
+fetch in 0.3 s. Then 71 of 536 xref fetches failed on the stack issue; curl-first
+takes 0.7 s instead of 32 s of backoff. urllib does not decompress, so requesting gzip
+and decoding it must land together; `decompress()` passes an unknown encoding through
+rather than raising.
 
-**The diagnostic to reach for first:** re-fetch one failing URL with
-`curl -sS --compressed`. If curl succeeds where the tool failed, it is not the
-server and no amount of `--sleep` will help.
+**First diagnostic:** re-fetch one failing URL with `curl -sS --compressed`. If curl
+succeeds where the tool failed, it is not the server, and `--sleep` will not help.
 
-### An arXiv-heavy corpus breaks three silent assumptions (2026-09-24)
+### Citation counts (Phase 5b)
 
-A 475-paper AI-alignment corpus, half of it arXiv-only plus blog and forum posts, exposed
-three places where the toolkit assumed a journal-article literature:
-
-- **Dated web sources failed the gate as `no-year`.** APA-7 dates a post `(2022, June 5)` and
-  a magazine issue `(1942, March)`; `common.parse_apa` accepted only `(2022)`, so nine
-  correctly cited posts and reports reported defects. It now accepts the month/day forms.
-- **Book chapters printed the series as the venue.** CrossRef deposits a chapter's
-  `container-title` as `[series, book]`, and canon read only the first entry, giving
-  `Title. Lecture Notes in Computer Science.` with no book, pages or publisher. Canon now
-  builds `In Book (pp. x-y). Publisher.` from the last entry (`common.build_chapter_apa`).
-  CrossRef deposits no editors for most chapters, and Springer occasionally deposits the
-  WRONG book (Biggio 2013 carried another volume's title and ISBN; the book-level DOI had
-  the right one), so spot-check chapter rows. Book titles still need hand sentence case.
-- **Within-corpus in-degree is blind to arXiv papers.** `xref.py` reads CrossRef reference
-  lists, which arXiv DOIs do not have, so the auto-landmarks favored old journal classics
-  (Simon, Jensen, Arrow) over the field's own canon. Raise `--per-family`/`--max-labels`
-  (checking zero removals), then add each family's lineage papers through a `--spec`
-  labels map. Also: on a warped axis the recent years are wide, and the x axis now labels
-  single years wherever they fit (`families_figure.year_ticks`).
-
-Two search-side notes from the same build: with 11 lanes, **seven papers were deferred by
-one lane to another and kept by neither** (a 14-paper recovery lane found them all), and a
-journal paper returned by one lane under its DOI and by another under its arXiv DOI is the
-same paper, so dedup on the arXiv id as well as the DOI.
-
-### On the search agent
-- **Always verify.** ~25% of agent-returned citations have errors. Wrong
-  first authors are the most common; the agent confuses similar-titled
-  papers and mixes up author lists.
-- **The conclusion can be reversed.** Read the abstract before trusting
-  any summary — agents have been observed to invert a paper's headline
-  finding (e.g., describing "X > Y" when the paper says the opposite).
-- **Cap the request.** Asking for 40 papers gives 40-44; asking for "as many
-  as possible" gives sprawl with more fabrications.
-- **Give exhaustive "do not include" lists.** Without these, the agent
-  re-finds papers already in the spreadsheet (3 of 44 in the first run).
-- **NOT-FOUND ≠ unverifiable ≠ fine.** arXiv/conference papers used to slip
-  through because CrossRef/PubMed can't see them, so they returned NOT-FOUND and
-  got waved through. `verify.py` now hits the arXiv API directly; a NOT-FOUND is
-  a real problem to chase, never a license to skip. (One run: a "Vo et al."
-  attention paper was actually Foster et al.; two Jain & Huth arXiv ids pointed
-  at unrelated papers — all caught only because every citation, preprint
-  included, was verified.)
-- **NOT-FOUND ≠ ERROR — a transient failure must never read as "missing."** On a
-  ~90-paper world_models run, 8 real preprints came back NOT-FOUND purely because
-  arXiv rate-limited (429) a per-paper loop into a temporary ban; trusting that
-  verdict would have dropped real papers. `verify.py` now (a) prefetches arXiv ids
-  in **batches** (many per `id_list` call, ~3s apart) so the ban doesn't happen,
-  and (b) reports a distinct **ERROR** verdict when a lookup can't complete, kept
-  separate from NOT-FOUND. Re-run ERRORs; only NOT-FOUND means "does not exist."
-  Pass `expect_year` as a string OR int — either is accepted (a JSON int no longer
-  crashes the run), and one malformed row degrades to ERROR instead of aborting.
-- **Reference titles are strict APA-7 sentence case; DOIs are the ground truth
-  for *location*, the APA string is just the bibliography display.** CrossRef and
-  arXiv return titles in inconsistent casing (arXiv and many publishers use Title
-  Case; Nature deposits sentence case), so `references.py` normalizes ALL-CAPS
-  titles but deliberately does NOT auto-transform Title Case → sentence case:
-  correct sentence-casing needs the proper-noun judgment APA bakes in (`Bayesian`,
-  `Atari`, `Weber`, `Tolman-Eichenbaum` stay capitalized; `Active`, `World`,
-  `Model` lowercase), and a mechanical caser silently mis-cases proper nouns —
-  which the audit can't catch. So after canon, **sentence-case new preprint titles
-  in a reviewed pass** (auto-protect all-caps acronyms, camelCase/digit model
-  names, and hyphen parts; keep a small proper-noun allowlist; eyeball every
-  changed title, e.g. a product name like `Matrix-Game`). This is a post-canon
-  hand-fix like the mojibake and compound-surname fixes below.
-
-### Make the agent verify its own citations — it drives fabrication to ~zero (2026-09-18)
-
-The ~25% fabrication rate quoted throughout this playbook is what you get when the
-brief asks for papers. Put an explicit **verification duty** section in every lane
-brief and the rate collapses: on the 541-ref cortical-layers build, Phase 3 returned
-**535 OK / 2 / 0 NOT-FOUND**, and both exceptions were missing diacritics in a name
-the agent typed (`Hertag` for `Hertäg`), which canon then restored. Not one
-fabricated reference in fourteen lanes.
-
-The section that did it, in every brief, roughly:
-
-1. Visit the actual landing page for every paper; read the author list **off the
-   page**, never reconstruct it from memory.
-2. Confirm first author and year on that page before writing the row.
-3. Confirm the DOI **resolves to the paper you think it is** — not merely that it
-   resolves. (This caught a real one: the DOI in circulation for Nandy et al. 2017
-   resolves to a different Neuron paper.)
-4. Read the abstract before writing the summary; do not invert the finding.
-5. Do not judge a DOI by the shape of its string.
-6. If you cannot confirm a paper, leave it out and list it under "Could not confirm".
-
-Phase 3 still runs — it is the gate, not a formality, and it is what proves the
-above happened. But it now confirms good work instead of finding a quarter of the
-corpus rotten. Agents also report *what* they could not confirm, which is where the
-useful findings come from (a misattributed classic, a wrong stored DOI, a title that
-does not exist).
-
-### Seed lane briefs with titles, and expect a third of them to be wrong (2026-09-18)
-
-The standing rule is **seed with titles only, never remembered author names** —
-author-name seeding injected fabricated attributions into three builds. That rule
-holds. But titles recalled from memory are themselves unreliable: on the
-cortical-layers build **roughly forty of ~170 seeded titles did not exist** under
-that or any close wording ("Laminar analysis of ocular dominance plasticity",
-"Cortical microcircuitry of attention", "The draining vein problem in laminar fMRI"
-— all plausible, none real).
-
-This cost little because the briefs labeled the seeds honestly ("These are paper
-TITLES ONLY, from memory, and some may be slightly wrong... if one turns out not to
-exist under any similar title, drop it and say so"), and every agent substituted the
-real nearest work and reported the substitution. **Keep that framing** — a seed list
-presented as fact would have sent fourteen agents hunting ghosts. Better still,
-where a real source exists (a sibling corpus, a review's reference list), seed from
-it instead of from memory.
-
-### The shared WebSearch budget runs out early on a wide fan-out (2026-09-18)
-
-The session's WebSearch quota (200 calls) is shared across all subagents. With 14
-lanes it was exhausted after about two of them, and the remaining twelve completed
-discovery through the Europe PMC, PubMed E-utilities, CrossRef, bioRxiv and arXiv
-REST APIs instead. That was **not** a degradation — dated, field-restricted API
-sweeps are more systematic than keyword search, and verification against those same
-records is what the machine check uses anyway. The one real weakness is finding work
-that does not put the topic's vocabulary in its title.
-
-So: do not treat "WebSearch exhausted" as a reason to re-run a lane. Tell the briefs
-up front that the API path is a first-class route, and if a lane comes back thin,
-**resume it via SendMessage** (transcript intact) rather than re-spawning — a
-re-spawn discards everything it had already verified.
-
-### Family claims and lineages are content, and need the same discipline as citations (2026-09-18)
-
-Since the figure now surfaces each family's `claim` and `lineage` on hover, those
-strings are read by the reader, not just by the agent doing the assignment — and a
-lineage composed from memory can be wrong in exactly the way a citation can. On the
-cortical-layers build the `contingency` lineage named Senzai et al. 2019, whose
-actual contribution (reproducible laminar landmarks from spike power and sink-source
-distributions) puts it squarely in `boundary`. An assignment agent flagged the
-conflict, correctly deferred to the frozen spec, and the error propagated until the
-flag was read.
-
-Two rules follow. **Compose lineages from rows that are already in the corpus** —
-grep `rows.json` after canon and use the canonical lead surname and year, rather
-than recalling a chain. And **read the assignment agents' `hard_calls`**: they are
-the only place a wrong family definition shows up, because the agents are instructed
-not to argue with the spec.
-
-### A size encoding must not turn "unknown" into a number (2026-09-19)
-
-`--size-by-citations` maps a paper's citation count onto its dot radius. The first
-version sized a paper with NO count at the floor, which is exactly where a paper
-with zero citations lands — so the figure asserted a count it did not have. On
-`reverse_polish_notation` that is 67% coverage, i.e. a third of the corpus silently
-claimed to be uncited. Missing counts now draw HOLLOW, keyed in the legend.
-
-The general rule: before mapping a data column onto a visual channel, **count how
-many rows actually have that column**, per corpus, and decide what the blanks look
-like. Coverage across the 15 corpora here runs 67-100%, so the blanks are never
-negligible and are worst exactly where the literature is oldest and most obscure.
-
-Two scale notes, from rendering both: citation counts span four orders of magnitude
-(0 to ~80k), so normalize against a high percentile and CLAMP above it, or one
-runaway classic flattens everything else. `sqrt` (area-proportional) is the one to
-use; `log` compresses so hard that a 100-citation paper sits at ~67% of the radius
-range and the whole figure reads flat. And say it out loud when presenting: citation
-count is partly an AGE variable, so the right-hand edge of any timeline goes small.
-
-### A walk-through's order must follow the drawn geometry, not the data key (2026-09-19)
-
-The figure's Next/Prev walk sorted on `(year, reference string)`. The reference
-string has nothing to do with where the beeswarm put the dot, and the beeswarm fans
-a year's papers out from the lane center as 0, +d, -d, +2d, -2d — so the highlight
-hopped up and down the column and the walk read as random. 137 backward steps inside
-a year-column on a 555-paper corpus. Every paper of one year shares an x, so a year
-IS a vertical column: tie-break on the dot's own drawn y and the walk sweeps it.
-
-This survived code review twice because the sort LOOKS right until you ask what its
-tie-break has to do with the picture. The check that caught it executes the figure's
-own `ORDER` expression against its own embedded data (`verify_nav_order.mjs`) — the
-same tactic as `verify_hover.mjs`. **For anything interactive, run the figure's own
-code; do not read it.**
-
-### Set iteration makes a render nondeterministic, which defeats the diff (2026-09-19)
-
-`families_figure.py` picked landmarks into a `set` of reference strings, and Python
-randomizes string hashes per process. Same-year and same-x ties therefore came out
-in a different order on every run: two renders of identical code against identical
-data produced different bytes and moved 5 of 57 labels between tiers. Harmless on
-screen — but `rerender_figures.py` verifies by DIFFING the re-render against the
-delivered file, so the whole safety net was reading noise. Sort keys are now
-`(year, ref)` and `(x, ref)`; three consecutive renders are byte-identical.
-
-If a harness's guarantee is "re-rendering changes nothing", prove that by rendering
-TWICE with unchanged code first. Any diff there is a bug in the renderer, not a
-change in the data.
-
-### A highlight ring must never be the color of the thing it rings (2026-09-20)
-
-The home-lab ring marked a paper by outlining its dot in gold, `#d4a017`. That is
-also `PALETTE[4]` — the FIFTH family's lane color. So on any figure with five or
-more families, a home-lab paper in family 5 got a gold ring on a gold dot and the
-highlight silently did nothing. Live in `gallant_lab_in_context` (6 families, 2
-lab papers in family 5) and latent in four more corpora.
-
-The ring color is now `--lab-color`, and it is resolved against the lane colors
-actually in use: an unset default that collides moves itself out of the way and
-says which color it took, an explicitly chosen one is honored but warned about.
-The starred label's ink is *derived* from the ring color rather than being a
-second hardcoded constant (`#9a7400`), so one parameter controls both.
-
-Two general rules. **A marker drawn on top of colored data must be checked against
-that data's palette, not chosen in isolation** — the collision is invisible in
-every figure where no marked item happens to land in the clashing lane, which is
-why this survived every visual review. And when asked to "make X a parameter",
-**check whether it already is**: *which* lab gets starred had been
-`--lab-author` / `LITREVIEW_LAB_AUTHOR` all along, off by default and lab-neutral.
-The real gap was one layer down, in the appearance.
-
-### On contextualizing a lab review (lab mode L4c)
-- **The outward search is a FULL topic-mode review, not a "context" add-on.**
-  Framing it as optional/lighter is precisely how a sloppy, half-fabricated field
-  set sneaks into an otherwise careful review. Run Phases 2–6 per theme with the
-  same verify/count/dedup guardrails — no shortcuts.
-- **Dedup by DOI and exclude the lab's own papers before merging.** Multiple
-  theme-agents find the same landmark (one paper turned up under three themes),
-  and an agent only excludes its own theme's seeds — so a lab paper resurfaces as
-  "field." `families.py` enforces ref-level exclusivity but not duplicate DOIs;
-  assert zero cross-theme dup DOIs and zero field↔lab collisions yourself.
-
-### On writing the review (Phase 7)
-- **The draft will be accurate and unreadable; budget a concision pass.** The failure is
-  compression, not vocabulary — a filler-word scan over one 10,800-word draft found essentially
-  nothing to cut, while 54 sentences ran past 50 words. Run `prose_audit.py`, work down the
-  long-sentence list it prints, and re-run it with `--baseline` so the pass cannot drop a reference.
-- **Edit the emitter, never the rendered page.** The prose lives in `build_review_page.py` /
-  `content.json`; a fix applied to the HTML or the `.docx` is gone at the next render and, worse,
-  leaves the page disagreeing with the script that claims to produce it.
-- **Order ideas by publication date, not by your narrative.** The drafting model reliably presents
-  a later paper as an idea's origin because that ref fits the sentence it wants to write. The rule,
-  the four inversion patterns, the real misses caught 2026-06-13, and the required pre-delivery
-  **priority audit** are all in Phase 7 — run the audit. Self-review misses these because the
-  author is biased toward its own story; an independent pass with the publication years catches them.
-
-- **A toolkit fix does not reach a delivered .docx until you re-render it.** `reference_list`
-  once sorted on the whole string with digits dropped, so one author's works came out in title
-  order, not year order (67 inversions across 7 delivered reviews, fixed 2026-09-23). Before
-  overwriting a delivered `.docx`, render to scratch and diff the prose against the old file: if
-  the prose differs, the file holds edits or is an older draft, and re-rendering would destroy
-  them.
-
-### On PDF downloads
-Phase 4 has the full source order and the bot-blocked list. Three things that recur:
-institutional-repo URLs (`.edu`/`.ac.uk`) from Unpaywall almost always work;
-PMC/Cell/Elsevier/Wiley/OUP/MIT Press/PNAS/bioRxiv all block bots (route to the
-helper page, don't retry); always validate the first 4 bytes are `%PDF` (a 200 can
-be an HTML challenge page).
+- **Google Scholar cannot be automated** (no API; CAPTCHA after ~10–20 requests).
+- **OpenAlex is the workhorse** (~95%+ coverage by DOI) but undercounts arXiv-only
+  preprints, which it files separately from the published version; lean on S2 for
+  those rows.
+- **OpenAlex's batch filter can return a low-count duplicate** (Whittington 2020 TEM:
+  6 from the batch, 667 from `/works/doi:`; Tolman 1948: 1 vs 6,656). `citations.py`
+  keeps the max per DOI in a batch and re-queries the single-work endpoint when
+  OpenAlex < half of S2 (S2 ≥ 50). Still spot-check landmark counts against the S2
+  column: a famous old paper with single-digit OpenAlex is the tell.
+- **Semantic Scholar without a key** 429s, 400s a whole batch on one malformed id
+  (`common.s2_batch` bisects to isolate and name it) and 404s valid papers under load.
+  Set `S2_API_KEY`; without it, accept partial S2 coverage.
+- Counts are a snapshot: record `--asof`. The two columns will not match each other,
+  and GS-style totals run higher than both.
 
 ### On the spreadsheet
-- Use a "source" column or color code so a future you (or the user) knows
-  where each ref came from and how confident to be.
-- **Ref ids must be globally unique, and stay unique across merges.** A
-  single-character lane prefix plus a multi-digit counter is ambiguous: lane `4`
-  with refs `41…49` then `410…423` parses the same as lane `41`, and a naive
-  merge re-emitted the xref batch as `410…` on top of the existing `410…`,
-  silently duplicating ids. Two failures followed: `families.py` assigned the same
-  paper twice, and — worse — `citation_counts.json` keyed by ref got
-  cross-contaminated (two rows sharing id `415` shared one count, so Carvalho 2024
-  inherited Elman 1990's 10,838 cites). After any merge, assert
-  `len(refs)==len(set(refs))`; attach citation counts only AFTER ids are final (or
-  key the counts by DOI, not by ref); and prefer zero-padded or separator'd ids
-  (`4-01`, or two-char lanes) so the counter can't collide with the prefix.
-- Keep summaries to 3-5 sentences. Long ones become unreadable in a row.
-- Don't try to read existing xlsx with xlsxwriter — it's write-only. If
-  appending, regenerate the whole file from a JSON of accumulated rows.
-- **Keep all rows in `rows.json` and rebuild the xlsx via `tools/spreadsheet.py`.**
-  A project's row emitter (start from `templates/build_rows_template.py`) runs
-  ONCE, guards its writing block under `if __name__ == "__main__":`, imports the
-  toolkit's `common`, and writes through `common.write_rows` — which refuses to
-  overwrite a canonical table, so re-running it later cannot wipe Phase 3f.
 
-### On canonicalization & the live table
-- **When `--audit` flags `U+FFFD` mojibake, hand-fix it LAST.** CrossRef stores a
-  few names/venues with broken encoding (the original glyph is unrecoverable), so
-  `references.py` pulls the broken character back in on *every* run. Fix it
-  directly in `rows.json` AFTER the final `references.py` pass and before building
-  the spreadsheet/figure — fixing it earlier just gets it overwritten on the next
-  canon, and you loop on the gate. Real cases: `Bürgel`, `Zeitschrift für
-  Anatomie`.
-- **A defect check that reads the whole reference string will condemn a legitimate
-  title.** The gate forbade `et al.` anywhere in the `apa`, which is right for an
-  author list and wrong for a title: Nature titles its Matters Arising replies
-  "<Author> et al. reply", so a correctly canonicalized Nat Neurosci reply could not
-  pass the gate without falsifying its own published title. The check now inspects
-  only `parse_apa`'s author segment, falling back to the whole string when the
-  reference will not parse (a malformed reference is exactly where an abbreviated
-  author list hides). Generalize the rule, not the example: before adding a
-  whole-string check, ask which APA segment the defect actually lives in.
-- **CrossRef mis-splits compound / particle surnames** (`Lambon Ralph` →
-  `Ralph, M. A. L.`; `de Heer` → `Heer, W. A. D.`). The shared formatter handles
-  the common particles, but novel ones slip through and re-canon reintroduces the
-  bad split — so correct these in `rows.json` after the last canon, same as
-  mojibake. `--audit` now *warns* on every multi-word surname so they get looked at;
-  expect a handful of legitimate ones (Spanish, Vietnamese and Italian double
-  surnames) alongside the real errors. The reverse error also happens: a given
-  name with two parts (`J. Adam Noah` → family `Adam Noah`) — the warning catches
-  it, the fix is `Noah, J. A.` by hand.
-- **CrossRef keeps a series part / subtitle in a separate `subtitle` field.** Until
-  2026-08-22 canon dropped it, so Creutzfeldt 1989 "I. Responses to speech" and
-  "II. Responses to the subjects own voice" rendered as one identical title — the
-  `--audit` "possible duplicate (1.00)" warning was the only tell. `crossref_record`
-  now joins them APA-style (`Title: Subtitle`). Corpora canonicalized before that
-  date still lack subtitles; restore them by hand (a re-canon would wipe other
-  post-canon fixes).
-- **What CrossRef deposits is sometimes simply wrong, not just mis-parsed.** Seen in
-  one 396-row corpus: `family="A. Moffat"` with `given="Bradford"` (a middle initial
-  folded into the surname — now auto-repaired, since no surname starts with an
-  initial); `family="(Bud) Craig"` for A. D. Craig (parenthetical nickname — now
-  stripped); and `Sprby` for Terje Sparby, a plain misspelling of a living author's
-  name, verifiable only by finding the same author spelled correctly on a sibling
-  paper. The first two are handled; the third can only be caught by reading.
-- **Four formatter defects that shipped in five delivered bibliographies before the
-  gate caught them**, all now hard defects: JATS markup left inside a title
-  (`<i>Generalization and Differentiation</i>`), a `?.` where a question-mark title
-  got an extra period, and U+2010/U+2011 Unicode hyphens in surnames
-  (`Fischer‐Baum`, `Kabat‐Zinn`, `low‐frequency`) that look identical to ASCII but
-  break every string match. Re-run `--audit` over old projects after a formatter
-  change; these had been sitting in finished work for months.
-- **The audit's `no-year` check used to reject APA year suffixes.** `\(\d{4}\)`
-  fails on `(2025a)`, so the standard way to disambiguate two same-author/same-year
-  works could not be expressed. It now accepts `\(\d{4}[a-z]?\)`.
-- **`rows.json` is the live table; the row-emitter script is destructive once you
-  pass Phase 3f.** A per-project `build_data.py` (or equivalent) only knows the
-  original search rows — re-running it after canon/xref/families drops the xref
-  rows and wipes the canonical `apa` + citation counts. After the first build,
-  edit `rows.json` directly (or splice via targeted canon); don't regenerate it
-  from the emitter.
-- **`references.py` prefers the journal DOI over arXiv when a row has both** (the
-  version of record), and falls back to arXiv only for preprint-only rows (no
-  journal DOI) or rows whose DOI is itself an arXiv DOI. So you no longer need to
-  hand-clear an `arxiv` field to stop a published paper from being cited as its
-  preprint — just keep both ids and let canon pick the journal version. (Agents
-  routinely return a journal DOI *and* the preprint id for the same paper.)
-- **BUT: not every "published" DOI is the version of record — check the count
-  before you swap.** Curran/Proceedings.com registers DOIs (`10.52202/*`) for the
-  *printed* NeurIPS volumes. They resolve, and a CrossRef title search happily
-  returns them, but they are shadow records of the paper the community actually
-  cites: on a 2026 gallant_lab pass, moving 6 rows to their `10.52202` DOIs would
-  have cut OpenAlex counts by ~3-4× (MindEye 40 → 11, Toneva-style rows 34 → 10)
-  while adding nothing. ACL Anthology (`10.18653/*`), IEEE/CVF (`10.1109/*`) and
-  real journal DOIs are the opposite — genuine upgrades (MindBridge 2 → 41). Rule:
-  before promoting a preprint row to a "published" DOI, query the candidate DOI's
-  OpenAlex count; if it is much LOWER than the arXiv record's, keep arXiv and note
-  the venue in prose. Preprint-heavy CS/AI reviews are where this bites.
-- **The same paper can enter a review twice, and per-row canon will never notice.**
-  One agent finds the arXiv preprint, another finds the journal version; two
-  different DOIs, so the one-row-per-DOI rule passes and *both* rows canonicalize
-  perfectly. Three such pairs sat undetected in a 362-row corpus for six weeks.
-  `references.py --audit` now runs a corpus-level `duplicate_scan()` and prints
-  `⚠ A ~ B: possible duplicate` for near-identical titles (labeling the
-  preprint-vs-published case explicitly). It is a **warning, not a defect** — real
-  distinct papers do collide (a 2014 toolbox paper and its 2026 successor;
-  successive years of the same challenge), so every pair needs a human verdict.
-  Keep the version of record, drop the preprint, and re-check any in-text citation
-  whose YEAR moves as a result (a preprint→journal promotion can shift 2025 → 2026).
-
-### Always ask for a compressed body (2026-09-18)
-
-`common.HDRS` now sends `Accept-Encoding: gzip, deflate` and `common.http` decodes the
-reply (`common.decompress`). urllib does **not** decompress for you, so the two must
-land together — requesting gzip without decoding returns binary garbage.
-
-Why it matters: a CrossRef work record carries its whole reference list and can exceed
-a megabyte. Uncompressed, those large responses arrive truncated —
-`IncompleteRead(1782210 bytes read, 399724 more expected)` — which is an
-`http.client.HTTPException` and therefore correctly classed **transient**, so the tools
-retry it. The failure mode is not an error message; it is a run that never finishes.
-On the 541-row cortical-layers build, uncompressed: **117 of 537 rows failed canon**
-and needed three splice passes, and `xref.py` was managing ~19 papers per 7 minutes
-(a ~3-hour projection). Compressed, the same records fetch in 0.3 s each.
-
-The tell is a burst of `RemoteDisconnected` / `IncompleteRead` against *particular*
-DOIs that fail identically every time, at the same byte count, while small records
-sail through. That is not throttling and no amount of `--sleep` fixes it — a retry
-loop on a truncating transfer just truncates again. `decompress()` passes an unknown
-or mislabeled encoding straight through rather than raising, so a server that lies
-about Content-Encoding degrades to a JSON parse error instead of killing the run.
-
-### On cross-citation analysis
-- CrossRef coverage varies by publisher. Nature, Cell, OUP, JNeurosci have
-  excellent coverage. Some smaller journals deposit no refs.
-- ≥4 citations across 40 papers is a strong signal. ≥3 is borderline; only
-  pick if the paper is clearly foundational.
-- The xref pass typically finds 25-35 papers per topic that the initial
-  search missed — almost half as many again.
-
-### On citation counts (Phase 5b)
-- **Google Scholar can't be automated.** No API; CAPTCHA after ~10-20 requests.
-  Don't try to scrape it for a whole bibliography — use OpenAlex + S2.
-- **OpenAlex is the reliable workhorse** (~95%+ coverage by DOI). It undercounts
-  arXiv-only preprints (separate record from the published version), so for
-  preprint-heavy reviews lean on the S2 number for those rows.
-- **OpenAlex's BATCH filter can return a low-count duplicate record** for a DOI
-  that has both a merged primary work and a stub (e.g. Whittington 2020 TEM came
-  back as 6 from the batch but 667 from the canonical `/works/doi:` endpoint;
-  Tolman 1948 as 1 vs 6656). `citations.py` now (a) keeps the MAX count when a DOI
-  appears more than once in a batch, and (b) re-queries the single-work endpoint
-  whenever the OpenAlex count is < half the S2 count (with S2 ≥ 50). Still
-  **spot-check landmark/foundational counts against the S2 column** before
-  delivering — a famous old paper showing single-digit OpenAlex is the tell.
-- **Semantic Scholar's free endpoints are flaky**: the `/paper/batch` endpoint
-  429s and sometimes 400s (one malformed id poisons the whole batch — the
-  toolkit's `common.s2_batch` bisects such a batch until the rejected id stands
-  alone, names it, and treats it as not in S2, so the other ids still resolve;
-  `citations.py`, `abstracts.py` and `xref.py` all go through it); the
-  single `/paper/{id}` endpoint 404s valid papers under load. Set `S2_API_KEY`
-  to fix it. Without a key, accept partial S2 coverage — OpenAlex stands alone.
-- Counts are a snapshot; record the `--asof` date. Don't expect the two columns
-  to match — GS-style totals (which neither gives) run higher than both.
+- **Ref ids must be unique across merges, and counts must not be keyed by a reused
+  ref.** A one-character lane prefix plus a counter is ambiguous (lane `4`, ref `410`
+  vs lane `41`, ref `0`): a naive merge re-emitted an xref batch as `410…` over the
+  existing `410…`, `families.py` assigned one paper twice, and two rows sharing `415`
+  shared one count, so Carvalho 2024 inherited Elman 1990's 10,838 citations. Use
+  separator ids (`X-01`, which `candidates.py` exports; `merge_lanes.py --append`
+  refuses a ref already in the table), attach counts only after ids are final, and
+  assert `len(refs) == len(set(refs))` after any hand merge.
+- `rows.json` is the table; the `.xlsx` is only a rendering of it (xlsxwriter is
+  write-only). A project row emitter (from `templates/build_rows_template.py`) runs
+  once, guards its writing block under `if __name__ == "__main__":`, and writes through
+  `common.write_rows`, which refuses to overwrite a canonical table (contract rule 6).
 
 ---
 
@@ -1903,195 +1550,206 @@ about Content-Encoding degrades to a JSON parse error instead of killing the run
 | PMC esummary | `...?db=pmc&id=<numeric_pmc>` | Same, for PMC |
 | Unpaywall | `https://api.unpaywall.org/v2/<doi>?email=<email>` | OA PDF URLs |
 | CrossRef metadata | `https://api.crossref.org/works/<doi>` | Title, authors, references |
-| OpenAlex (counts) | `https://api.openalex.org/works?filter=doi:<d1>\|<d2>...&mailto=<email>` | `cited_by_count`, batchable 50/req; set `OPENALEX_API_KEY` (a keyless IP shares one daily budget, and a spent budget raises `OpenAlexBudgetError`) |
-| Semantic Scholar (counts) | `POST https://api.semanticscholar.org/graph/v1/paper/batch?fields=citationCount,influentialCitationCount` body `{"ids":["DOI:..","ARXIV:.."]}` | citation + influential counts; 429s without `S2_API_KEY` |
+| DataCite | `https://api.datacite.org/dois/<doi>` | Zenodo/figshare/OSF/Dryad records (verify and canon fall back to it on a CrossRef 404) |
+| OpenAlex (counts) | `https://api.openalex.org/works?filter=doi:<d1>\|<d2>...&mailto=<email>` | `cited_by_count`, 50 DOIs/request; `OPENALEX_API_KEY` is sent as an Authorization header; budget and credit costs in Phase 0 |
+| Semantic Scholar (counts) | `POST https://api.semanticscholar.org/graph/v1/paper/batch?fields=citationCount,influentialCitationCount` body `{"ids":["DOI:..","ARXIV:.."]}` | citation + influential counts, ≤500 ids/request; `S2_API_KEY` as `x-api-key` |
 | EuropePMC search | `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=<q>&format=json` | Full search |
 | EuropePMC PDF | `https://europepmc.org/articles/<PMCID>?pdf=render` | PDF (often) |
-| arxiv API | `https://export.arxiv.org/api/query?search_query=all:<q>` | Atom XML |
-| arxiv PDF | `https://arxiv.org/pdf/<id>.pdf` | PDF |
+| arXiv API | `https://export.arxiv.org/api/query?search_query=all:<q>` (the tools use `id_list=`) | Atom XML |
+| arXiv PDF | `https://arxiv.org/pdf/<id>.pdf` | PDF |
 | Nature direct | `https://www.nature.com/articles/<id>.pdf` | PDF (if OA) |
 
 Rate limits worth knowing:
-- arxiv API: ~1 req/3s; bursts trigger 429.
-- NCBI eutils: 3 req/s without API key, 10 req/s with key. Use 0.4s sleep.
-- CrossRef: polite pool with `mailto:` in User-Agent gives unlimited; without, ~50/s.
-- Unpaywall: 100k req/day per email.
+- arXiv API: ~1 request/3 s; bursts trigger 429 (`common.arxiv_batch` sends 50 ids per
+  request, 3 s apart).
+- NCBI eutils: 3 requests/s without an API key, 10/s with one. Use a 0.4 s sleep.
+- CrossRef: polite pool with `mailto:` in the User-Agent gives unlimited; without,
+  ~50/s.
+- Unpaywall: 100k requests/day per email.
 
-Always include a `User-Agent` header with your email for these APIs.
+Every tool sends a User-Agent carrying your contact email (`LITREVIEW_EMAIL` or
+`--email`).
 
 ---
 
 ## Reusable helper scripts
 
-All in `<project>/tools/`. Each is standalone, takes input via JSON/CLI,
-outputs JSON/files. Run `python3 tools/<script>.py --help` for flags. The index
-below is generated from the modules by `python3 tools/gen_docs.py` (CI fails if
-it is stale); the per-tool detail is in `tools/README.md` and `docs/tools.md`.
+All in `tools/`. Each is standalone, reads JSON/CLI input and writes JSON/files; run
+`python3 tools/<script>.py --help` for flags. The index below is generated from the
+modules by `python3 tools/gen_docs.py` (CI fails if it is stale); per-tool detail is
+in `tools/README.md` and `docs/tools.md`.
 
 <!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
 | Script | Phase | Purpose | Flags |
 |---|---|---|---|
-| `preflight.py` | 0 | Phase 0 preflight: before any search, check for a newer toolkit, the API keys, and the OpenAlex budget. | `--email` `--no-update-check` `--offline` `--papers` |
+| `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--email` `--no-update-check` `--offline` `--papers` |
 | `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--out` `--raw` `--report` |
-| `verify.py` | 3 | Verify a list of citations against PMC / PubMed / CrossRef / DataCite / arXiv. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
+| `verify.py` | 3 | Verify a list of citations against CrossRef, DataCite, arXiv, PMC and PubMed. | `--asof` `--citations` `--email` `--key` `--no-stamp` `--only` `--out` `--override` `--reason` `--retry-from` `--retry-wait` `--rows` `--sleep` |
 | `handcheck.py` | 3e | Hand-check the references that have no DOI or arXiv id (books, reports, essays). | `--adopt-dois` `--asof` `--email` `--ingest` `--input` `--key` `--prepare` `--rows` |
-| `references.py` | 3f | Canonical reference builder — make EVERY reference perfect, in both modes. | `--acks` `--asof` `--audit` `--candidates` `--email` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
-| `sentence_case.py` | 3f | Post-canon pass — propose strict APA-7 sentence case for reference titles. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
-| `download.py` | 4 (opt-in) | Multi-source PDF downloader (Phase 4 — OPT-IN, not run by default). | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
-| `reconcile_downloads.py` | 4 (opt-in) | Reconcile manually-downloaded PDFs against a slug+title+doi manifest. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
-| `spreadsheet.py` | 5 | Build/rebuild the bibliography xlsx from a JSON of accumulated rows. | `--acks` `--candidates` `--draft` `--key` `--out` `--rows` `--sheet-name` |
-| `citations.py` | 5b | Fetch citation counts for a bibliography from OpenAlex + Semantic Scholar. | `--asof` `--email` `--key` `--out` `--rows` `--sources` |
-| `abstracts.py` | 5c | Fetch the abstract of every row, in batches, into abstracts.json. | `--email` `--key` `--out` `--rows` |
-| `summary_audit.py` | 5c | Check every row's summary against its abstract, by checking agents with no web access. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
-| `candidates.py` | 6 | The candidate ledger: every paper xref or forward citations suggest gets a recorded decision. | `--add` `--asof` `--decide` `--decision` `--export-included` `--lane` `--ledger` `--list` `--reason` `--rows` `--source` |
+| `references.py` | 3f | Canon: rebuild each verified row's reference as APA-7 from its DOI or arXiv id, and audit the table. | `--acks` `--asof` `--audit` `--candidates` `--email` `--key` `--list-acks` `--only` `--out` `--repair` `--retry-wait` `--rows` `--sleep` |
+| `sentence_case.py` | 3f | Post-canon pass: propose strict APA-7 sentence case for reference titles, for a human to review. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
+| `download.py` | 4 (opt-in) | Download open-access PDFs for a list of papers, only when the user asks for them. | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
+| `reconcile_downloads.py` | 4 (opt-in) | Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
+| `spreadsheet.py` | 5 | Build the bibliography .xlsx from rows.json, and refuse a table that fails the audit. | `--acks` `--candidates` `--draft` `--key` `--out` `--rows` `--sheet-name` |
+| `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--email` `--key` `--out` `--rows` `--sources` |
+| `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--email` `--key` `--out` `--rows` |
+| `summary_audit.py` | 5c | Summary check: agents with no web access confirm each row's summary against its abstract. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
+| `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--export-included` `--lane` `--ledger` `--list` `--reason` `--rows` `--source` |
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
-| `xref.py` | 6 | Build a cross-citation index from a list of papers. | `--allow-incomplete` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
-| `families.py` | 6b | Phase 6b — validate an LLM-proposed family taxonomy against the bibliography, stamp `family` onto rows.json, and emit families.json (the reproducible cache) + families.md (grouped tables + a family x topic cross-tab). | `--asof` `--assign` `--digest` `--md` `--out` `--rows` |
-| `families_figure.py` | 6b | Phase 6b — render the interactive HTML lineage figure of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |
-| `bib_viewer.py` | 7 | Render the searchable bibliography viewer every review page embeds. | `--author` `--author-note` `--families` `--out` `--rows` `--subtitle` `--title` |
-| `cite_check.py` | 7 | Phase 7 gate — every in-text citation must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
-| `prose_audit.py` | 7 | Phase 7 — measure a review's prose and prove a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |
-| `review_paper.py` | 7 | Phase 7 — build a review ARTICLE (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
-| `lab_corpus.py` | L1 | Lab mode — Phase L1: ingest a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
+| `xref.py` | 6 | Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite. | `--allow-incomplete` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
+| `families.py` | 6b | Validate a family taxonomy, stamp `family` onto rows.json, and write families.json and families.md. | `--asof` `--assign` `--digest` `--md` `--out` `--rows` |
+| `families_figure.py` | 6b | Render the interactive lineage timeline of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |
+| `bib_viewer.py` | 7 | Render a searchable bibliography of the whole corpus, for a page that has no timeline. | `--author` `--author-note` `--families` `--out` `--rows` `--subtitle` `--title` |
+| `cite_check.py` | 7 | Gate: every in-text citation in a review must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
+| `prose_audit.py` | 7 | Measure a review's prose, and check that a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |
+| `review_paper.py` | 7 | Build a review article (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
+| `lab_corpus.py` | L1 | Lab mode: fetch a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
 <!-- END GENERATED TOOL INDEX -->
 
 Notes the index cannot carry:
-- `verify.py` and `xref.py` accept `--rows rows.json` directly, so a project needs
-  no converter script to feed them.
-- `references.py --repair` retrofits an old corpus offline (no re-fetch, so
-  post-canon hand fixes survive); canon stamps rows `canonical_at`, and repair does
-  too on a legacy table only — on a gated table `canonical_at` means "rebuilt from
-  a verified source", which an offline repair is not.
-- `reconcile_downloads.py` matches by filename ↔ DOI substring first, then by
-  first-author + year + title overlap on the first page (`pdftotext`), and refuses
-  to move a PDF it is unsure about.
-- Project scripts should `import common` (see tools/README.md, "Using the toolkit
-  from a project script") and write `rows.json` through `common.write_rows`, which
-  refuses to overwrite a canonical table.
+- `verify.py` and `xref.py` take `--rows rows.json` directly; a project needs no
+  converter script.
+- The tools that write `rows.json` (verify, handcheck `--ingest`, references,
+  sentence_case `--apply`, summary_audit `--ingest`, families `--assign`,
+  merge_lanes `--append`) refuse to save over a file that changed since they loaded
+  it, so run them one at a time.
+- `references.py --repair` retrofits an old corpus offline (no re-fetch, so post-canon
+  hand fixes survive). It stamps `canonical_at` only on a legacy table: on a gated
+  table `canonical_at` means "rebuilt from a verified source", which an offline repair
+  is not.
+- `common.attach_counts(rows, counts)` puts `citations.py` output onto the rows as
+  `cite_openalex` / `cite_s2` / `cite_s2_influential`.
+- `reconcile_downloads.py` matches by filename ↔ DOI substring first, then by first
+  author + year + title overlap on the first page (`pdftotext`), and refuses to move a
+  PDF it is unsure about.
+- Project scripts `import common` (see tools/README.md, "Using the toolkit from a
+  project script") and write `rows.json` through `common.write_rows`.
 
-Each helper is small and meant to be read + adapted. They are not a framework —
-they're scaffolding to keep the LLM judgment work fast.
+The helpers are small and meant to be read and adapted: scaffolding to keep the
+judgment work fast, not a framework.
 
 ---
 
 ## Upgrading an old corpus
 
 Rerunning a search on an existing bibliography brings the WHOLE project up to the
-current standard, or redoes it if that is easier — it is never a lighter pass over
-just the new rows. The first verified row (or any row a current emitter built, which
-carries a `built_at` date) switches the reference gates on for the whole table
-(`common.is_gated`); once that happens, the audit and the spreadsheet
-gate fail every OLD row that lacks the new records, not just the new batch.
+current standard, or redoes it if that is easier; it is never a lighter pass over
+just the new rows. The first verified row (or any row a current tool built, which
+carries `built_at`) switches the reference gates on for the whole table
+(`common.is_gated`), and from then on the audit and the spreadsheet fail every OLD row
+that lacks the new records.
 
 Procedure, in order:
 
-1. `verify.py --rows rows.json` over the WHOLE table, not just the new rows.
-   A canonical row that kept its search claim (`search_*`) is checked against
-   BOTH the claim and its `apa`, and fails if either disagrees with the record.
-   A canonical row with no claim is checked against its own `apa` only — which
-   canon built from the same DOI, so it cannot re-establish that the DOI is the
-   intended paper: its stamp records `claim_basis: "canonical-apa"` and the audit
-   warns `identity-not-reestablished` until you confirm the DOI by hand and
-   acknowledge it.
-2. Turn any existing hand checks (`verify_note` text, informal manual-check results)
-   into `handcheck.py --ingest` result files; re-check any whose source is not
-   recorded. A `hand_verified` record written before the hand check was bound to
-   its `apa` (no `apa_sha`) counts as missing: re-ingest it.
-3. `abstracts.py`, then `summary_audit.py --prepare` / dispatch checking agents /
-   `--ingest` (Phase 5c). Older `abstracts.json` entries and `summary_check`
-   stamps record no ids, so they count as unbound: `abstracts.py` refetches the
-   fetched entries, a hand-added landing-page entry needs the row's `doi`/`arxiv`
-   added (it is reported stale until then), and every summary is re-checked.
-4. Acknowledge each remaining warning (`references.py --list-acks`, then
+1. `verify.py --rows rows.json` over the WHOLE table. A canonical row that kept its
+   search claim (`search_*`) is checked against BOTH the claim and its `apa`. A
+   canonical row with no claim is checked against its own `apa` only, which canon
+   built from the same DOI, so it cannot re-establish that the DOI is the intended
+   paper: its stamp records `claim_basis: "canonical-apa"` and the audit warns
+   `identity-not-reestablished` until you confirm the DOI by hand and acknowledge it.
+2. Turn existing hand checks (`verify_note` text, informal results) into `handcheck.py
+   --ingest` result files; re-check any whose source is not recorded. A
+   `hand_verified` record without `apa_sha` (written before hand checks were bound to
+   the `apa`) counts as missing: re-ingest it.
+3. `abstracts.py`, then `summary_audit.py --prepare` / checking agents / `--ingest`
+   (Phase 5c). Older `abstracts.json` entries and `summary_check` stamps record no
+   ids, so they count as unbound: `abstracts.py` refetches fetched entries, a
+   hand-added landing-page entry needs the row's `doi`/`arxiv` added (it is reported
+   stale until then), and every summary is re-checked.
+4. If the audit shows formatter defects (markup, Unicode hyphens, `?.`), run
+   `references.py --rows rows.json --repair`, which keeps post-canon hand fixes.
+5. Bring the candidate ledger up to date over the existing xref/forward output:
+   `candidates.py --rows rows.json --add xref_<topic>.json --source xref` (and `--add
+   forward_candidates.json --source forward` if there is one), then decide each
+   pending entry (`--list pending`; `--decide DOI --decision include|exclude --reason
+   "..."`). An old output with no `.run.json` sidecar is recorded as an incomplete
+   run (`incomplete-*-run`): re-run the pass, or acknowledge it. A gated table with no
+   `candidates.json` at all warns `no-candidate-ledger` under `*`; acknowledge it only
+   if the corpus genuinely never ran xref/forward.
+6. Acknowledge each remaining warning (`references.py --list-acks`, then
    `audit_acks.json`; Phase 3f).
-5. `candidates.py --rows rows.json --add xref_<topic>.json --source xref` (and
-   `--add forward_candidates.json --source forward` if you have one) over the
-   existing xref/forward output, then decide any still-pending entries
-   (`--list pending`, `--decide DOI include|exclude --reason "..."`), to bring
-   the candidate ledger up to date. A gated table with no `candidates.json` at
-   all fails the audit with `no-candidate-ledger` under `*` — acknowledge that
-   in `audit_acks.json` if the corpus genuinely never ran xref/forward.
-6. `references.py --audit`, then `spreadsheet.py`.
+7. `references.py --audit`, then `spreadsheet.py`.
 
-**When a full redo is easier than upgrading in place:** few of the old rows carry a
-DOI, the rows lack the search agents' claims (`search_*` fields, so `verify.py` has
-nothing independent to check against), or the lanes are stale enough that a fresh
-search is simpler than reconciling one row at a time. Say which you chose, and why.
+**When a full redo is easier:** few old rows carry a DOI, the rows lack the search
+agents' claims (`search_*`, so verify has nothing independent to check against), or
+the lanes are stale enough that a fresh search is simpler than reconciling row by row.
+Say which you chose, and why.
 
 ---
 
 ## Quick start for a fresh Claude
 
-Read this playbook, then read any existing `rows.json` — after Phase 3f it is the
-live table and the xlsx is only a rendering of it (xlsxwriter is write-only).
-Confirm topic + criteria with the user; do NOT ask whether to download PDFs, the
-default is no (Phase 4 is opt-in only). Then the pipeline, in order:
+Read this playbook, then any existing `rows.json` (after Phase 3f it is the live
+table; the `.xlsx` is only a rendering). Confirm topic and criteria with the user. Do
+NOT ask whether to download PDFs: the default is no (Phase 4 is opt-in). Extending or
+rerunning an EXISTING corpus follows "Upgrading an old corpus". Then, in order:
 
 ```
- 0. python3 tools/preflight.py --papers <planned size>                 (Phase 0)
-    Exit 2: stop and ask before launching anything: offer the newer toolkit
-    version if it found one, and give its three choices (get the keys, cap
-    the search, or be prepared to wait) if access is short.
+ 0. python3 tools/preflight.py --papers <lanes x target + lab papers>   (Phase 0)
+    Exit 2: stop and ask before launching anything. Offer the newer toolkit
+    if it found one (install only on a yes, then rerun); if access is short,
+    give its three choices: get the keys, cap the search, or be prepared to
+    wait. A build already under way reruns it with --no-update-check.
 
- 1. Scope the topic (Phase 1, your decision). Write the lane briefs with the
-    schema-2 output format (tools/search_prompt_template.md); launch the
-    forward-search and antecedent lanes in one fan-out (Phases 2 + 2b), each
-    writing its file into search_raw/.
+ 1. Scope the topic (Phase 1). Write the lane briefs from
+    tools/search_prompt_template.md (schema 2; add the verification-duty
+    section, see Lessons) and launch the forward-search AND antecedent lanes
+    in one fan-out (Phases 2 + 2b), each writing search_raw/<lane>.json.
 
- 2. python3 tools/merge_lanes.py --raw search_raw --out rows.json      (Phase 2c)
-    Lost deferrals fail the merge: send them to one recovery lane, add its
-    file to search_raw/, and re-merge. Resume any lane it flags as thin.
+ 2. python3 tools/merge_lanes.py --raw search_raw --out rows.json       (Phase 2c)
+    A lost, unconfirmed or rejected deferral/paper fails the merge and writes
+    no rows.json: fix the fields or send the papers to one recovery lane, add
+    its file to search_raw/, and re-merge. Resume a lane flagged thin.
 
- 3. python3 tools/verify.py --rows rows.json --out verify_report.json  (Phase 3)
-    Fix or drop each MISMATCH and NOT-FOUND, or clear a false alarm with
-    --override REF --reason "...". In parallel: tools/handcheck.py --prepare
-    for the DOI-less rows and the hand-check agent; run handcheck.py --ingest
-    only after verify finishes (both write rows.json; the second writer is
-    refused, not merged) (Phase 3e).
+ 3. python3 tools/verify.py --rows rows.json --out verify_report.json   (Phase 3)
+    Fix or drop each MISMATCH / NOT-FOUND / UNCHECKED; re-run ERRORs
+    (--retry-from verify_report.json --out verify_report.json); clear a false
+    alarm with --override REF --reason "...". Meanwhile: handcheck.py
+    --prepare and the hand-check agent for DOI-less rows; run
+    handcheck.py --ingest handcheck_result.json only after verify finishes
+    (Phase 3e).
 
- 4. Pitch the families to the user (Phase 6b step 2): propose ~3-8 families
-    (tools/families.py --digest) and let them use, change, or skip them.
+ 4. Pitch the families (Phase 6b steps 1-2): families.py --digest, propose,
+    and let the user use, change, or skip them. Steps 5-6 run meanwhile.
 
- 5. In parallel, once rows are verified: canon (tools/references.py — refuses
-    an unverified row; Phase 3f), citation counts (tools/citations.py; Phase
-    5b), cross-citation via Semantic Scholar (tools/xref.py; Phase 6), forward
-    citations of the landmarks (tools/forward.py; Phase 6), and abstracts
-    (tools/abstracts.py; Phase 5c).
+ 5. Once rows are verified, two tracks at once:
+    a. canon: references.py --rows rows.json --out rows.json      (Phase 3f)
+    b. one Semantic Scholar chain, in sequence (one S2 key):
+       citations.py (5b) -> xref.py --internal-out internal_citations.json
+       (6) -> abstracts.py (5c)
+    Then, after canon has finished (both write rows.json): attach the counts
+    (common.attach_counts; Phase 5b) and run forward.py (6).
 
- 6. tools/candidates.py --add for both the xref and forward results; decide
-    each pending one with a reason; --export-included the decided-in papers,
-    tools/merge_lanes.py --append them into rows.json, then verify, canon and
-    citation counts for the new rows (Phase 6).
+ 6. candidates.py --add both outputs; decide every pending one with a
+    reason; --export-included; merge_lanes.py --append; then verify --only,
+    references.py --only, citations + attach, abstracts, and a summary and
+    topic for each new row. Handle the partial-*-run warnings (Phase 6).
 
- 7. Sentence-case titles in a reviewed pass (tools/sentence_case.py --proper)
-    and any post-canon hand fixes (mojibake, compound surnames); acknowledge
-    every remaining audit warning in audit_acks.json (references.py
-    --list-acks) (Phase 3f).
+ 7. sentence_case.py (review with --vocab and a --proper file, then --apply),
+    then post-canon hand fixes (mojibake, compound surnames) (Phase 3f).
 
- 8. tools/summary_audit.py --prepare; dispatch checking agents with no web
-    access; --ingest. Fix any flagged summary and re-run --prepare (Phase 5c).
+ 8. summary_audit.py --prepare; one checking agent per batch, no web access;
+    --ingest. Fix each flagged summary and re-run --prepare (Phase 5c).
 
- 9. Assign families (tools/families.py --assign --out families.json) and
-    render the timeline (tools/families_figure.py) — only if not skipped at
-    step 4 (Phase 6b).
+ 9. Unless skipped at step 4: assign families (families.py --assign
+    families_input.json --out families.json) and render the timeline
+    (families_figure.py) (Phase 6b).
 
-10. python3 tools/spreadsheet.py --rows rows.json --out <topic>_bibliography.xlsx
-    It runs the full audit and writes the deliverable only if it passes;
-    --draft writes a marked draft instead (Phase 5).
+10. references.py --list-acks -> audit_acks.json for every remaining
+    warning; references.py --audit must exit 0 (Phase 3f).
+
+11. python3 tools/spreadsheet.py --rows rows.json --out <topic>_bibliography.xlsx
+    It runs the full audit and writes only a passing table; --draft writes a
+    marked <out>_DRAFT.xlsx, never the deliverable (Phase 5).
 ```
 
-Then Phase 7 (review article, OPTIONAL) and Phase 8 (report to the user). Phase 4
-(PDF download) is OPTIONAL — only run if the user explicitly asks. If you changed
-any tool/phase/command, update the matching docs/ page (see "Documentation site —
-keep it in sync" above). Extending or rerunning an EXISTING corpus is not a
-lighter pass — see "Upgrading an old corpus" above: the first verified row gates
-the whole table.
+Then Phase 7 (review, only if asked) and Phase 8 (hand-off). If you change any tool,
+phase or command, update the matching `docs/` page (see "Documentation site — keep it
+in sync").
 
-Plan on hours, not minutes. A 475-ref, 11-lane build took about
-4 hours on 2026-09-24: ~20 min of web search, ~85 min in the network tools (53 of
-them in canon's arXiv backoff), and the rest in reruns, hand steps and the families
-decision. The 2026-09-25 fixes (batched arXiv canon, in-run retries, no arXiv DOIs
-sent to CrossRef, pauses only after real requests) should cut the tool time to
-roughly 15-20 min; that has not yet been measured on a full build. With Phase 4
-turned on, add 10-20 more minutes for downloads.
+**Plan on hours.** Measured 2026-09-27 on a 1,158-row build with both keys set: the
+nine search lanes took ~1.5 h of agent web search; verify ~8 min, canon ~11 min,
+citation counts ~3 min, and xref 35+ min (Semantic Scholar rate limits). An earlier
+475-row build (2026-09-24) spent 53 min in canon's per-row arXiv backoff, since
+replaced by batched arXiv requests. Phase 4 downloads, if requested, add 10–20 min.
