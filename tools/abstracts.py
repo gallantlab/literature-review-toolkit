@@ -30,9 +30,26 @@ the gaps. A spent OpenAlex daily budget stops the run with OpenAlexBudgetError.
 One S2_API_KEY serves xref, citations and abstracts; their requests take turns
 through a pacer shared across processes, so they may run at the same time.
 
+A row with a summary that no source could fill goes to landing-page agents:
+
+  --prepare-missing DIR        writes those rows as DIR/need_NN.json (--per per
+                               file, default 20) and DIR/BRIEF.md, rendered from
+                               abstract_prompt_template.md.
+  --ingest-missing GLOB        records each result: a verbatim abstract becomes a
+                               "landing-page" entry; "none" becomes an empty entry
+                               plus the no-abstract acknowledgment in
+                               audit_acks.json, naming the pages checked. It
+                               refuses the whole batch on an entry whose doi/arxiv
+                               differ from the row's, a text not_an_abstract()
+                               rejects, or a "none" that names no page checked.
+
     python3 tools/abstracts.py --rows rows.json --email you@inst.edu
+    python3 tools/abstracts.py --rows rows.json --prepare-missing manual_check/abs
+    #   one agent per manual_check/abs/need_NN.json writes result_NN.json
+    python3 tools/abstracts.py --rows rows.json --ingest-missing 'manual_check/abs/result_*.json'
 """
 import argparse
+import glob
 import os
 import re
 import sys
@@ -283,13 +300,129 @@ def collect(rows, keyf, existing, fetchers, rejected=None):
     return ab, missing, failed, stale
 
 
+TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "abstract_prompt_template.md")
+
+
+def missing_rows(rows, keyf, ab):
+    """Rows with a summary and no abstract entry at all (an empty landing-page
+    entry already records "none")."""
+    return [r for r in rows if (r.get("summary") or "").strip() and r.get(keyf) not in ab]
+
+
+def prepare_missing(rows, keyf, ab, outdir, per=20, project=None):
+    """Write the rows no source filled as outdir/need_NN.json plus outdir/BRIEF.md."""
+    todo = missing_rows(rows, keyf, ab)
+    if not todo:
+        raise ValueError("no row is missing an abstract")
+    if glob.glob(os.path.join(outdir, "need_*.json")) + glob.glob(os.path.join(outdir, "result_*.json")):
+        raise ValueError(f"{outdir} already holds need or result files; ingest or move them first")
+    os.makedirs(outdir, exist_ok=True)
+    items = []
+    for r in todo:
+        d, a = common.ids_of(r)
+        p = common.parse_apa(r.get("apa") or "") or {}
+        items.append({"ref": r.get(keyf), "doi": d, "arxiv": a, "link": r.get("link") or "",
+                      "title": p.get("title") or r.get("search_title") or "", "year": p.get("year") or "",
+                      "first_author": r.get("search_author") or "", "reference": r.get("apa") or ""})
+    paths = []
+    for i in range(0, len(items), per):
+        path = os.path.join(outdir, f"need_{i // per + 1:02d}.json")
+        common.dump_json(items[i:i + per], path)
+        paths.append(path)
+    with open(TEMPLATE, encoding="utf-8") as fh:
+        text = fh.read().split("<!-- BRIEF STARTS -->", 1)[1].lstrip()
+    for k, v in {"INPUT_DIR": os.path.abspath(outdir),
+                 "PROJECT_DIR": os.path.abspath(project or os.path.dirname(os.path.abspath(outdir)))}.items():
+        text = text.replace("{" + k + "}", v)
+    with open(os.path.join(outdir, "BRIEF.md"), "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return paths
+
+
+def ingest_missing(rows, keyf, ab, acks, results):
+    """Apply landing-page results to `ab` (abstracts) and `acks` (audit_acks) in
+    place. Checks everything first and raises ValueError listing each problem,
+    so a bad batch changes nothing. Returns (found, none)."""
+    by = {r.get(keyf): r for r in rows}
+    problems, todo = [], []
+    for path, res in results:
+        if not isinstance(res, dict):
+            problems.append(f"{path}: not a JSON object keyed by ref")
+            continue
+        for ref, e in res.items():
+            where = f"{os.path.basename(path)} {ref}"
+            if ref not in by:
+                problems.append(f"{where}: not in the table")
+                continue
+            if not isinstance(e, dict):
+                problems.append(f"{where}: not an object")
+                continue
+            if e.get("none"):
+                if not e.get("checked"):
+                    problems.append(f"{where}: 'none' must list the pages checked")
+            else:
+                d, a = common.ids_of(by[ref])
+                if (e.get("doi") or "").lower() != (d or "").lower() or (e.get("arxiv") or "") != (a or ""):
+                    problems.append(f"{where}: doi/arxiv differ from the row's ({d or '-'}/{a or '-'})")
+                why = not_an_abstract(e.get("text") or "")
+                if not (e.get("text") or "").strip() or why:
+                    problems.append(f"{where}: not an abstract ({why or 'empty text'})")
+            todo.append((ref, e))
+    if problems:
+        raise ValueError("refusing the whole batch:\n  " + "\n  ".join(problems))
+    found = none = 0
+    for ref, e in todo:
+        d, a = common.ids_of(by[ref])
+        if e.get("none"):
+            ab[ref] = {"text": "", "source": "landing-page", "url": "", "doi": d, "arxiv": a}
+            acks.setdefault(ref, {})["no-abstract"] = (
+                "no abstract exists in any source; checked: " + ", ".join(e["checked"]))
+            none += 1
+        else:
+            ab[ref] = {"text": e["text"].strip(), "source": "landing-page", "url": e.get("url") or "",
+                       "doi": d, "arxiv": a}
+            found += 1
+    return found, none
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rows", required=True)
     ap.add_argument("--out", help="default: abstracts.json beside --rows")
     ap.add_argument("--key", default=None, help="row key field (default: ref, else label)")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"))
+    ap.add_argument("--prepare-missing", metavar="DIR",
+                    help="write the rows no source filled, and BRIEF.md, for landing-page agents")
+    ap.add_argument("--per", type=int, default=20, help="with --prepare-missing: rows per file")
+    ap.add_argument("--ingest-missing", metavar="GLOB", help="record the landing-page agents' results")
+    ap.add_argument("--acks", help="with --ingest-missing: audit_acks.json (default: beside --rows)")
     args = ap.parse_args()
+    if args.prepare_missing or args.ingest_missing:
+        rows = common.load_json(args.rows)
+        keyf = common.key_field(rows, args.key)
+        here = os.path.dirname(os.path.abspath(args.rows))
+        out = args.out or os.path.join(here, "abstracts.json")
+        ab = common.load_optional_json(out, {})
+        try:
+            if args.prepare_missing:
+                paths = prepare_missing(rows, keyf, ab, args.prepare_missing, args.per, project=here)
+                print(f"{len(missing_rows(rows, keyf, ab))} row(s) -> {len(paths)} file(s) + BRIEF.md in "
+                      f"{args.prepare_missing}; then --ingest-missing "
+                      f"'{os.path.join(args.prepare_missing, 'result_*.json')}'")
+                return
+            files = sorted(glob.glob(args.ingest_missing))
+            if not files:
+                ap.error(f"--ingest-missing {args.ingest_missing}: no files match")
+            acks_path = args.acks or os.path.join(here, "audit_acks.json")
+            acks = common.load_optional_json(acks_path, {})
+            found, none = ingest_missing(rows, keyf, ab, acks, [(f, common.load_json(f)) for f in files])
+        except ValueError as e:
+            sys.exit(f"✗ {e}")
+        common.dump_json(ab, out)
+        common.dump_json(acks, acks_path)
+        print(f"recorded {found} landing-page abstract(s) and {none} with none -> {out}; "
+              f"no-abstract acknowledged in {acks_path}. Next: summary_audit.py --prepare")
+        return
     if not args.email:
         ap.error("--email or LITREVIEW_EMAIL required (arXiv/OpenAlex polite pool)")
     common.set_user_agent(args.email)

@@ -5700,6 +5700,30 @@ _mvab, _, _, _mvst = abstracts.collect(
 check("abstracts: a moved row's preprint abstract is refetched for the published DOI",
       (_mvst, _mvab["S-125"]["source"]), ([], "openalex"))
 
+
+# abstracts --prepare-missing / --ingest-missing frame the landing-page step.
+_mr = [{"ref": "C-09", "doi": "10.1006/nimg", "summary": "S.", "apa": "Jenkinson, M. (2002). FLIRT. NeuroImage, 1, 1."},
+       {"ref": "C-248", "doi": "10.1523/x", "summary": "S.", "apa": "Logothetis, N. (2003). BOLD. J, 1, 1."},
+       {"ref": "C-01", "doi": "10.1/y", "summary": "S."}]
+_md = tempfile.mkdtemp()
+_mp = abstracts.prepare_missing(_mr, "ref", {"C-01": {"text": "Has one."}}, os.path.join(_md, "abs"), project=_md)
+check("abstracts --prepare-missing: only rows with no entry", [e["ref"] for e in common.load_json(_mp[0])],
+      ["C-09", "C-248"])
+_mab, _mack = {}, {}
+try:
+    abstracts.ingest_missing(_mr, "ref", _mab, _mack, [("r.json", {"C-09": {"text": "We improved registration.",
+                                                                          "doi": "10.9/other", "arxiv": ""}})])
+    _msg = ""
+except ValueError as _e:
+    _msg = str(_e)
+check_true("abstracts --ingest-missing: an entry for other ids refuses the batch", "differ" in _msg and not _mab)
+check("abstracts --ingest-missing: found and none recorded, none acknowledged",
+      (abstracts.ingest_missing(_mr, "ref", _mab, _mack, [("r.json", {
+          "C-09": {"text": "We improved the optimization of linear registration of brain images.",
+                   "doi": "10.1006/nimg", "arxiv": ""},
+          "C-248": {"none": True, "checked": ["https://doi.org/10.1523/x"]}})]),
+       _mab["C-248"]["text"], "doi.org" in _mack["C-248"]["no-abstract"]), ((1, 1), "", True))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

@@ -770,10 +770,11 @@ records the `doi` and `arxiv` it was fetched for, so when a row's ids change its
 entry is fetched again. A fetch that could not complete goes to
 `abstracts_failed.json` and makes the run exit 1: that is not "no abstract", so
 re-run it. A source text that is boilerplate, a citation line or an author list
-is refused (`abstracts.not_an_abstract`) and the next source is tried. For a paper
-no source has, add a hand entry from the landing page: `{"text": "...", "source":
-"landing-page", "url": "...", "doi": "<row's doi>", "arxiv": "<row's arxiv>"}` (an
-empty `text` records that none exists). A landing-page entry is never overwritten;
+is refused (`abstracts.not_an_abstract`) and the next source is tried. For the papers
+no source has, `abstracts.py --prepare-missing manual_check/abs` writes batches and a
+brief for landing-page agents, and `--ingest-missing 'manual_check/abs/result_*.json'`
+records their answers: a verbatim abstract, or "none" with the pages checked (an empty
+entry plus the `no-abstract` acknowledgment). A landing-page entry is never overwritten;
 if its ids stop matching the row it is reported as stale.
 
 **`summary_audit.py --prepare`** writes the rows needing a check into batches of 40
@@ -1564,7 +1565,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `reconcile_downloads.py` | 4 (opt-in) | Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
 | `spreadsheet.py` | 5 | Build the bibliography .xlsx from rows.json, and refuse a table that fails the audit. | `--acks` `--candidates` `--draft` `--key` `--out` `--rows` `--sheet-name` |
 | `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--attach` `--attach-only` `--email` `--key` `--out` `--rows` `--sources` |
-| `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--email` `--key` `--out` `--rows` |
+| `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--acks` `--email` `--ingest-missing` `--key` `--out` `--per` `--prepare-missing` `--rows` |
 | `summary_audit.py` | 5c | Summary check: agents with no web access confirm each row's summary against its abstract. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
 | `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--email` `--export-included` `--ingest` `--lane` `--ledger` `--list` `--no-fetch` `--per` `--prepare` `--reason` `--rows` `--scope` `--source` |
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |

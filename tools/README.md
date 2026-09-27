@@ -42,7 +42,7 @@ and CI fails if any copy is stale.
 | `reconcile_downloads.py` | 4 (opt-in) | Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
 | `spreadsheet.py` | 5 | Build the bibliography .xlsx from rows.json, and refuse a table that fails the audit. | `--acks` `--candidates` `--draft` `--key` `--out` `--rows` `--sheet-name` |
 | `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--attach` `--attach-only` `--email` `--key` `--out` `--rows` `--sources` |
-| `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--email` `--key` `--out` `--rows` |
+| `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--acks` `--email` `--ingest-missing` `--key` `--out` `--per` `--prepare-missing` `--rows` |
 | `summary_audit.py` | 5c | Summary check: agents with no web access confirm each row's summary against its abstract. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
 | `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--email` `--export-included` `--ingest` `--lane` `--ledger` `--list` `--no-fetch` `--per` `--prepare` `--reason` `--rows` `--scope` `--source` |
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
@@ -809,7 +809,23 @@ the gaps. A spent OpenAlex daily budget stops the run with OpenAlexBudgetError.
 One S2_API_KEY serves xref, citations and abstracts; their requests take turns
 through a pacer shared across processes, so they may run at the same time.
 
+A row with a summary that no source could fill goes to landing-page agents:
+
+  --prepare-missing DIR        writes those rows as DIR/need_NN.json (--per per
+                               file, default 20) and DIR/BRIEF.md, rendered from
+                               abstract_prompt_template.md.
+  --ingest-missing GLOB        records each result: a verbatim abstract becomes a
+                               "landing-page" entry; "none" becomes an empty entry
+                               plus the no-abstract acknowledgment in
+                               audit_acks.json, naming the pages checked. It
+                               refuses the whole batch on an entry whose doi/arxiv
+                               differ from the row's, a text not_an_abstract()
+                               rejects, or a "none" that names no page checked.
+
     python3 tools/abstracts.py --rows rows.json --email you@inst.edu
+    python3 tools/abstracts.py --rows rows.json --prepare-missing manual_check/abs
+    #   one agent per manual_check/abs/need_NN.json writes result_NN.json
+    python3 tools/abstracts.py --rows rows.json --ingest-missing 'manual_check/abs/result_*.json'
 ```
 
 ### Phase 5c: `summary_audit.py`
@@ -1409,6 +1425,8 @@ Run its tests before changing any of them.
 - **`search_prompt_template.md`**: the brief for a Phase 2 search agent, rendered
   by `lane_briefs.py` (never filled by hand). It defines the schema-2 lane file
   that `merge_lanes.py` reads.
+- **`abstract_prompt_template.md`**: the brief for the agents that collect missing
+  abstracts from landing pages, rendered by `abstracts.py --prepare-missing`.
 - **`candidate_prompt_template.md`**: the brief for the agents that decide the
   candidate ledger, rendered by `candidates.py --prepare` (never filled by hand).
 - **`family_assign_template.md`**: the brief for the family assignment agents,
