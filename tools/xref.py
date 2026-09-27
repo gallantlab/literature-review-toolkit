@@ -26,7 +26,9 @@ neither a DOI nor a pdf is skipped. --internal-out also writes {slug:
 internal_indegree}, how many OTHER corpus papers cite each corpus paper, which
 families_figure.py and forward.py use to pick landmarks.
 
-Semantic Scholar needs S2_API_KEY to be reliable. xref, citations and abstracts
+Every completed reference list is cached in <out>.refs.json (--cache), so a
+re-run after a throttled or interrupted pass fetches only what is missing
+(--no-cache refetches everything). Semantic Scholar needs S2_API_KEY to be reliable. xref, citations and abstracts
 share one key and take turns on it through a pacer shared across processes. Its reference lists are
 fetched in chunks of 10, and a failed chunk gets one more try in half-size
 chunks. A CrossRef fetch that fails transiently gets a second try at the end of
@@ -259,6 +261,21 @@ def fetch_all(papers, sleep=0.4, retry_wait=60.0):
     return all_refs, [p["slug"] for p in incomplete]
 
 
+def split_cached(papers, cache):
+    """(papers still to fetch, {slug: refs} served from the cache). A cached entry
+    counts only for the same slug AND the same DOI (or PDF), so an edited DOI is
+    fetched again; a fetch that did not complete is never cached."""
+    todo, refs = [], {}
+    for p in papers:
+        c = cache.get(p["slug"])
+        if (isinstance(c, dict) and c.get("doi", "") == (p.get("doi") or "").lower()
+                and c.get("pdf", "") == (p.get("pdf") or "")):
+            refs[p["slug"]] = c.get("refs") or []
+        else:
+            todo.append(p)
+    return todo, refs
+
+
 def resolve_doi(doi):
     """Get title/first_author/year/journal for a DOI via CrossRef (best-effort:
     None on any failure — this only decorates the ranked list)."""
@@ -287,6 +304,9 @@ def main():
                     help="pause after each paper that made a request (default 0.4 s)")
     ap.add_argument("--retry-wait", type=float, default=60.0,
                     help="cool-down before incomplete fetches get their second try (default 60 s)")
+    ap.add_argument("--cache", help="reference-list cache (default: <out>.refs.json); a re-run fetches "
+                    "only the papers missing from it, so recovering throttled fetches is cheap")
+    ap.add_argument("--no-cache", action="store_true", help="refetch every reference list")
     ap.add_argument("--allow-incomplete", action="store_true",
                     help="exit 0 even when some reference lists could not be fetched (said in the output)")
     ap.add_argument("--email", default=os.environ.get("LITREVIEW_EMAIL"),
@@ -308,8 +328,18 @@ def main():
         papers = common.load_json(args.papers)
     excludes = set(d.lower() for d in (common.load_json(args.exclude) if args.exclude else []))
 
-    print(f"Fetching reference lists for {len(papers)} papers...", file=sys.stderr)
-    all_refs, incomplete = fetch_all(papers, sleep=args.sleep, retry_wait=args.retry_wait)
+    cache_path = args.cache or f"{args.out}.refs.json"
+    cache = {} if args.no_cache else common.load_optional_json(cache_path, {})
+    todo, all_refs = split_cached(papers, cache)
+    print(f"Fetching reference lists for {len(todo)} papers ({len(papers) - len(todo)} from the cache "
+          f"{os.path.basename(cache_path)})...", file=sys.stderr)
+    fetched, incomplete = fetch_all(todo, sleep=args.sleep, retry_wait=args.retry_wait)
+    all_refs.update(fetched)
+    for p in todo:
+        if p["slug"] not in incomplete:
+            cache[p["slug"]] = {"doi": (p.get("doi") or "").lower(), "pdf": p.get("pdf") or "",
+                                "refs": fetched.get(p["slug"], [])}
+    common.dump_json(cache, cache_path, indent=1)
 
     # Build frequency table
     counts = defaultdict(list)   # doi -> list of citing slugs

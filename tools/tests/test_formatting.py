@@ -2524,6 +2524,15 @@ for _needle in ('"schema": 2', '"deferred"', '"could_not_confirm"', '"lane_fit"'
 check_true("search template no longer abbreviates author lists", "et al." not in _TPL)
 check_true("search template no longer caps DOI-less items", "at most 4" not in _TPL)
 
+# ---- xref.py: a reference-list cache makes recovering throttled fetches cheap ----
+import xref  # noqa: E402
+
+_xt, _xr = xref.split_cached([{"slug": "A", "doi": "10.1/A"}, {"slug": "B", "doi": "10.1/b"}, {"slug": "C", "doi": "10.1/c"}],
+                             {"A": {"doi": "10.1/a", "pdf": "", "refs": [{"doi": "10.9/x"}]},
+                              "B": {"doi": "10.1/old", "pdf": "", "refs": []}})
+check("xref cache: a cached paper (DOI in any case) is not refetched; an edited DOI or a new paper is",
+      ([p["slug"] for p in _xt], _xr), (["B", "C"], {"A": [{"doi": "10.9/x"}]}))
+
 # ---- recall.py: a rerun measured against the old build (2026-09-27) --------
 import recall  # noqa: E402
 
