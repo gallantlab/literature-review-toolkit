@@ -164,10 +164,20 @@ def crossref_apa(r):
 
 
 def crossref(doi, fallback_venue=""):
+    """{apa, venue, source} from CrossRef, or None with no usable authors. A
+    preprint whose server records a published version also gets the warning
+    `published-version`: the row should cite that DOI (move it, then verify and
+    canon it again)."""
     r = common.crossref_work(doi, fallback_venue)
     if not r or not r["people"]:
         return None
-    return {"apa": crossref_apa(r), "venue": r["book"] or r["journal"], "source": "crossref"}
+    out = {"apa": crossref_apa(r), "venue": r["book"] or r["journal"], "source": "crossref"}
+    if r.get("published_as"):
+        out["warn"] = ["published-version"]
+        out["warn_text"] = {"published-version": (
+            f"a preprint published as {r['published_as']}: set the row's doi to it, then run "
+            "verify.py and references.py with --only on the row")}
+    return out
 
 
 def datacite(doi, fallback_venue=""):

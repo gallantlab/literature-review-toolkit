@@ -800,8 +800,9 @@ A creator that cannot be split safely ("The pandas development team", "Collins
 AGE", "Hao CHEN") is kept whole and flagged `datacite-unsplit-author:<name>`. A
 DataCite record that is neither software nor a data set is flagged
 `datacite-deposit`. It is a repository copy, so cite the version of record's DOI
-if one exists. Canon stores both flags on the row as `canon_warnings`, and the
-audit makes you acknowledge each ([§5.8](#58-acknowledge-what-needs-a-human-verdict)).
+if one exists. A CrossRef preprint whose server records its published version
+is flagged `published-version`: move the row to that DOI. Canon stores these
+flags on the row as `canon_warnings`, and the audit makes you acknowledge each ([§5.8](#58-acknowledge-what-needs-a-human-verdict)).
 
 **The audit.** `references.py --audit` is a hard gate: it exits 1 on any defect.
 It also warns about near-duplicate rows, and about multi-word surnames that may be
@@ -1153,7 +1154,7 @@ reported but not failed; delete it.
 | `no-abstract` | the summary has no abstract to be checked against |
 | `kept-existing-apa:<hash>` | a verified row that canon could not rebuild; keyed to its `apa`, so editing the `apa` lapses the acknowledgment |
 | `identity-not-reestablished` | a canonical row verified only against its own `apa` ([§8.1](#81-upgrading-an-old-corpus)) |
-| `datacite-unsplit-author:<name>`, `datacite-deposit` | canon's flags on a DataCite record ([§5.3](#53-phase-3f-canonicalize-every-reference)) |
+| `datacite-unsplit-author:<name>`, `datacite-deposit`, `published-version` | canon's flags on a registry record ([§5.3](#53-phase-3f-canonicalize-every-reference)) |
 | `no-candidate-ledger` (under `*`) | there is no `candidates.json` |
 | `no-xref-run`, `no-forward-run` (under `*`) | the ledger records no run of that direction |
 | `incomplete-xref-run`, `incomplete-forward-run` (under `*`) | the last recorded run of that direction did not finish |

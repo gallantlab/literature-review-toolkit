@@ -5619,6 +5619,27 @@ check("candidates enrich: record and abstract attached; a DOI in neither registr
       (_n, _pend[0]["record"]["title"], _pend[0]["abstract"], _pend[1]["record"]),
       ((1, 1), "A recorded paper", "We did x.", None))
 
+
+# A preprint whose server deposits its published version: canon warns, ingest keeps one copy.
+_pmsg = {"author": [{"family": "Qian", "given": "X"}], "title": ["Local lateral connectivity"],
+         "issued": {"date-parts": [[2024]]}, "type": "posted-content", "institution": [{"name": "bioRxiv"}],
+         "relation": {"is-preprint-of": [{"id-type": "doi", "id": "10.1038/S41467-026-70065-3"}]}}
+check("crossref_record: published_as from is-preprint-of", common.crossref_record(_pmsg)["published_as"],
+      "10.1038/s41467-026-70065-3")
+with _patched(common, crossref_work=lambda d, fallback_venue="": common.crossref_record(_pmsg)):
+    _pr = references.crossref("10.1101/2024.08.06.606687")
+check("canon: a published preprint carries the published-version warning", _pr.get("warn"), ["published-version"])
+_pdl = {"10.31234/osf.io/5zf4s": {"decision": "pending", "sources": {}},
+       "10.1017/s0140525x22002813": {"decision": "pending", "sources": {}}}
+_de = dict(reason="fits V", first_author="Bowers, J.", lane="V", summary="S.", arxiv="")
+candidates.ingest(_pdl, [("r.json", [dict(_de, doi="10.31234/osf.io/5zf4s", decision="include", year=2022,
+                                         title="Deep problems with neural network models of human vision"),
+                                    dict(_de, doi="10.1017/s0140525x22002813", decision="include", year=2023,
+                                         title="Deep problems with neural network models of human vision")])],
+                  "2026-09-27", {"V"})
+check("candidates --ingest: of two same-title includes the preprint is excluded",
+      (_pdl["10.31234/osf.io/5zf4s"]["decision"], _pdl["10.1017/s0140525x22002813"]["decision"]), ("exclude", "include"))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

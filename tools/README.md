@@ -884,7 +884,8 @@ Deciding the rest is agent work, and the tool frames it:
                                batch if any entry lacks a reason, names a DOI not in
                                the ledger, or includes a paper without the claim
                                read off its landing page (first_author, year,
-                               title, lane, summary).
+                               title, lane, summary). Of two includes with one
+                               title, the preprint is excluded.
 
 The audit fails while any candidate is pending, or while an included candidate is
 not in the table. A missing ledger, or a missing, incomplete or partial xref or

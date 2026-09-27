@@ -613,6 +613,7 @@ acknowledgment (its warning no longer fires) is reported, not failed: delete it.
 | `glued-footnote:<word>` | a footnote digit stuck to the last title word (`psychological science1`) | check the source |
 | `datacite-unsplit-author:<name>` | a DataCite creator with no given name that could not be split safely (`The pandas development team`, `Hao CHEN`) | a group (acknowledge), or a person (fix the `apa`) |
 | `datacite-deposit` | a DataCite record that is not software or a data set (or whose publisher is "Unpublished"): a repository copy of a paper | cite the version of record's DOI if one exists |
+| `published-version` | a preprint whose server records its published version (CrossRef `is-preprint-of`) | set the row's `doi` to the published one, then verify and canon it with `--only` |
 | `kept-existing-apa:<hash>` | verified, but canon could not rebuild it; keyed to the `apa`, so an edit lapses it | confirm the `apa` by hand |
 | `identity-not-reestablished` | a canonical row verified only against its own `apa` (Phase 3d) | confirm the DOI is the intended paper |
 | `no-abstract` | a summary with no abstract to check it against (Phase 5c) | acknowledge, or add a landing-page abstract |

@@ -32,7 +32,8 @@ Deciding the rest is agent work, and the tool frames it:
                                batch if any entry lacks a reason, names a DOI not in
                                the ledger, or includes a paper without the claim
                                read off its landing page (first_author, year,
-                               title, lane, summary).
+                               title, lane, summary). Of two includes with one
+                               title, the preprint is excluded.
 
 The audit fails while any candidate is pending, or while an included candidate is
 not in the table. A missing ledger, or a missing, incomplete or partial xref or
@@ -336,6 +337,19 @@ def ingest(ledger, results, asof, lanes=None):
                 elif lanes and e["lane"] not in lanes:
                     problems.append(f"{where}: lane {e['lane']!r} is not a lane of this bibliography")
             todo.append((d, e))
+    # Two includes with one title are one paper twice: keep the version of record.
+    inc = [(d, e) for d, e in todo if e.get("decision") == "include"]
+    for i, (d1, e1) in enumerate(inc):
+        for d2, e2 in inc[i + 1:]:
+            if not same_paper(e1["title"], e1["year"], [(d2, e2["title"], _year(e2["year"]))]):
+                continue
+            pre = [d for d in (d1, d2) if PREPRINT_DOI.match(d)]
+            if len(pre) != 1:
+                problems.append(f"{d1} and {d2}: both included, same paper; exclude one")
+                continue
+            keep = d2 if pre[0] == d1 else d1
+            loser = e1 if pre[0] == d1 else e2
+            loser.update(decision="exclude", reason=f"the preprint of {keep}, which is included")
     if problems:
         raise ValueError("refusing the whole batch:\n  " + "\n  ".join(problems))
     n_in = n_out = 0

@@ -1073,7 +1073,8 @@ def crossref_record(msg, fallback_venue=""):
     """Normalize a CrossRef `message` dict.
 
     -> {title, year (str), authors [(family, given)], people [APA-formatted],
-        first_author ('Family I'), journal, volume, issue, pages, book, publisher}.
+        first_author ('Family I'), journal, volume, issue, pages, book, publisher,
+        published_as (the DOI a preprint was published under, else "")}.
     `book` is set only for a book chapter (see build_chapter_apa). `journal`
     falls back to the preprint server (institution / group-title) and then to
     the caller's venue, cleaned — CrossRef leaves posted-content bare. An
@@ -1123,7 +1124,11 @@ def crossref_record(msg, fallback_venue=""):
             # is not trusted: verify asks a human rather than parse it
             "first_author_unsplit": bool(authors) and (not giv.strip() or not first_has_family),
             "volume": msg.get("volume"), "issue": msg.get("issue"), "pages": msg.get("page"),
-            "book": book, "publisher": msg.get("publisher") or ""}
+            "book": book, "publisher": msg.get("publisher") or "",
+            # a preprint's published version, as the preprint server deposits it
+            "published_as": next((str(x.get("id") or "").lower() for x in
+                                  (msg.get("relation") or {}).get("is-preprint-of") or []
+                                  if x.get("id-type") == "doi" and x.get("id")), "")}
 
 
 # ---- record cache: verify and canon read the same registry records ----------
