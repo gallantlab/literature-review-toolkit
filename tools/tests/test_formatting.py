@@ -5689,6 +5689,17 @@ check("families --prepare: batch rows carry title, year and lane hint",
 check_true("families --prepare: brief lists the families, nothing unfilled",
            "`V` **Vision**" in _fb and not re.search(r"\{[A-Z_]+\}", _fb))
 
+
+# abstracts: a landing-page abstract recorded for a moved row's preprint is refetched, not stale.
+_mv = [{"ref": "S-125", "doi": "10.1523/pub", "preprint_doi": "10.1101/pre", "summary": "x"}]
+_mvab, _, _, _mvst = abstracts.collect(
+    _mv, "ref", {"S-125": {"text": "Old preprint abstract here.", "source": "landing-page", "doi": "10.1101/pre",
+                           "arxiv": ""}},
+    {"arxiv": lambda i: ({}, set()), "openalex": lambda i: ({"10.1523/pub": "The published abstract text."}, set()),
+     "s2": lambda i: ({}, set()), "pubmed": lambda i: ({}, set())})
+check("abstracts: a moved row's preprint abstract is refetched for the published DOI",
+      (_mvst, _mvab["S-125"]["source"]), ([], "openalex"))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")

@@ -223,7 +223,8 @@ def collect(rows, keyf, existing, fetchers, rejected=None):
     filled — reported separately because a failed fetch is not "no abstract"
     and must not be silently folded into `missing`. `stale` is every ref whose
     hand-added (landing-page) entry records other ids than the row now has: it
-    is kept as it is, but it is not this paper's abstract any more.
+    is kept as it is, but it is not this paper's abstract any more; one recorded for
+    the row's preprint_doi (the row moved to its published version) is refetched.
     `rejected`, if given, is filled with {ref: [why]} for every text a source
     returned that not_an_abstract() refused and no later source replaced.
     """
@@ -231,7 +232,8 @@ def collect(rows, keyf, existing, fetchers, rejected=None):
     for r in rows:
         k, e = r.get(keyf), ab.get(r.get(keyf))
         if isinstance(e, dict) and common.stamp_ids(e) != common.ids_of(r):
-            if e.get("source") == "landing-page":
+            moved = r.get("preprint_doi") and (e.get("doi") or "").lower() == r["preprint_doi"].lower()
+            if e.get("source") == "landing-page" and not moved:
                 stale.append(k)
             else:
                 del ab[k]            # fetched for other ids: fetch it again for these
