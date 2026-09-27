@@ -938,7 +938,10 @@ pitch came last, and 56 minutes passed between the pitch and the finished figure
    approve), or **skip the timeline** (then no `Family` column and no figure; say so
    at hand-off). Iterating on six definitions is cheap; redoing an assignment is not.
 3. **Assign** every paper to one family (its dominant commitment) against the frozen
-   spec, in batches for a large corpus, never one rushed 250-paper pass. Write
+   spec, in batches for a large corpus, never one rushed 250-paper pass.
+   `families.py --assign spec.json --prepare families_batches` writes the rows no
+   assignment covers yet as batches, with the agents' brief
+   (`family_assign_template.md`); add `--default-from-lanes` in lab mode. Write
    `families_input.json` (`{principle, families, assignments: {ref: key},
    hard_calls}`; the template's Step 2 asks the agents for `hard_calls`, the papers
    that fit the spec badly). `families.py` prints every hard call and warns when the
@@ -1566,7 +1569,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--email` `--export-included` `--ingest` `--lane` `--ledger` `--list` `--no-fetch` `--per` `--prepare` `--reason` `--rows` `--scope` `--source` |
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
 | `xref.py` | 6 | Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite. | `--allow-incomplete` `--cache` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--no-cache` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
-| `families.py` | 6b | Validate a family taxonomy, stamp `family` onto rows.json, and write families.json and families.md. | `--asof` `--assign` `--default-from-lanes` `--digest` `--md` `--out` `--results` `--rows` |
+| `families.py` | 6b | Validate a family taxonomy, stamp `family` onto rows.json, and write families.json and families.md. | `--asof` `--assign` `--default-from-lanes` `--digest` `--md` `--out` `--per` `--prepare` `--results` `--rows` |
 | `families_figure.py` | 6b | Render the interactive lineage timeline of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |
 | `bib_viewer.py` | 7 | Render a searchable bibliography of the whole corpus, for a page that has no timeline. | `--author` `--author-note` `--families` `--out` `--rows` `--subtitle` `--title` |
 | `cite_check.py` | 7 | Gate: every in-text citation in a review must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |

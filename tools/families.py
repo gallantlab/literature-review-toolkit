@@ -41,6 +41,11 @@ spec's assignments. Each file is {ref: key}, or {"assignments": {...},
 row that no result covered to its `lane_fit` when that is a family key, else to
 its lane key when that is one.
 
+--prepare DIR writes every row that no assignment, result or lane default covers
+as DIR/batch_NN.json (--per rows each, default 110), and DIR/BRIEF.md for the
+assignment agents, rendered from family_assign_template.md and the spec. Each
+agent writes DIR/result_NN.json; merge them with --results.
+
 A family whose `lineage` is empty gets one mechanically: its six rows with the
 most within-corpus citations (internal_citations.json beside --rows, with the
 OpenAlex count breaking ties), oldest first, marked `lineage_source`.
@@ -48,6 +53,8 @@ OpenAlex count breaking ties), oldest first, marked `lineage_source`.
   python3 tools/families.py --rows rows.json --digest     # compact corpus for the proposal
   python3 tools/families.py --rows rows.json --assign families_input.json \\
           --out families.json
+  python3 tools/families.py --rows rows.json --assign spec.json --default-from-lanes \\
+          --prepare batches                             # batches + brief for the agents
   python3 tools/families.py --rows rows.json --assign spec.json --results 'batches/result_*.json' \\
           --default-from-lanes --out families.json      # merge agent results; lab mode
 """
@@ -88,6 +95,42 @@ def topic_codes(topics):
     return codes
 
 
+ASSIGN_TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "family_assign_template.md")
+
+
+def prepare(todo, spec, outdir, per=110, project=None):
+    """Write `todo` rows as outdir/batch_NN.json and outdir/BRIEF.md (from
+    ASSIGN_TEMPLATE and the approved spec). Refuses a folder that already holds
+    batch or result files. Returns the batch paths."""
+    if glob.glob(os.path.join(outdir, "batch_*.json")) + glob.glob(os.path.join(outdir, "result_*.json")):
+        sys.exit(f"ERROR: {outdir} already holds batch or result files; merge or move them first")
+    os.makedirs(outdir, exist_ok=True)
+    items = [{"ref": r["ref"], "year": lead_year(r.get("apa") or "")[1],
+              "title": ((common.parse_apa(r.get("apa") or "") or {}).get("title")
+                        or r.get("search_title") or ""),
+              "summary": r.get("summary") or "", "lane_hint": (r.get("lane_fit") or r["ref"].split("-")[0])}
+             for r in todo]
+    paths = []
+    for i in range(0, len(items), per):
+        p = os.path.join(outdir, f"batch_{i // per + 1:02d}.json")
+        common.dump_json(items[i:i + per], p)
+        paths.append(p)
+    fams = "\n".join(f"- `{f['key']}` **{f['name']}**: {f.get('claim', '')}"
+                     for f in spec.get("families", []))
+    with open(ASSIGN_TEMPLATE, encoding="utf-8") as fh:
+        text = fh.read().split("<!-- BRIEF STARTS -->", 1)[1].lstrip()
+    for k, v in {"PRINCIPLE": spec.get("principle", ""), "FAMILIES": fams,
+                 "INPUT_DIR": os.path.abspath(outdir),
+                 "PROJECT_DIR": os.path.abspath(project or os.path.dirname(os.path.abspath(outdir)))}.items():
+        text = text.replace("{" + k + "}", v)
+    left = re.findall(r"\{[A-Z_]+\}", text)
+    if left:
+        sys.exit(f"ERROR: template placeholders left unfilled: {sorted(set(left))}")
+    with open(os.path.join(outdir, "BRIEF.md"), "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return paths
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -102,6 +145,10 @@ def main():
     ap.add_argument("--default-from-lanes", action="store_true",
                     help="lab mode, where the lanes ARE the themes: a row no result assigned takes "
                          "its lane_fit when that is a family key, else its lane key")
+    ap.add_argument("--prepare", metavar="DIR",
+                    help="write every row no assignment covers yet as DIR/batch_NN.json, plus "
+                         "DIR/BRIEF.md for the assignment agents, and stop")
+    ap.add_argument("--per", type=int, default=110, help="with --prepare: rows per batch")
     ap.add_argument("--digest", action="store_true",
                     help="instead of validating, print a compact corpus digest "
                          "(ref / topic / cite / lead-year / summary) for the proposal step")
@@ -149,6 +196,15 @@ def main():
                 assign[r["ref"]] = fit if fit in fkeys else lane
             elif fit in fkeys:
                 assign[r["ref"]] = fit
+    if args.prepare:
+        todo = [r for r in rows if r["ref"] not in assign]
+        if not todo:
+            sys.exit("nothing to prepare: every row already has a family")
+        paths = prepare(todo, spec, args.prepare, args.per,
+                        project=os.path.dirname(os.path.abspath(args.rows)))
+        print(f"{len(todo)} unassigned row(s) -> {len(paths)} batch file(s) + BRIEF.md in {args.prepare}; "
+              f"one agent per batch, then --results '{os.path.join(args.prepare, 'result_*.json')}'")
+        return
     if hard_from_results:
         spec["hard_calls"] = list(spec.get("hard_calls") or []) + hard_from_results
     # The assignment agents are told not to argue with the spec, so their hard calls

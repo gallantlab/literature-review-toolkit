@@ -5675,6 +5675,20 @@ check("clean_publisher: a glued city is dropped, a plain name kept",
       (common.clean_publisher("Oxford University PressOxford"), common.clean_publisher("MIT Press")),
       ("Oxford University Press", "MIT Press"))
 
+
+# families --prepare writes the unassigned rows and a filled brief.
+_fpd = tempfile.mkdtemp()
+_fpaths = families.prepare([{"ref": "C-01", "apa": "Doe, J. (1990). A classic. J, 1, 1.", "summary": "S.",
+                             "lane_fit": "X"}],
+                           {"principle": "by theme", "families": [{"key": "V", "name": "Vision", "claim": "c"}]},
+                           os.path.join(_fpd, "fam"), project=_fpd)
+_fb = open(os.path.join(_fpd, "fam", "BRIEF.md")).read()
+check("families --prepare: batch rows carry title, year and lane hint",
+      {k: common.load_json(_fpaths[0])[0][k] for k in ("ref", "title", "lane_hint")},
+      {"ref": "C-01", "title": "A classic", "lane_hint": "X"})
+check_true("families --prepare: brief lists the families, nothing unfilled",
+           "`V` **Vision**" in _fb and not re.search(r"\{[A-Z_]+\}", _fb))
+
 # ---- report ---------------------------------------------------------------
 if FAILURES:
     print(f"FAILED {len(FAILURES)} check(s):\n")
