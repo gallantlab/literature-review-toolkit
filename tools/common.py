@@ -411,6 +411,49 @@ def load_optional_json(path, default):
     return load_json(path) if path and os.path.exists(path) else default
 
 
+# ---- search scale: how big a search the user asked for ---------------------
+# The user says how big a search they want when they describe it ("a quick look",
+# "about 300 papers", "everything"); the agent maps that to one of these, and the
+# code carries the consequences: per-lane targets, whether lanes are capped, the
+# preflight's budget estimate, and a merge that fails a lane over its cap.
+SEARCH_SCALES = {
+    "scan": {"lane_target": 15, "capped": True, "lanes": (2, 4),
+             "about": "a quick orientation: the landmark papers and the main recent work"},
+    "focused": {"lane_target": 30, "capped": True, "lanes": (3, 8),
+                "about": "the core literature, each lane capped at its target"},
+    "standard": {"lane_target": 40, "capped": False, "lanes": (4, 12),
+                 "about": "the default: every on-topic paper the lanes find (the target is a floor)"},
+    "exhaustive": {"lane_target": 60, "capped": False, "lanes": (6, 20),
+                   "about": "as complete as the search can make it"},
+}
+# Uncapped lanes treat the target as a floor; on the 2026-09 builds they returned
+# about three times it. The preflight's budget estimate uses this factor.
+UNCAPPED_YIELD = 3
+
+
+def scale_plan(scale, n_lanes=None):
+    """{"name", "lane_target", "capped", "lanes", "planned_papers", "about"} for a
+    named scale, or for a number (a capped total spread over the lanes).
+    Raises ValueError for an unknown scale."""
+    if isinstance(scale, str) and scale.strip().isdigit():
+        scale = int(scale)
+    if isinstance(scale, int) and not isinstance(scale, bool):
+        if scale <= 0:
+            raise ValueError("a numeric scale must be a positive number of papers")
+        n = n_lanes or max(3, min(12, round(scale / 35)))
+        return {"name": str(scale), "lane_target": max(5, -(-scale // n)), "capped": True,
+                "lanes": (1, 50), "planned_papers": scale,
+                "about": f"about {scale} papers in all, each lane capped at its share"}
+    name = str(scale or "standard").strip().lower()
+    if name not in SEARCH_SCALES:
+        raise ValueError(f"unknown scale {scale!r}: use {', '.join(SEARCH_SCALES)} or a number of papers")
+    p = dict(SEARCH_SCALES[name])
+    lo, hi = p["lanes"]
+    n = n_lanes or (lo + hi) // 2
+    per = p["lane_target"] * (1 if p["capped"] else UNCAPPED_YIELD)
+    return {"name": name, **p, "planned_papers": n * per}
+
+
 # ---- hand fixes: post-canon corrections that survive every re-canon ----------
 HAND_FIXES = "hand_fixes.json"
 

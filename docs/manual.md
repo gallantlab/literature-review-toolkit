@@ -89,7 +89,7 @@ straight to the spreadsheet is taken only when you skip it.</small>
 ### 1.2 The pipeline as commands
 
 ```
- 0. preflight.py --papers <planned size>
+ 0. preflight.py --scale <scan|focused|standard|exhaustive|N>
       Exit 2: stop. Offer the newer toolkit if there is one. If API access
       is short, choose: get the keys, cap the search, or be prepared to wait.
  1. Scope the topic (your decision). Write the lane briefs in the schema-2
@@ -122,7 +122,7 @@ straight to the spreadsheet is taken only when you skip it.</small>
 
 | # | You decide | Phase | Why it is yours |
 |---|---|---|---|
-| 1 | **Scope**: topic and span, or which lab corpus | 1 / L1–L2 | Only you know the question. |
+| 1 | **Scope**: topic and span, or which lab corpus, and how big a search | 1 / L1–L2 | Only you know the question. |
 | 2 | **Families and the timeline** | 6b | The agent always offers the timeline and proposes its families; you use them, change them, or skip the timeline. |
 | 3 | **The write-up** *(optional)* | 7 | Prose is judgment; the toolkit does not fake it. |
 
@@ -179,11 +179,13 @@ before the build starts whether it can finish, run the preflight and point it at
 the project folder:
 
 ```bash
-python3 tools/preflight.py --project <topic>/ --papers 600
+python3 tools/preflight.py --project <topic>/ --scale focused
 ```
 
-`--papers` is the planned corpus size: lanes times target, plus any lab papers
-(default 500). The preflight does four things:
+`--scale` is the size of search you asked for (`scan`, `focused`, `standard`,
+`exhaustive` or a number of papers; add `--lanes N` if you know the lane count), and
+the preflight sizes its budget estimate to it. `--papers` gives the planned corpus
+size directly instead (default 500). The preflight does four things:
 
 1. **Checks for a newer toolkit.** The toolkit is updated often. The preflight
    compares this copy's version with the one on GitHub. When GitHub is newer, it
@@ -342,6 +344,22 @@ they are identical.
 **Phase 1: scope (your decision).** Agree on the question and its span: field,
 species or method restrictions, and how far back. Write it to
 `topic_definition.md`, which anchors every later search.
+
+**The size of the search (your decision).** Say it in your own words when you
+describe the review, and the agent maps it to a scale:
+
+| Scale | You say | Papers per lane | Capped | Lanes |
+|---|---|---|---|---|
+| `scan` | "a quick look", "the key papers" | 15 | yes | 2-4 |
+| `focused` | "the core literature" | 30 | yes | 3-8 |
+| `standard` | nothing about size (the default) | 40, a floor | no | 4-12 |
+| `exhaustive` | "everything", "comprehensive" | 60, a floor | no | 6-20 |
+| a number | "about 300 papers" | the total spread over the lanes | yes | any |
+
+In a capped search each lane keeps its most important papers and lists the rest as
+excluded, and the merge fails a lane that returns more than its cap. In an uncapped
+search the target is a floor: on recent builds lanes returned about three times it.
+Every scale still needs an antecedent lane, and every check runs at every scale.
 
 **Phase 2: search.** Each search lane is an agent with its own brief. To make the
 briefs, describe the lanes in a spec (`lanes.json`) and run

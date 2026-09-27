@@ -311,6 +311,15 @@ def _names_other_lane(d):
     return bool(to) and to.lower() != "none" and to != d.get("from_lane")
 
 
+def over_cap(lanes, manifest):
+    """Lanes of a CAPPED search (lane_manifest.json, from lane_briefs.py) that returned
+    more papers than their target: [{"lane", "target", "returned"}]."""
+    caps = {m.get("key"): m.get("target") for m in manifest or []
+            if isinstance(m, dict) and m.get("capped") and isinstance(m.get("target"), int)}
+    return [{"lane": ln["lane"], "target": caps[ln["lane"]], "returned": len(ln["papers"])}
+            for ln in lanes if ln["lane"] in caps and len(ln["papers"]) > caps[ln["lane"]]]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--raw", help="directory of lane files (*.json)")
@@ -338,9 +347,11 @@ def main():
     if not lanes:
         ap.error(f"no lane files in {args.raw}")
     rows, rep = merge(lanes)
+    manifest = common.load_optional_json(os.path.join(project, "lane_manifest.json"), [])
+    rep["over_cap"] = over_cap(lanes, manifest)
     if why:
         rep["preflight_skipped"] = {"reason": args.no_preflight.strip(), "why": why}
-    failed = bool(rep["lost"] or rep["rejected"] or rep["unconfirmed"])
+    failed = bool(rep["lost"] or rep["rejected"] or rep["unconfirmed"] or rep["over_cap"])
     if not failed:
         # a merge that lost, rejected or could not confirm a paper is not a table to build on
         common.write_rows(args.out, rows, force=args.force)
@@ -351,6 +362,10 @@ def main():
           f"{len(rep['possible_pairs'])} possible preprint/published pairs | report {rp}")
     for c in rep["conflicts"]:
         print(f"  ⚠ {c['ref']} = {c['same_as']} but the claims differ: {c['why']}")
+    for o in rep["over_cap"]:
+        print(f"  ✗ OVER CAP: lane {o['lane']} returned {o['returned']} papers, cap {o['target']} (a capped "
+              "search): resume the lane to keep its most important papers and move the rest to "
+              "`excluded` with reason 'over the capped-search limit', then re-merge")
     for t in rep["thin"]:
         budget = ", out of search budget" if t["websearch_exhausted"] else ""
         print(f"  ⚠ lane {t['lane']} is thin ({t['returned']}/{t['target']}{budget}): "

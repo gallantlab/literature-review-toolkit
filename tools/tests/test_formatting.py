@@ -2596,6 +2596,35 @@ _lbad = dict(_lspec, lanes=[dict(_lspec["lanes"][0], seeds=["Smith 2020 - A titl
 check_true("lane_briefs: a seed that names an author, and a bad key, are refused",
            len(lane_briefs.check_spec(_lbad)) == 2)
 
+# ---- search scale: the size the user asked for sets targets and caps (2026-09-27) ----
+check("scale_plan: scan is capped at 15 per lane", (common.scale_plan("scan", 3)["lane_target"],
+                                                     common.scale_plan("scan", 3)["capped"]), (15, True))
+check("scale_plan: a number is a capped total spread over the lanes",
+      (common.scale_plan(300, 6)["lane_target"], common.scale_plan("300", 6)["capped"],
+       common.scale_plan(300, 6)["planned_papers"]), (50, True, 300))
+check_true("scale_plan: standard is uncapped, and its estimate allows for floors being exceeded",
+           not common.scale_plan("standard", 9)["capped"]
+           and common.scale_plan("standard", 9)["planned_papers"] == 9 * 40 * common.UNCAPPED_YIELD)
+check_true("scale_plan: an unknown scale is refused", _raises(lambda: common.scale_plan("huge")))
+_ss = {"scale": "scan", "lanes": [{"key": "V", "kind": "forward"}, {"key": "X", "kind": "antecedent"}]}
+check("apply_scale: fills each lane's target and capped from the scale",
+      (lane_briefs.apply_scale(_ss), [ln["target"] for ln in _ss["lanes"]], _ss["capped"]), ([], [15, 15], True))
+check_true("apply_scale: a search with no antecedent lane is refused (contract rule 4)",
+           any("antecedent" in e for e in lane_briefs.apply_scale({"scale": "scan", "lanes": [{"key": "V", "kind": "forward"}]})))
+check_true("apply_scale: too many lanes for the scale is refused",
+           any("takes 2-4 lanes" in e for e in lane_briefs.apply_scale(
+               {"scale": "scan", "lanes": [{"key": k, "kind": "antecedent"} for k in "ABCDE"]})))
+check_true("apply_scale: an uncapped scale after the user chose to cap at the preflight is refused",
+           any("CAP" in e for e in lane_briefs.apply_scale(
+               {"scale": "standard", "lanes": [{"key": k, "kind": "antecedent"} for k in "ABCD"]},
+               {"accepted": ["cap"]})))
+check("merge: a capped lane over its target is caught",
+      merge_lanes.over_cap([{"lane": "V", "papers": [1] * 17}, {"lane": "X", "papers": [1] * 10}],
+                           [{"key": "V", "target": 15, "capped": True}, {"key": "X", "target": 15, "capped": True}]),
+      [{"lane": "V", "target": 15, "returned": 17}])
+check("merge: an uncapped lane may exceed its target (a floor)",
+      merge_lanes.over_cap([{"lane": "V", "papers": [1] * 90}], [{"key": "V", "target": 40, "capped": False}]), [])
+
 # ---- merge_lanes.py (2026-09-26) -------------------------------------------
 import merge_lanes  # noqa: E402
 

@@ -264,8 +264,9 @@ def choices(problems, papers, oa):
         cap = f"~{fits}" if fits else "a few hundred"
         out.append(f"  (2) Cap the search: fewer lanes and a hard per-lane cap, so the whole build stays "
                    f"within {cap} papers.")
-    out.append("      Tell the lanes the search is CAPPED (search_prompt_template.md): an on-topic paper "
-               "over the cap goes in `excluded`, so it is listed, not lost.")
+    out.append("      Choose a capped scale in the lane spec (\"scale\": \"scan\", \"focused\" or a number "
+               "of papers) and record it with --accept cap: every brief then says the search is capped, "
+               "and an on-topic paper over the cap goes in `excluded`, listed, not lost.")
     if "s2-key" in problems:
         out.append("      Without S2_API_KEY, also expect xref to leave gaps; run it with --allow-incomplete "
                    "and say so in the hand-off.")
@@ -325,8 +326,12 @@ def read_record(project_dir):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
-    ap.add_argument("--papers", type=int, default=500,
-                    help="planned corpus size (lanes x target, plus lab papers); default 500")
+    ap.add_argument("--papers", type=int,
+                    help="planned corpus size (lanes x target, plus lab papers); "
+                         "default: from --scale, else 500")
+    ap.add_argument("--scale", help="the size of search the user asked for: scan, focused, standard, "
+                    "exhaustive, or a number of papers (sets --papers)")
+    ap.add_argument("--lanes", type=int, help="planned number of lanes, for --scale")
     ap.add_argument("--offline", action="store_true", help="check the environment only; no probes")
     ap.add_argument("--email", help="contact email (else LITREVIEW_EMAIL)")
     ap.add_argument("--no-update-check", action="store_true",
@@ -337,6 +342,14 @@ def main():
                     help="record the user's choice after an exit 2: cap the search, be prepared to wait, "
                          "or keep this toolkit version (repeatable)")
     args = ap.parse_args()
+    plan = None
+    if args.scale:
+        try:
+            plan = common.scale_plan(args.scale, args.lanes)
+        except ValueError as e:
+            ap.error(str(e))
+    if args.papers is None:
+        args.papers = plan["planned_papers"] if plan else 500
     env = {k: os.environ.get(k, "") for k in ("LITREVIEW_EMAIL", "OPENALEX_API_KEY", "S2_API_KEY")}
     if args.email:
         env["LITREVIEW_EMAIL"] = args.email
@@ -347,7 +360,8 @@ def main():
         oa, s2 = probe_openalex(), probe_s2()
     ok, problems, lines = assess(env, args.papers, oa, s2)
     local = local_version()
-    print(f"preflight for a ~{args.papers}-paper build (toolkit {local or '?'}):")
+    print(f"preflight for a ~{args.papers}-paper build (toolkit {local or '?'})"
+          + (f", scale {plan['name']}: {plan['about']}" if plan else "") + ":")
     offer = []
     if not (args.offline or args.no_update_check):
         remote = remote_version()
@@ -370,7 +384,7 @@ def main():
     rec = {"at": datetime.datetime.now().isoformat(timespec="seconds"), "version": local,
            "papers": args.papers, "ok": ok and not offer, "problems": problems,
            "update_offered": bool(offer), "accepted": sorted(set(args.accept)), "cleared": clear,
-           "offline": args.offline}
+           "offline": args.offline, "scale": plan["name"] if plan else None}
     if os.path.isdir(args.project):
         common.dump_json(rec, os.path.join(args.project, RECORD))
         where = f" (recorded in {os.path.join(args.project, RECORD)})"

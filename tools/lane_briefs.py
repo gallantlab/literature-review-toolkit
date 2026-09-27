@@ -20,14 +20,22 @@ The spec (JSON):
    "description": "What the bibliography covers, what is out of scope for all lanes.",
    "today": "2026-09-27",            # optional, default today
    "tier": 2021,                     # optional, default today's year minus 5
-   "capped": false,                  # the user's Phase-0 choice
+   "scale": "standard",              # scan | focused | standard | exhaustive | a number of papers
+   "capped": false,                  # optional; follows from the scale
    "lab": {"pi": "Jack L. Gallant", "lane": "L"},      # optional: lab mode
    "already_have": ["Author Year - title", ...],        # optional, every lane
    "lanes": [{"key": "V", "name": "...", "short": "one line for the lane table",
-              "kind": "forward" | "antecedent", "target": 40,
+              "kind": "forward" | "antecedent", "target": 40,     # target optional: from the scale
               "definition": "...", "exclusions": ["...", ...] or "...",
               "queries": ["...", ...], "seeds": ["title", ...],   # seeds optional
               "already_have": [...]}]}                            # optional, this lane
+
+The scale is how big a search the user asked for (common.SEARCH_SCALES): it sets
+each lane's target (a lane may set its own), whether lanes are capped, and the
+number of lanes allowed. A numeric scale is a capped total spread over the lanes.
+Every scale still needs at least one antecedent lane (contract rule 4). When the
+project's preflight.json records that the user chose to cap the search, an uncapped
+scale is refused. The tool prints the plan and the preflight command sized to it.
 
 Seeds are TITLES only: a seed that carries an author name is refused, because
 remembered author names have injected fabricated attributions into past builds.
@@ -56,6 +64,45 @@ SEED_AUTHOR = re.compile(r"\bet al\b|\(\s*[A-Z][a-z]+,? \d{4}|^[A-Z][a-z]+ \d{4}
 def _bullets(items):
     items = [items] if isinstance(items, str) else list(items or [])
     return "\n".join(f"- {x}" for x in items if str(x).strip())
+
+
+def plan_of(spec):
+    """The scale plan for this spec (common.scale_plan), or raise ValueError."""
+    return common.scale_plan(spec.get("scale", "standard"), len(spec.get("lanes") or []) or None)
+
+
+def apply_scale(spec, preflight_record=None):
+    """Fill each lane's target and the spec's `capped` from its scale. Returns the
+    problems ([] when consistent): an explicit `capped` that contradicts the scale,
+    a lane count outside the scale's range, no antecedent lane, or an uncapped
+    scale after the user chose, at the preflight, to cap the search."""
+    try:
+        plan = plan_of(spec)
+    except ValueError as e:
+        return [str(e)]
+    errs = []
+    if "capped" in spec and bool(spec["capped"]) != plan["capped"]:
+        errs.append(f"'capped': {spec['capped']} contradicts scale {plan['name']!r} "
+                    f"({'capped' if plan['capped'] else 'uncapped'}); drop 'capped' or change the scale")
+    spec["capped"] = plan["capped"]
+    lanes = spec.get("lanes") or []
+    lo, hi = plan["lanes"]
+    if lanes and not lo <= len(lanes) <= hi:
+        errs.append(f"scale {plan['name']!r} takes {lo}-{hi} lanes; the spec has {len(lanes)} "
+                    "(pick another scale, or merge or split lanes)")
+    if lanes and not any(ln.get("kind") == "antecedent" for ln in lanes):
+        errs.append("no antecedent lane: every review needs one (contract rule 4), at every scale")
+    for ln in lanes:
+        ln.setdefault("target", plan["lane_target"])
+    if plan["capped"] and isinstance(spec.get("scale"), int):
+        total = sum(ln.get("target", 0) for ln in lanes if isinstance(ln.get("target"), int))
+        if total > spec["scale"]:
+            errs.append(f"lane targets add up to {total}, over the scale's {spec['scale']} papers")
+    rec = preflight_record or {}
+    if "cap" in (rec.get("accepted") or []) and not plan["capped"]:
+        errs.append(f"the preflight recorded that the user chose to CAP the search, but scale "
+                    f"{plan['name']!r} is uncapped: use scan, focused or a number of papers")
+    return errs
 
 
 def check_spec(spec):
@@ -139,10 +186,12 @@ def main():
     ap.add_argument("--spec", required=True, help="the lane spec (JSON); outputs go beside it")
     args = ap.parse_args()
     spec = common.load_json(args.spec)
-    errs = check_spec(spec)
+    here = os.path.dirname(os.path.abspath(args.spec))
+    rec = common.load_optional_json(os.path.join(here, "preflight.json"), {})
+    errs = apply_scale(spec, rec) + check_spec(spec)
     if errs:
         sys.exit("✗ lane spec problems:\n" + "\n".join(f"  - {e}" for e in errs))
-    here = os.path.dirname(os.path.abspath(args.spec))
+    plan = plan_of(spec)
     with open(TEMPLATE, encoding="utf-8") as f:
         template = f.read()
     briefs, raw = os.path.join(here, "briefs"), os.path.join(here, "search_raw")
@@ -159,9 +208,16 @@ def main():
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
         manifest.append({"key": k, "name": ln["name"], "brief": path, "out": outpath,
-                         "target": ln["target"], "kind": ln["kind"]})
+                         "target": ln["target"], "kind": ln["kind"], "capped": bool(spec["capped"]),
+                         "scale": plan["name"]})
     with open(os.path.join(here, "lane_manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
+    planned = sum(m["target"] for m in manifest) * (1 if spec["capped"] else common.UNCAPPED_YIELD)
+    print(f"scale {plan['name']}: {plan['about']}")
+    targets = ", ".join(f"{m['key']} {m['target']}" for m in manifest)
+    print(f"  {len(manifest)} lanes, targets {targets}; "
+          f"{'capped' if spec['capped'] else 'uncapped (targets are floors)'}; about {planned} papers")
+    print(f"  size the preflight to it: python3 tools/preflight.py --project {here} --papers {planned}")
     print(f"wrote {len(manifest)} brief(s) to {briefs} (+ lane_manifest.json)")
     print("Launch one general-purpose agent per lane, all in one message, with the prompt:")
     print('  "Read the literature-search brief at <brief path> and carry it out exactly as written. '

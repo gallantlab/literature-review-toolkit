@@ -20,7 +20,8 @@ doubt, obey this list. Bold elsewhere in this file is ordinary emphasis, not an
 eleventh rule.
 
 0. **Check for a newer toolkit and for API access before any new search**
-   (Phase 0). Run `tools/preflight.py --project <dir> --papers <planned size>` first;
+   (Phase 0). Run `tools/preflight.py --project <dir> --scale <scale>` first (the scale
+   comes from the user's own description of the review, Phase 1d);
    it records `preflight.json`, and `merge_lanes.py` refuses to build a table without a
    recent, cleared one. Exit 0: proceed. Exit 2: stop. Offer a newer version if it found one (install only on a
    yes, then rerun the preflight). If a key is missing or the OpenAlex budget is
@@ -100,7 +101,7 @@ snippet details are in `docs/maintaining.md`.
 **Step 0: preflight (contract rule 0).** Before anything else, run
 
 ```bash
-python3 tools/preflight.py --project <dir> --papers <lanes x target + lab papers>
+python3 tools/preflight.py --project <dir> --scale <scale from Phase 1d>
 ```
 
 It writes `<dir>/preflight.json`. `merge_lanes.py` refuses to run without one that is
@@ -257,6 +258,27 @@ it verbatim.
 
 **1c. List the "already-known" papers** from the existing spreadsheet (filter by
 `Topic`), so the search agents do not re-find them.
+
+**1d. Set the scale from the user's description.** How big a search the user asked
+for is the one sizing decision, and it is theirs. Read it from how they describe the
+review; if they said nothing about size, use `standard`; if the words are ambiguous,
+ask once.
+
+| Scale | The user says | Per lane | Capped | Lanes |
+|---|---|---|---|---|
+| `scan` | "a quick look", "the key papers", "get me oriented" | 15 | yes | 2-4 |
+| `focused` | "the core literature", "a manageable list" | 30 | yes | 3-8 |
+| `standard` | nothing about size (the default) | 40, a floor | no | 4-12 |
+| `exhaustive` | "everything", "comprehensive", "leave nothing out" | 60, a floor | no | 6-20 |
+| a number | "about 300 papers" | the total spread over the lanes | yes | any |
+
+Put it in the lane spec (`"scale": ...`) and pass it to the preflight (`--scale`). The
+code carries the rest (`common.SEARCH_SCALES`): `lane_briefs.py` sets each lane's
+target and the cap, refuses a lane count outside the scale's range or a spec with no
+antecedent lane (every scale needs one), and refuses an uncapped scale after the user
+chose to cap at the preflight; `merge_lanes.py` fails a capped lane that returned more
+than its target; the preflight sizes its OpenAlex estimate to the scale. Every gate
+runs at every scale: a `scan` is smaller, never less checked. Say the scale at hand-off.
 
 ### Phase 2 — Brief and launch the search lanes
 
@@ -1612,7 +1634,7 @@ in `tools/README.md` and `docs/tools.md`.
 <!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
 | Script | Phase | Purpose | Flags |
 |---|---|---|---|
-| `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--accept` `--email` `--no-update-check` `--offline` `--papers` `--project` |
+| `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--accept` `--email` `--lanes` `--no-update-check` `--offline` `--papers` `--project` `--scale` |
 | `lane_briefs.py` | 2 | Render every search lane's brief from one lane spec, so no brief goes out incomplete. | `--spec` |
 | `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--no-preflight` `--out` `--raw` `--report` |
 | `recall.py` | 2c | Measure a rerun's recall against the old build, and list the papers it missed. | `--key` `--old` `--out` `--rows` `--where` |
@@ -1732,7 +1754,7 @@ NOT ask whether to download PDFs: the default is no (Phase 4 is opt-in). Extendi
 rerunning an EXISTING corpus follows "Upgrading an old corpus". Then, in order:
 
 ```
- 0. python3 tools/preflight.py --project <dir> --papers <planned size>   (Phase 0)
+ 0. python3 tools/preflight.py --project <dir> --scale <scale>   (Phase 0; scale: Phase 1d)
     Exit 2: stop and ask before launching anything. Offer the newer toolkit
     if it found one (install only on a yes, then rerun); if access is short,
     give its three choices: get the keys, cap the search, or be prepared to

@@ -5,7 +5,7 @@ fabricating references. The agent decides what to search, how to group the
 papers, and how to write them up. The scripts do the API calls, verification and
 bookkeeping.
 
-Version 1.27.0 · MIT license
+Version 1.28.0 · MIT license
 
 📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**, with the
 [operator manual](https://gallantlab.org/literature-review-toolkit/manual/),
@@ -79,6 +79,13 @@ i want a literature review on the anatomical connections between the visual
 system and the cerebellum. any anatomy papers from primate or human, using any
 tractography method. go back as far as the 1970s.
 ```
+
+Say how big a search you want, in your own words: "a quick look at the key
+papers" (a capped scan of about 15 papers per lane), "the core literature"
+(capped at about 30 per lane), "about 300 papers" (capped at that total), or
+"everything" (uncapped, as complete as the search can make it). Say nothing and
+you get the standard search, where each lane's target is a floor, not a cap. Every
+check runs at every size; a smaller search is only smaller.
 
 The agent first runs `tools/preflight.py`. If GitHub has a newer version of the
 toolkit, it offers to install it. If a key is missing or the OpenAlex budget is

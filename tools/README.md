@@ -28,7 +28,7 @@ and CI fails if any copy is stale.
 <!-- BEGIN GENERATED TOOL INDEX (python3 tools/gen_docs.py — do not edit by hand) -->
 | Script | Phase | Purpose | Flags |
 |---|---|---|---|
-| `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--accept` `--email` `--no-update-check` `--offline` `--papers` `--project` |
+| `preflight.py` | 0 | Preflight: before any search, check for a newer toolkit, the API keys and the OpenAlex budget. | `--accept` `--email` `--lanes` `--no-update-check` `--offline` `--papers` `--project` `--scale` |
 | `lane_briefs.py` | 2 | Render every search lane's brief from one lane spec, so no brief goes out incomplete. | `--spec` |
 | `merge_lanes.py` | 2c | Merge search-lane files into rows.json, and fail when a paper fell between lanes. | `--allow-v1` `--append` `--force` `--into` `--no-preflight` `--out` `--raw` `--report` |
 | `recall.py` | 2c | Measure a rerun's recall against the old build, and list the papers it missed. | `--key` `--old` `--out` `--rows` `--where` |
@@ -85,8 +85,9 @@ verification duty, the summary rule or the output contract.
 python3 tools/lane_briefs.py --spec lanes.json
 ```
 
-The spec gives the bibliography's title and scope, `capped`, `lab` (lab mode), and per
-lane its key, name, one-line summary, kind (`forward` or `antecedent`), target,
+The spec gives the bibliography's title and scope, `scale` (`scan`, `focused`,
+`standard`, `exhaustive` or a number of papers: it sets each lane's target and the
+cap, `common.SEARCH_SCALES`), `lab` (lab mode), and per lane its key, name, one-line summary, kind (`forward` or `antecedent`), target,
 definition, exclusions, queries and seed titles (the module docstring has the full
 format). It writes `briefs/brief_<KEY>.md`, `lane_manifest.json`, `search_raw/` and a
 `scratch/<KEY>/` per lane beside the spec. It exits 1 on a missing field, a repeated

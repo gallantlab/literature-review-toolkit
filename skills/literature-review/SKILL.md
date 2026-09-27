@@ -2,7 +2,7 @@
 name: literature-review
 license: MIT
 metadata:
-  version: 1.27.0
+  version: 1.28.0
   author: Jack L. Gallant
 description: Structured academic literature review — search a topic and its antecedents, verify every citation against PMC/PubMed/CrossRef/arXiv, rebuild references into canonical APA form, count citations, cross-reference the set, and assemble an annotated xlsx bibliography, then offer an interactive lineage timeline of its theoretical families on every review. Use whenever the user asks for a lit review or literature review, wants to build or audit a bibliography, survey the literature on a topic, verify or canonicalize a list of citations, check which references cite which, gather citation counts, trace the intellectual lineage of a field, or review a lab's own corpus in the context of its field. PDF acquisition is opt-in and never runs by default.
 ---
@@ -15,10 +15,15 @@ that keep it honest. Paths below are relative to the toolkit root.
 
 ## Start here: preflight, then the playbook
 
+0. **Read the scale from how the user describes the review**: "a quick look" is
+   `scan`, "the core literature" is `focused`, "about N papers" is N, "everything" is
+   `exhaustive`, and no word about size is `standard`. Ask once if it is ambiguous
+   (PLAYBOOK Phase 1d). The code applies it (targets, caps, the preflight estimate).
+
 1. **Run the preflight before any new search.**
 
    ```bash
-   python3 tools/preflight.py --project <topic dir> --papers <planned size>
+   python3 tools/preflight.py --project <topic dir> --scale <scale>
    ```
 
    Exit 0: go on. Exit 2: stop, and ask the user before launching any lane.
