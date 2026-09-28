@@ -5,7 +5,7 @@ fabricating references. The agent decides what to search, how to group the
 papers, and how to write them up. The scripts do the API calls, verification and
 bookkeeping.
 
-Version 1.45.2 · MIT license
+Version 2.0.0 · MIT license
 
 📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**, with the
 [operator manual](https://gallantlab.org/literature-review-toolkit/manual/),
@@ -69,6 +69,21 @@ export S2_API_KEY=...
 
 To keep the variables across sessions, add the `export` lines to your shell
 profile.
+
+### Upgrading a project from 1.x
+
+Version 2.0 enforces in code several steps that 1.x left to the agent. A project
+started under 1.x needs these before its next build:
+
+- Run `tools/preflight.py --project <dir>` once. `merge_lanes.py` refuses to run
+  without the record it writes.
+- Render lane briefs with `tools/lane_briefs.py`; do not fill the template by hand.
+- Move corrections typed into `apa` into `hand_fixes.json`. Canon re-applies only
+  those, and the audit fails a fix that no longer matches its row.
+- Give every row a summary. The audit now fails an empty one.
+
+[§8.1 of the manual](https://gallantlab.org/literature-review-toolkit/manual/#81-upgrading-an-old-corpus) covers the rest. For a corpus
+built well before 2.0, a fresh build is often quicker.
 
 ## Start a review
 
