@@ -488,7 +488,8 @@ the row's `canon_warnings`, and each must be acknowledged in the audit.
   - a missing author or year, or `et al.` in the author list;
   - an HTML entity or markup tag, `?.` or `!.`, or a U+2010/U+2011 hyphen;
   - a malformed initial (`L. (.`, `J. -.`);
-  - punctuation glued to the next word, or a `?` where a quote or dash belongs;
+  - punctuation glued to the next word, or a `?` where a quote or dash belongs
+    (text inside a URL is ignored, so an OpenReview `forum?id=` link passes);
   - U+FFFD mojibake;
   - a truncated or empty venue;
   - an uppercase title (three or more all-caps words in a row);
@@ -695,6 +696,9 @@ Base schema (sheet "References", or --sheet-name):
 
 Columns added after Tag when the data carries them, in this order:
   - Family, when any row has `family` (families.py);
+  - one column per --column FIELD=HEADER (a project's own rows.json field; a
+    list joins with "; ", a dict is written as JSON; a field the schema already
+    shows is refused);
   - Cite (OpenAlex) | Cite (S2), when any row has `cite_openalex` or `cite_s2`.
     The counts come from citations.py (Phase 5b); attach them to the rows with
     its --attach or --attach-only. Google Scholar cannot be queried at scale (no API,
@@ -1142,6 +1146,13 @@ decades, and --min-year clamps the axis start. --xlsx embeds the spreadsheet wit
 a download button. --emphasize-source lab draws one source's rows large.
 --no-raster skips the PNG and PDF.
 
+MARKER SHAPE. --shape-by FIELD --square-if V1,V2 draws a paper as a square when
+its rows.json FIELD holds one of the values (case-insensitive; true/false match
+JSON booleans), and as a circle otherwise -- a second, binary encoding beside
+color. A square has the area of the circle it replaces, so the size key still
+reads. --shape-legend "circle text|square text" labels the key drawn under the
+subtitle, and the click panel names each paper's kind.
+
   python3 tools/families_figure.py --rows rows.json --families families.json \
           --out-prefix mytopic_families --title "My topic — theoretical families"
 
@@ -1395,7 +1406,9 @@ Shared helpers for the literature-review toolkit.
 Every tool imports this one module, so each guarantee lives in one place:
 
   - HTTP: a polite User-Agent, gzip decoding, and a GET/POST with backoff on
-    rate limits and timeouts. An OpenAlex request carries OPENALEX_API_KEY when it
+    rate limits and timeouts. At the first network failure http() retries once
+    through curl, which reads bodies urllib truncates or drops; Semantic Scholar
+    batch POSTs go to curl directly. An OpenAlex request carries OPENALEX_API_KEY when it
     is set, and a spent OpenAlex daily budget raises OpenAlexBudgetError at once.
     Semantic Scholar requests carry S2_API_KEY when it is set, and are paced
     across every process on the machine (s2_wait_turn), so the tools that share

@@ -4,7 +4,9 @@
 Every tool imports this one module, so each guarantee lives in one place:
 
   - HTTP: a polite User-Agent, gzip decoding, and a GET/POST with backoff on
-    rate limits and timeouts. An OpenAlex request carries OPENALEX_API_KEY when it
+    rate limits and timeouts. At the first network failure http() retries once
+    through curl, which reads bodies urllib truncates or drops; Semantic Scholar
+    batch POSTs go to curl directly. An OpenAlex request carries OPENALEX_API_KEY when it
     is set, and a spent OpenAlex daily budget raises OpenAlexBudgetError at once.
     Semantic Scholar requests carry S2_API_KEY when it is set, and are paced
     across every process on the machine (s2_wait_turn), so the tools that share
@@ -107,45 +109,65 @@ def decompress(body, encoding):
     return body
 
 
-def curl_get(url, headers, timeout, data=None):
-    """GET (or POST `data`) via the curl binary. Bytes on success; raises on any
-    failure.
-
-    A fallback, not a preference. Some hosts close the connection on urllib
-    instantly and deterministically for particular URLs while curl fetches the
-    same URL without trouble — an HTTP-stack/proxy interaction, distinct from
-    rate limiting (random) and from truncation (same byte count each time). On
-    one xref pass 71 of 536 reference-list fetches failed this way and every one
-    of them succeeded through curl. `--compressed` matters here for the same
-    reason the Accept-Encoding header does above. POSTs need it too: Semantic
-    Scholar ignores Accept-Encoding, and urllib read every 300-paper batch body
-    short (IncompleteRead at ~7.7 of 31 KB) while curl read it whole, so for a
-    whole build S2 counted 0 of 315 papers (2026-10-07).
+def _curl(url, headers, timeout, data=None):
+    """Fetch `url` with the curl binary -> (final HTTP status, body bytes). The
+    status is 0 for file:// (used offline), which has none. POSTs `data` from
+    stdin when given. Raises ConnectionError when curl itself fails (no
+    connection, timeout), so is_transient() reads it as a retryable failure.
 
     Redirects are followed (`-L`, to https only), and the final HTTP status is
     captured (`-w`): without them a 301 page came back as a "successful" body,
-    and a whole arXiv batch read as garbage. A non-2xx final status raises."""
+    and a whole arXiv batch read as garbage. A redirected POST stays a POST
+    (--post301/--post302), so the body is not dropped. `--compressed` matters
+    for the same reason the Accept-Encoding header does above.
+
+    Headers go to curl through a private temp file (`-H @file`), never argv:
+    they carry the OpenAlex and Semantic Scholar keys, and a process list shows
+    every command-line argument to anyone on the machine."""
     exe = shutil.which("curl")
     if not exe:
         raise RuntimeError("curl not available for fallback")
-    cmd = [exe, "-sS", "--compressed", "--fail", "-L", "--proto-redir", "=https",
+    cmd = [exe, "-sS", "--compressed", "-L", "--proto-redir", "=https",
            "--max-time", str(int(timeout)), "-w", "\n%{http_code}"]
-    for k, v in (headers or {}).items():
-        if k.lower() == "accept-encoding":
-            continue                      # --compressed sets and decodes it
-        cmd += ["-H", f"{k}: {v}"]
-    extra = {}
+    lines = [f"{k}: {v}" for k, v in (headers or {}).items()
+             if k.lower() != "accept-encoding"]   # --compressed sets and decodes it
+    extra, hfile = {}, None
     if data is not None:
-        cmd += ["--data-binary", "@-"]        # POST the body from stdin
+        cmd += ["--data-binary", "@-", "--post301", "--post302"]
         extra["input"] = data
-    cmd.append(url)
-    p = subprocess.run(cmd, capture_output=True, timeout=timeout + 10, **extra)
+    try:
+        if lines:
+            import tempfile
+            fd, hfile = tempfile.mkstemp(prefix="litreview-hdr-")   # mode 0600
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(lines) + "\n")
+            cmd += ["-H", "@" + hfile]
+        cmd.append(url)
+        p = subprocess.run(cmd, capture_output=True, timeout=timeout + 10, **extra)
+    finally:
+        if hfile:
+            os.unlink(hfile)
     if p.returncode != 0:
-        raise OSError(f"curl exit {p.returncode}: {p.stderr.decode('utf-8', 'replace')[:120]}")
+        raise ConnectionError(f"curl exit {p.returncode}: {p.stderr.decode('utf-8', 'replace')[:120]}")
     body, _, code = p.stdout.rpartition(b"\n")
     code = code.strip().decode("ascii", "replace")
-    # file:// (used offline) has no HTTP status and reports 000; http(s) must be 2xx
-    if url.lower().startswith(("http://", "https://")) and not code.startswith("2"):
+    if not code.isdigit():
+        raise ConnectionError(f"curl: no HTTP status for {url}")
+    return int(code), body
+
+
+def curl_get(url, headers, timeout, data=None):
+    """GET (or POST `data`) via curl (_curl). Bytes on success; raises OSError
+    on any failure, including a non-2xx final status.
+
+    A fallback, not a preference. Some hosts close the connection on urllib
+    instantly and deterministically for particular URLs while curl fetches the
+    same URL without trouble -- an HTTP-stack/proxy interaction, distinct from
+    rate limiting (random) and from truncation (same byte count each time). On
+    one xref pass 71 of 536 reference-list fetches failed this way and every one
+    of them succeeded through curl."""
+    code, body = _curl(url, headers, timeout, data=data)
+    if url.lower().startswith(("http://", "https://")) and not 200 <= code < 300:
         raise OSError(f"curl: final HTTP status {code or '?'} for {url}")
     return body
 
@@ -265,12 +287,12 @@ def http(url, retries=5, timeout=30, data=None, headers=None):
             # incompatibility rather than load, and urllib will reproduce it
             # exactly however long we wait — so sleeping 2+4+8+16s first only
             # makes a recoverable fetch slow. curl gets these on the first try.
-            # POSTs too: the only POSTs are read-only S2 batch lookups, safe to
-            # resend, and urllib truncated every large one (curl_get). If curl
+            # POSTs too (they are read-only lookups, safe to resend). If curl
             # fails too, fall into the normal backoff, which is the right
             # response to genuine load.
             if not tried_curl:
                 tried_curl = True
+                _count_request()
                 try:
                     return curl_get(url, hdrs, timeout, data=data)
                 except Exception:
@@ -1442,29 +1464,6 @@ def datacite_record(attrs, fallback_venue=""):
             "unsplit": unsplit, "first_author_unsplit": first_unsplit}
 
 
-def _curl_status(url, headers, timeout):
-    """GET via curl WITHOUT --fail -> (HTTP status int, body bytes); raises when
-    curl itself fails. Unlike curl_get (vendored, and --fail by design), a 404
-    comes back as a status, so a caller can tell "no such record" from a failure."""
-    exe = shutil.which("curl")
-    if not exe:
-        raise RuntimeError("curl not available for fallback")
-    cmd = [exe, "-sS", "--compressed", "-L", "--proto-redir", "=https",
-           "--max-time", str(int(timeout)), "-w", "\n%{http_code}"]
-    for k, v in (headers or {}).items():
-        if k.lower() != "accept-encoding":        # --compressed sets and decodes it
-            cmd += ["-H", f"{k}: {v}"]
-    cmd.append(url)
-    p = subprocess.run(cmd, capture_output=True, timeout=timeout + 10)
-    if p.returncode != 0:
-        raise OSError(f"curl exit {p.returncode}: {p.stderr.decode('utf-8', 'replace')[:120]}")
-    body, _, code = p.stdout.rpartition(b"\n")
-    code = code.strip().decode("ascii", "replace")
-    if not code.isdigit():
-        raise OSError(f"curl: no HTTP status for {url}")
-    return int(code), body
-
-
 def _datacite_get(url, retries=5, timeout=30):
     """http() for DataCite: urllib first, curl on a network failure -- but a
     curl 404 is raised as urllib.error.HTTPError(404), so a DOI missing from both
@@ -1488,8 +1487,9 @@ def _datacite_get(url, retries=5, timeout=30):
         except TRANSIENT_NETWORK:
             if not tried_curl:
                 tried_curl = True
+                _count_request()
                 try:
-                    code, body = _curl_status(url, HDRS, timeout)
+                    code, body = _curl(url, HDRS, timeout)
                 except Exception:
                     code, body = None, b""
                 if code is not None and 200 <= code < 300:
@@ -1649,8 +1649,24 @@ def s2_wait_turn(interval=None):
         _S2_LAST[0] = time.monotonic()
 
 
+def _s2_post(url, data, hdrs, timeout=30):
+    """POST an S2 batch through curl only -> body bytes; a non-2xx status raises
+    urllib.error.HTTPError, so s2_batch's 400/404 bisection still works.
+
+    Not through http(): S2 ignores Accept-Encoding, and urllib read every large
+    batch body short (IncompleteRead at ~7.7 of 31 KB; a whole build counted 0 of
+    315 papers, 2026-10-07). Trying urllib first and then curl sent every batch
+    twice inside one s2_wait_turn() slot, and the second request drew 429s."""
+    _count_request()
+    code, body = _curl(url, hdrs, timeout, data=data)
+    if 200 <= code < 300:
+        return body
+    raise urllib.error.HTTPError(url, code, f"HTTP {code} (via curl)", {}, None)
+
+
 def s2_request(path, body=None):
-    """GET (or POST `body` as JSON) S2_API + path; returns parsed JSON.
+    """GET (or POST `body` as JSON) S2_API + path; returns parsed JSON. A POST
+    goes straight to curl (_s2_post) when curl is installed.
 
     Backs off (S2_BACKOFF) and retries after a 429 or other transient failure
     (is_transient); a non-transient error (400, 404) raises immediately."""
@@ -1664,6 +1680,8 @@ def s2_request(path, body=None):
     for attempt in range(len(S2_BACKOFF) + 1):
         s2_wait_turn()
         try:
+            if data is not None and shutil.which("curl"):
+                return json.loads(_s2_post(S2_API + path, data, hdrs))
             return http_json(S2_API + path, retries=1, data=data, headers=hdrs)
         except Exception as e:
             if is_transient(e) and attempt < len(S2_BACKOFF):

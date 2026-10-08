@@ -63,7 +63,8 @@ the row's `canon_warnings`, and each must be acknowledged in the audit.
   - a missing author or year, or `et al.` in the author list;
   - an HTML entity or markup tag, `?.` or `!.`, or a U+2010/U+2011 hyphen;
   - a malformed initial (`L. (.`, `J. -.`);
-  - punctuation glued to the next word, or a `?` where a quote or dash belongs;
+  - punctuation glued to the next word, or a `?` where a quote or dash belongs
+    (text inside a URL is ignored, so an OpenReview `forum?id=` link passes);
   - U+FFFD mojibake;
   - a truncated or empty venue;
   - an uppercase title (three or more all-caps words in a row);

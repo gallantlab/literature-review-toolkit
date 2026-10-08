@@ -693,7 +693,8 @@ file from `rows.json` each time (xlsxwriter is write-only).
 
 Columns: `Topic | Ref # | APA reference | Link | Summary | Tag` then, when any row
 carries them, `Family` (Phase 6b), any field passed as `--column FIELD=HEADER`
-(repeatable; e.g. the field a figure's `--shape-by` encodes), `Cite (OpenAlex) | Cite (S2)` (Phase 5b),
+(repeatable; e.g. the field a figure's `--shape-by` encodes; a list joins with `; `,
+a dict is written as JSON, and a field the schema already shows is refused), `Cite (OpenAlex) | Cite (S2)` (Phase 5b),
 `Verify note` (hand-check notes), `Summary checked against` (Phase 5c: the abstract
 source, or "no abstract"), then `PDF (local) | Xref`. The "Considered and
 excluded" sheet lists the ledger's `exclude` decisions (Phase 6) and the lanes'
@@ -995,6 +996,9 @@ one of the values, adding a binary encoding without touching color or size (a sq
 has its circle's area). The key goes under the subtitle and the click panel names
 the kind. First use: marking papers that train a network end-to-end themselves
 (circle) apart from papers that reuse or freeze one trained elsewhere (square).
+Values match case-insensitively (a JSON `true` matches `true`). `--square-if` or
+`--shape-legend` without `--shape-by` is refused, and a run where no paper matches
+warns with the values it saw.
 
 **Landmark labels are automatic; do not hand-build a labels overlay.** A paper is
 labeled if ANY of:
@@ -1394,7 +1398,8 @@ by `tools/tests/test_formatting.py`. Keep them in mind when changing a formatter
   caenorhabditis elegans"); `common.GENERA` restores them.
 - **A `?` inside a title or venue is mangled punctuation** (`?Matched filters? ?
   neural models…`, `Journal of Comparative Physiology ? A`): the audit fails
-  `mangled-punct`. **Stripped JATS markup glues words** (`the cockroachPeriplaneta
+  `mangled-punct`. Text inside a URL is ignored, so an OpenReview `forum?id=` link
+  passes. **Stripped JATS markup glues words** (`the cockroachPeriplaneta
   americana`): `missing-space`. Both hit the same rows; a deposit broken one way is
   usually broken in several.
 - **Why canon does not sentence-case Title Case.** Correct casing needs proper-noun
@@ -1473,7 +1478,7 @@ timing and determinism.
 |---|---|---|
 | Random requests fail, succeed on retry | genuine rate limiting | backoff; raise `--sleep` |
 | The **same** large records fail at the **same byte count**, small ones fine | truncation of a large uncompressed body (`IncompleteRead(1782210 bytes read, 399724 more expected)`) | `Accept-Encoding: gzip, deflate` + `common.decompress` |
-| The **same** records fail **instantly** (~0.3 s), or a large body comes back short even with gzip requested; curl fetches them fine | HTTP-stack / proxy incompatibility (Semantic Scholar ignores `Accept-Encoding`: every 300-paper batch POST read short, so S2 counted 0 of 315 papers on 2026-10-07) | `common.curl_get` at the first network failure, for GETs and POSTs |
+| The **same** records fail **instantly** (~0.3 s), or a large body comes back short even with gzip requested; curl fetches them fine | HTTP-stack / proxy incompatibility (Semantic Scholar ignores `Accept-Encoding`: every 300-paper batch POST read short, so S2 counted 0 of 315 papers on 2026-10-07) | `common.curl_get` at the first network failure, for GETs and POSTs; S2 batch POSTs go to curl directly. Headers (the API keys) reach curl through a private file, never its command line |
 
 Only the first is fixed by waiting; against the other two a retry loop runs forever
 and reports as slowness. On the cortical-layers build, uncompressed: 117 of 537 rows

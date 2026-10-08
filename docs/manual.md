@@ -1118,6 +1118,7 @@ year. A lineage recalled from memory can be wrong in the same ways a citation ca
     | `--lab-author Surname` | rings and stars the home lab's papers (repeatable; off by default) |
     | `--lab-color '#c1121f'` | sets the ring color; quote it, or the shell treats `#` as a comment |
     | `--spec figure_spec.json` | editorial overlay: manual labels, arrows, notes, lane order |
+    | `--shape-by FIELD --square-if V1,V2 --shape-legend "circle text\|square text"` | draws a paper as a square when its field holds a listed value (case-insensitive); the key sits under the subtitle |
 
     **Raising a threshold must not remove a label already shown.** A higher
     `--motif-min` shrinks the pool of qualifying papers, not only the cap. Compare
@@ -1295,7 +1296,8 @@ PDF (local) · Xref`. The `Family`, `Cite`, `Verify note` and `Summary checked
 against` columns appear once any row carries them. `Link` is always the bare DOI
 URL. `Summary checked against` names the abstract's source, or says "no abstract".
 `--column FIELD=HEADER` (repeatable) adds a project field as a column after
-`Family`, for example the field a timeline's `--shape-by` draws as squares.
+`Family`, for example the field a timeline's `--shape-by` draws as squares. A list
+value joins with `; `, and a field that already has its own column is refused.
 
 Row color records where each paper came from:
 
@@ -1497,7 +1499,7 @@ the first.
 | HTTP 429s, spread across many URLs, easing with delay | throttling | raise `--sleep`; set `S2_API_KEY` |
 | Every OpenAlex request 429s with a Retry-After of hours (`OpenAlexBudgetError`) | the free daily budget is spent | set `OPENALEX_API_KEY`, or wait for the reset ([§2.3](#23-phase-0-run-the-preflight-before-every-new-search)) |
 | `IncompleteRead` on particular large records, failing at the same byte count every time | truncated uncompressed response | request gzip; `common.http` already does |
-| One URL fails under `urllib` but works under `curl` (including a large Semantic Scholar batch POST read short: S2 ignores gzip) | client incompatibility | `common.curl_get`, which the tools try automatically, for GETs and POSTs |
+| One URL fails under `urllib` but works under `curl` (including a large Semantic Scholar batch POST read short: S2 ignores gzip) | client incompatibility | `common.curl_get`, which the tools try automatically, for GETs and POSTs; Semantic Scholar batch POSTs go to curl directly |
 
 If retries never converge, you have the wrong diagnosis. To tell which case
 applies, run `curl -sS --compressed` on one failing URL.
@@ -1509,7 +1511,7 @@ Do not relax the gate.
 
 | Defect | Fix |
 |---|---|
-| a formatting defect: `empty venue`, `no-year`, `no-authors`, `et-al`, `malformed-initial`, `mangled-punct`, `missing-space`, `html-entity`, `markup-tag`, `uppercase-title run` | fix the `apa` by hand, or run `--repair` for markup, hyphen and `?.` damage |
+| a formatting defect: `empty venue`, `no-year`, `no-authors`, `et-al`, `malformed-initial`, `mangled-punct`, `missing-space`, `html-entity`, `markup-tag`, `uppercase-title run` (a `?` inside a URL is not `mangled-punct`) | fix the `apa` by hand, or run `--repair` for markup, hyphen and `?.` damage |
 | `unverified (...)` | `verify.py --rows rows.json --only <refs>`, then re-canon those rows |
 | `hand-check-missing` | `handcheck.py --prepare`, the hand-check agent, `--ingest` ([§5.2](#52-phase-3-hand-check-the-references-with-no-doi)) |
 | `summary-unchecked`, `summary-flagged` | `summary_audit.py`; fix a flagged summary and check it again ([§5.5](#55-phase-5c-check-each-summary-against-its-abstract)) |

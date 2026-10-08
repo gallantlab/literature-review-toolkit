@@ -13,6 +13,9 @@ Base schema (sheet "References", or --sheet-name):
 
 Columns added after Tag when the data carries them, in this order:
   - Family, when any row has `family` (families.py);
+  - one column per --column FIELD=HEADER (a project's own rows.json field; a
+    list joins with "; ", a dict is written as JSON; a field the schema already
+    shows is refused);
   - Cite (OpenAlex) | Cite (S2), when any row has `cite_openalex` or `cite_s2`.
     The counts come from citations.py (Phase 5b); attach them to the rows with
     its --attach or --attach-only. Google Scholar cannot be queried at scale (no API,
@@ -47,6 +50,7 @@ Input format (JSON list):
   python3 tools/spreadsheet.py --rows rows.json --out bibliography.xlsx --draft   # a marked draft
 """
 import argparse
+import json
 import os
 import sys
 
@@ -170,7 +174,7 @@ def build(rows, out, sheet_name="References", banner=None, excluded=None, extra=
     # Project-specific fields (--column FIELD=HEADER), shown after Family, e.g. how
     # each paper's network was trained when the figure encodes that as a shape.
     for field, header in extra:
-        cols.append((header, field, 24, "text"))
+        cols.append((header, field, 24, "extra"))
     if has_cite:
         cols += [("Cite (OpenAlex)", "cite_openalex", 13, "num"),
                  ("Cite (S2)",       "cite_s2",       12, "num")]
@@ -205,6 +209,8 @@ def build(rows, out, sheet_name="References", banner=None, excluded=None, extra=
             elif key == "xref":
                 x = r.get("xref")
                 ws.write(i, c, "" if x in (None, "") else str(x), cf)
+            elif kind == "extra":
+                ws.write(i, c, cell_text(r.get(key)), cf)
             elif key == "summary_basis":
                 sc = r.get("summary_check") or {}
                 verdict = sc.get("verdict")
@@ -231,6 +237,41 @@ def build(rows, out, sheet_name="References", banner=None, excluded=None, extra=
     return len(rows), has_cite
 
 
+# Fields the base schema already shows (or renders specially): a --column naming
+# one would duplicate that column or bypass its handling.
+RESERVED = {"topic", "ref", "apa", "link", "summary", "tag", "family", "cite_openalex",
+            "cite_s2", "verify_note", "summary_check", "summary_basis", "pdf", "xref"}
+
+
+def cell_text(v):
+    """A --column field as one cell: a list joins with '; ', a dict is JSON, None
+    is blank. xlsxwriter refuses list and dict values outright."""
+    if v is None:
+        return ""
+    if isinstance(v, list):
+        return "; ".join(cell_text(x) for x in v)
+    if isinstance(v, dict):
+        return json.dumps(v, ensure_ascii=False)
+    return v if isinstance(v, (str, int, float)) else str(v)
+
+
+def parse_columns(specs):
+    """--column FIELD=HEADER values -> [(field, header)]; raises ValueError on a
+    malformed spec, a reserved field or a repeated one."""
+    out = []
+    for spec in specs:
+        field, sep, header = spec.partition("=")
+        field, header = field.strip(), header.strip()
+        if not sep or not field or not header:
+            raise ValueError(f"--column wants FIELD=HEADER, got {spec!r}")
+        if field in RESERVED:
+            raise ValueError(f"--column {field!r}: that field already has its own column")
+        if field in {f for f, _ in out}:
+            raise ValueError(f"--column {field!r} given twice")
+        out.append((field, header))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rows", required=True)
@@ -245,6 +286,10 @@ def main():
     ap.add_argument("--draft", action="store_true",
                     help="write even if the audit fails, as <out>_DRAFT.xlsx with a banner")
     args = ap.parse_args()
+    try:
+        extra_cols = parse_columns(args.column)
+    except ValueError as e:
+        ap.error(str(e))
 
     rows = common.load_json(args.rows)
     here = os.path.dirname(os.path.abspath(args.rows))
@@ -284,16 +329,10 @@ def main():
     for src in unknown_sources(rows):
         print(f"  ⚠ source={src!r} has no color rule (known: {', '.join(COLORS)}); "
               "rendered white", file=sys.stderr)
-    extra = []
-    for spec in args.column:
-        field, sep, header = spec.partition("=")
-        if not sep or not field.strip() or not header.strip():
-            ap.error(f"--column wants FIELD=HEADER, got {spec!r}")
-        extra.append((field.strip(), header.strip()))
-    n, has_cite = build(rows, out, args.sheet_name, banner=banner, excluded=excluded, extra=extra)
+    n, has_cite = build(rows, out, args.sheet_name, banner=banner, excluded=excluded, extra=extra_cols)
     n_pdf = sum(1 for r in rows if r.get("pdf"))
-    extra = " + citation columns" if has_cite else ""
-    print(f"Wrote {n} rows ({n_pdf} with PDFs){extra} to {out}")
+    cite_note = " + citation columns" if has_cite else ""
+    print(f"Wrote {n} rows ({n_pdf} with PDFs){cite_note} to {out}")
 
 
 if __name__ == "__main__":

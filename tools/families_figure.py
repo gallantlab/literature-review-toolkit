@@ -60,6 +60,13 @@ decades, and --min-year clamps the axis start. --xlsx embeds the spreadsheet wit
 a download button. --emphasize-source lab draws one source's rows large.
 --no-raster skips the PNG and PDF.
 
+MARKER SHAPE. --shape-by FIELD --square-if V1,V2 draws a paper as a square when
+its rows.json FIELD holds one of the values (case-insensitive; true/false match
+JSON booleans), and as a circle otherwise -- a second, binary encoding beside
+color. A square has the area of the circle it replaces, so the size key still
+reads. --shape-legend "circle text|square text" labels the key drawn under the
+subtitle, and the click panel names each paper's kind.
+
   python3 tools/families_figure.py --rows rows.json --families families.json \\
           --out-prefix mytopic_families --title "My topic — theoretical families"
 
@@ -296,7 +303,9 @@ def mark(x, y, r, attrs, square=False):
 
 
 def shape_legend(texts, x, y, n_circle, n_square):
-    """Key for --shape-by: what a circle and what a square stand for, with counts."""
+    """Key for --shape-by: what a circle and what a square stand for, with counts
+    -> (svg, bounding box (x0, x1, y0, y1)). Label placement treats the box as an
+    obstacle, since the key sits inside the plot's top edge."""
     c_txt, s_txt = (list(texts) + ["", ""])[:2]
     c_txt = c_txt or "circle"
     s_txt = s_txt or "square"
@@ -305,7 +314,16 @@ def shape_legend(texts, x, y, n_circle, n_square):
     x2 = x + 30 + 6.6 * len(c_txt) + 40
     out += [f'<rect x="{x2 + 0.6:.1f}" y="{y - 8.4:.1f}" width="8.9" height="8.9" fill="#777"/>',
             f'<text x="{x2 + 15:.0f}" y="{y}" font-size="11.5" fill="#444">{esc(s_txt)} ({n_square})</text>']
-    return "".join(out)
+    x_end = x2 + 15 + 6.6 * (len(s_txt) + 3 + len(str(n_square))) + 4
+    return "".join(out), (x, x_end, y - 12, y + 4)
+
+
+def field_text(v):
+    """A rows.json value as --square-if compares it: case-insensitive, and a JSON
+    true/false reads as 'true'/'false' (Python's str() would give 'True')."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return "" if v is None else str(v).strip().lower()
 
 
 def size_legend(rad, cites, x_right, y_base, r_max, n_unknown=0):
@@ -517,6 +535,8 @@ def year_ticks(ymin, ymax, xf, warp, min_gap=34):
 def main():
     argv = sys.argv[1:]
     args = build_parser().parse_args(argv)
+    if not args.shape_by and (args.square_if or args.shape_legend):
+        sys.exit("families_figure: --square-if and --shape-legend need --shape-by FIELD")
     args.internal = resolve_internal(args.internal, args.rows)
     if args.internal:
         print(f"landmarks: within-corpus citations from {args.internal}")
@@ -536,7 +556,7 @@ def main():
     subtitle = spec.get("subtitle") or fam_spec.get("principle", "")
 
     # papers with a usable year, grouped per lane
-    square_vals = {v.strip() for v in (args.square_if or "").split(",") if v.strip()}
+    square_vals = {v.strip().lower() for v in (args.square_if or "").split(",") if v.strip()}
     if args.shape_by and not square_vals:
         sys.exit("families_figure: --shape-by needs --square-if VALUES")
     shape_text = (args.shape_legend or "").split("|", 1) if args.shape_by else []
@@ -549,11 +569,16 @@ def main():
                                 "apa": r.get("apa", ""), "doi": r.get("link", ""),
                                 "topic": r.get("topic", ""), "source": r.get("source", ""),
                                 "summary": r.get("summary", ""),
-                                "oa": r.get("cite_openalex"), "s2": r.get("cite_s2"),
-                                "sq": bool(args.shape_by) and str(r.get(args.shape_by, "")) in square_vals}
+                                "oa": r.get("cite_openalex"), "s2": r.get("cite_s2")}
+            if args.shape_by:       # only then, so the page data is unchanged without it
+                papers[r["ref"]]["sq"] = field_text(r.get(args.shape_by)) in square_vals
             if args.shape_by and any(shape_text):
                 papers[r["ref"]]["kind"] = (shape_text + [""])[1 if papers[r["ref"]]["sq"] else 0]
 
+    if args.shape_by and not any(p.get("sq", False) for p in papers.values()):
+        seen = sorted({field_text(r.get(args.shape_by)) for r in rows})[:8]
+        sys.stderr.write(f"warning: no paper's {args.shape_by!r} matches --square-if; "
+                         f"values seen: {seen}\n")
     if not papers:
         sys.exit("families_figure: no papers with a parseable year and a known family — "
                  "nothing to plot (check rows.json has `family` + a (YYYY) in each apa).")
@@ -724,6 +749,10 @@ def main():
     loff, placed_lbl = {}, []                     # placed_lbl: label bounding boxes
     lx_of = {}                                     # label x, pulled in from the figure's edges
     HEAD = 84           # the title and subtitle end here; a label above it covers them
+    shape_svg, shape_box = (shape_legend(shape_text, 10, PADT - 14,
+                                         sum(not p.get("sq", False) for p in papers.values()),
+                                         sum(p.get("sq", False) for p in papers.values()))
+                            if args.shape_by else ("", None))
     # and below H - PADB it covers the year axis
     for name in order:
         # (x, ref) again: `labeled` is keyed off a set, so sorting on x alone let
@@ -746,8 +775,8 @@ def main():
                 ly = dy + o
                 box = (x - w / 2, x + w / 2, ly - 8, ly + 6)
                 pen = sum(_overlap_area(box, b) for b in placed_lbl)
-                if box[2] < HEAD or box[3] > H - PADB:
-                    pen += 1e6          # never over the title or the year axis, whatever else it costs
+                if box[2] < HEAD or box[3] > H - PADB or (shape_box and _overlap_area(box, shape_box)):
+                    pen += 1e6          # never over the title, the shape key or the year axis
                 pen += sum(60.0 for bx, by, br in big_dots
                            if not (abs(bx - x0) < 0.5 and abs(by - dy) < 0.5)
                            and _box_hits_dot(box, bx, by, margin=max(11.0, br + 3)))
@@ -776,10 +805,8 @@ def main():
                                sum(1 for p in papers.values() if _cites(p) < 0))
                  + '</g>')
 
-    if args.shape_by:
-        s.append('<g id="shapelegend">' + shape_legend(shape_text, 10, PADT - 14,
-                 sum(not p["sq"] for p in papers.values()), sum(p["sq"] for p in papers.values()))
-                 + '</g>')
+    if shape_svg:
+        s.append(f'<g id="shapelegend">{shape_svg}</g>')
 
     for name in order:
         y, top, c = yf(name), yf(name) - laneH / 2, COLOR[name]
@@ -842,10 +869,10 @@ def main():
         # that is a third of the corpus. Draw those hollow instead.
         if size_mode and _cites(p) < 0:
             body = mark(x, y, rr, f'fill="none" stroke="{COLOR[p["family"]]}" '
-                        f'stroke-width="1.1" stroke-opacity="0.75"', p["sq"])
+                        f'stroke-width="1.1" stroke-opacity="0.75"', p.get("sq", False))
         else:
             ring = ' stroke="#fff" stroke-width="0.9" stroke-opacity="0.85"' if size_mode else ''
-            body = mark(x, y, rr, f'fill="{COLOR[p["family"]]}"{ring}', p["sq"])
+            body = mark(x, y, rr, f'fill="{COLOR[p["family"]]}"{ring}', p.get("sq", False))
         data[ref] = dict(p, ny=round(y, 1))
         s.append(f'<g class="node bg" data-key="{esc(ref)}" tabindex="0"><title>{esc(p["apa"])}</title>'
                  f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="{num(max(9.0, rr + 2))}" '
@@ -904,7 +931,7 @@ def main():
                  f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="{num(max(12.0, rr + 3))}" '
                  f'fill="none" pointer-events="all"/>'
                  + mark(x, y, rr, f'fill="{COLOR[p["family"]]}" stroke="{stroke}" '
-                        f'stroke-width="{sw}"', p["sq"]) + f'{label}</g>')
+                        f'stroke-width="{sw}"', p.get("sq", False)) + f'{label}</g>')
     s.append('</svg>')
     svg = "".join(s)
 
@@ -930,6 +957,7 @@ def main():
     # tooltip; showing both would stack two descriptions on the same hover.
     svg_html = re.sub(r'<title class="lanetitle">.*?</title>', "", svg, flags=re.S)
     doc = HTML_SHELL.replace("__TITLE__", esc(args.title)).replace("__SVG__", svg_html)\
+        .replace("__SHAPECSS__", SHAPE_CSS if args.shape_by else "")\
         .replace("__XLSXBTN__", xlsx_btn)\
         .replace("__DATA__", js_json(data)).replace("__COLOR__", js_json(COLOR))\
         .replace("__FAMINFO__", js_json(faminfo))
@@ -961,6 +989,16 @@ def main():
                          "by hand so the figure can be reproduced\n")
 
 
+# Square markers (--shape-by) mirror the circle rules above. CSS `r` cannot grow
+# a rect, so hover scales it instead. Emitted only when squares are drawn: without
+# --shape-by the SVG and the page data match a render from before the option, and
+# the page differs only by the panel script's inert d.kind check.
+SHAPE_CSS = """ .node.bg rect.mk{opacity:.38;} rect.mk{transform-box:fill-box;transform-origin:center;}
+ .node.bg:hover rect.mk,.node.bg:focus rect.mk{opacity:1;transform:scale(1.5);}
+ .node.spine:hover rect.mk,.node.spine:focus rect.mk{transform:scale(1.25);}
+ .node.sel rect.mk{stroke:#000;stroke-width:2.6px;opacity:1;}
+"""
+
 HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>__TITLE__</title>
 <style>
  *{box-sizing:border-box;} body{margin:0;font-family:Helvetica,Arial,sans-serif;color:#222;
@@ -973,11 +1011,7 @@ HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><titl
  .node.bg:hover circle:not(.hit),.node.bg:focus circle:not(.hit){r:6;opacity:1;}
  .node.spine:hover circle:not(.hit),.node.spine:focus circle:not(.hit){r:11;}
  .node:hover .lbl{fill:#000;} .node.sel circle:not(.hit){stroke:#000;stroke-width:2.6px;opacity:1;}
- .node.bg rect.mk{opacity:.38;} rect.mk{transform-box:fill-box;transform-origin:center;}
- .node.bg:hover rect.mk,.node.bg:focus rect.mk{opacity:1;transform:scale(1.5);}
- .node.spine:hover rect.mk,.node.spine:focus rect.mk{transform:scale(1.25);}
- .node.sel rect.mk{stroke:#000;stroke-width:2.6px;opacity:1;}
- .dim{opacity:.1;transition:opacity .15s;}
+__SHAPECSS__ .dim{opacity:.1;transition:opacity .15s;}
  aside{width:340px;border-left:1px solid #e5e5e5;padding:16px 18px;overflow:auto;font-size:13.5px;line-height:1.45;}
  #fam{display:inline-block;padding:2px 9px;border-radius:11px;color:#fff;font-size:12px;font-weight:bold;}
  #apa{margin:12px 0;} .meta{color:#666;font-size:12.5px;}

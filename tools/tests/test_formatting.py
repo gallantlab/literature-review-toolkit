@@ -1790,8 +1790,16 @@ check("s2_wait_turn does not wait when the key has been idle", _sl, [])
 _s2_reset()
 
 
+
+def _s2_fakes(fake):
+    """Patches routing BOTH S2 paths to `fake` (an http_json stand-in): GETs go
+    through http_json, batch POSTs through _s2_post (curl)."""
+    def post(url, data, hdrs, timeout=30):
+        return json.dumps(fake(url, retries=1, timeout=timeout, data=data, headers=hdrs)).encode()
+    return {"http_json": fake, "_s2_post": post}
+
 _s2_reset()
-with _patched(common, http_json=_s2_ok), _sleeps():
+with _patched(common, **_s2_fakes(_s2_ok)), _sleeps():
     _got = citations.fetch_s2(_items)
 check("s2: 1200 ids go out in chunks of <=500", _bodies, [500, 500, 200])
 check("s2: every chunk's results are mapped back", len(_got), 1200)
@@ -1804,7 +1812,7 @@ def _s2_400(url, retries=5, timeout=30, data=None, headers=None):
 
 
 _s2_reset()
-with _patched(common, http_json=_s2_400), _sleeps() as _sl:
+with _patched(common, **_s2_fakes(_s2_400)), _sleeps() as _sl:
     citations.fetch_s2(_items[:10])
 # final fixes I5: a 400 is bisected to find the rejected ids (10 ids -> 19 requests),
 # but never retried as if transient: no 20 s / 40 s backoff sleep.
@@ -1829,24 +1837,24 @@ def _s2_seq(*codes):
 
 
 _s2_reset()
-with _patched(common, http_json=_s2_seq()), _sleeps() as _sl:
+with _patched(common, **_s2_fakes(_s2_seq())), _sleeps() as _sl:
     common.s2_request("paper/batch?fields=title", {"ids": ["DOI:10.1/a"]})
     common.s2_request("paper/batch?fields=title", {"ids": ["DOI:10.1/b"]})
 check_true("s2_request paces consecutive requests >= ~1.1 s", len(_sl) == 1 and 1.0 < _sl[0] <= 1.1, str(_sl))
 check("s2_request lets common.http make exactly one attempt", _s2calls[-1][1], 1)
 _s2_reset()
-with _patched(common, http_json=_s2_seq(429, 429)), _sleeps() as _sl:
+with _patched(common, **_s2_fakes(_s2_seq(429, 429))), _sleeps() as _sl:
     common.s2_request("paper/batch", {"ids": []})
 check_true("s2_request backs off 20 s then 40 s after 429s", 20 in _sl and 40 in _sl, str(_sl))
 _s2_reset()
-with _patched(common, http_json=_s2_seq(429, 429, 429)), _sleeps():
+with _patched(common, **_s2_fakes(_s2_seq(429, 429, 429))), _sleeps():
     check_true("s2_request gives up after the backoff", _raises(lambda: common.s2_request("paper/batch", {"ids": []})))
-with _patched(os, environ=dict(os.environ, S2_API_KEY="k-test")), _patched(common, http_json=_s2_seq()), _sleeps():
+with _patched(os, environ=dict(os.environ, S2_API_KEY="k-test")), _patched(common, **_s2_fakes(_s2_seq())), _sleeps():
     _s2_reset()
     common.s2_request("paper/x")
 check("s2_request sends the key when set", _s2calls[-1][2].get("x-api-key"), "k-test")
 _s2_reset()
-with _patched(common, http_json=_s2_seq(503, 200)), _sleeps() as _sl:
+with _patched(common, **_s2_fakes(_s2_seq(503, 200))), _sleeps() as _sl:
     _got = common.s2_request("paper/x")
 check_true("s2_request retries a 503 and returns", _got == {"ok": True} and 20 in _sl, str(_sl))
 _s2_reset()
@@ -1854,7 +1862,7 @@ with _patched(common, http_json=_s2_seq(urllib.error.URLError("reset"), 200)), _
     _got = common.s2_request("paper/x")
 check("s2_request retries a network error (URLError) and returns", _got, {"ok": True})
 _s2_reset()
-with _patched(common, http_json=_s2_seq(400)), _sleeps() as _sl:
+with _patched(common, **_s2_fakes(_s2_seq(400))), _sleeps() as _sl:
     _raised = _raises(lambda: common.s2_request("paper/x"))
 check_true("s2_request raises a 400 at once with no backoff sleep",
            _raised and 20 not in _sl and 40 not in _sl, str(_sl))
@@ -4457,7 +4465,7 @@ _i3_ack = references.audit_rows([_i3_row], "ref", acks={"I3R": {"datacite-deposi
 check("I3: acknowledging it passes the gate", (_i3_ack["unacked"], _i3_ack["failed"]), ({}, False))
 
 # ---- final review M1: datacite_work's own fetch keeps a curl 404 a 404 (2026-09-26) ----
-# The vendored curl_get uses --fail, so through http() a DataCite 404 fetched by
+# curl_get used --fail, so through http() a DataCite 404 fetched by
 # curl became "curl exit 22" -- an ERROR -- instead of "DOI does not exist".
 class _M1Resp:
     def __init__(self, body):
@@ -5750,13 +5758,6 @@ check("spreadsheet color_key: -nosrc falls back to its base, unknown is None",
       (spreadsheet.color_key("xref-nosrc"), spreadsheet.color_key("search"), spreadsheet.color_key("mystery")),
       ("xref", "search", None))
 
-# ---- report ---------------------------------------------------------------
-if FAILURES:
-    print(f"FAILED {len(FAILURES)} check(s):\n")
-    for f in FAILURES:
-        print("  ✗ " + f)
-    sys.exit(1)
-print("✓ all formatting/audit/citation regression checks pass")
 
 # ---- S2 batch POSTs fall back to curl too (2026-10-07) ------------------------
 # urllib read every 300-paper S2 batch body short (IncompleteRead) while curl read
@@ -5778,26 +5779,101 @@ with _patched(common.shutil, which=lambda n: "/usr/bin/curl"), \
 check_true("curl_get sends a POST body from stdin",
            "--data-binary" in _s2cmds[-1][0] and _s2cmds[-1][1] == b'{"ids": ["DOI:10.1/x"]}',
            str(_s2cmds[-1]))
-check_true("http() no longer limits the curl fallback to GETs",
-           "if not tried_curl:" in _CSRC.split("def http(")[1].split("def http_json")[0])
+check_true("a curl POST stays a POST through a redirect",
+           {"--post301", "--post302"} <= set(_s2cmds[-1][0]), str(_s2cmds[-1][0]))
+
+# Headers (the API keys) go through a private file, never argv: a process list
+# shows every argument. The file is gone once curl returns.
+_hdrfiles = []
+
+
+def _s2run_hdr(cmd, capture_output=True, timeout=None, input=None):
+    _s2cmds.append((cmd, input))
+    hf = cmd[cmd.index("-H") + 1][1:]
+    _hdrfiles.append((hf, open(hf).read(), oct(os.stat(hf).st_mode & 0o777)))
+    return _sp.CompletedProcess(cmd, 0, stdout=b'{"ok": 1}\n200', stderr=b"")
+
+
+with _patched(common.shutil, which=lambda n: "/usr/bin/curl"), _patched(common.subprocess, run=_s2run_hdr):
+    common.curl_get("https://api.semanticscholar.org/x", {"x-api-key": "k-secret", "Accept-Encoding": "gzip"}, 10)
+check_true("curl never sees an API key on its command line",
+           not any("k-secret" in a for a in _s2cmds[-1][0]), str(_s2cmds[-1][0]))
+check_true("the key travels in a 0600 header file (Accept-Encoding left to --compressed)",
+           _hdrfiles and _hdrfiles[-1][1] == "x-api-key: k-secret\n" and _hdrfiles[-1][2] == "0o600",
+           str(_hdrfiles))
+check_true("the header file is deleted after the request", not os.path.exists(_hdrfiles[-1][0]))
+
+# http(): a dropped urllib connection retries once through curl, POST body and
+# all, and that curl attempt counts as a request.
+
+
+def _drop(req, timeout=None):
+    raise http.client.IncompleteRead(b"x" * 10, 100)
+
+
+_n0 = common.request_count()
+with _patched(common.urllib.request, urlopen=_drop), _patched(common.shutil, which=lambda n: "/usr/bin/curl"), \
+        _patched(common.subprocess, run=_s2run), _sleeps():
+    _got = common.http("https://api.semanticscholar.org/graph/v1/paper/batch", data=b'{"ids": []}')
+check("http() falls back to curl for a truncated POST", _got, b'[{"citationCount": 3}]')
+check("http() counts both the urllib and the curl attempt", common.request_count() - _n0, 2)
+
+# s2_request sends a batch POST to curl directly: urllib truncated every large
+# batch, so trying it first spent a second S2 request per batch (and drew 429s).
+_n0 = len(_s2cmds)
+with _patched(common.shutil, which=lambda n: "/usr/bin/curl"), _patched(common.subprocess, run=_s2run), \
+        _patched(common.urllib.request, urlopen=lambda *a, **k: (_ for _ in ()).throw(AssertionError("urllib used"))), \
+        _sleeps():
+    _s2_reset()
+    _got = common.s2_request("paper/batch?fields=citationCount", {"ids": ["DOI:10.1/x"]})
+check("s2_request POSTs once, through curl", (_got, len(_s2cmds) - _n0), ([{"citationCount": 3}], 1))
+
+
+def _s2run_400(cmd, capture_output=True, timeout=None, input=None):
+    return _sp.CompletedProcess(cmd, 0, stdout=b'{"error": "bad id"}\n400', stderr=b"")
+
+
+with _patched(common.shutil, which=lambda n: "/usr/bin/curl"), _patched(common.subprocess, run=_s2run_400), \
+        _sleeps():
+    _s2_reset()
+    try:
+        common.s2_request("paper/batch", {"ids": ["DOI:bad"]})
+        _e = None
+    except Exception as e:
+        _e = e
+check("a curl 400 on an S2 POST is an HTTPError 400, so s2_batch can bisect",
+      (type(_e).__name__, getattr(_e, "code", None)), ("HTTPError", 400))
 
 # ---- families_figure --shape-by: a second, binary marker encoding (2026-10-07) ----
 # Squares carry the AREA of the circle they replace, so the citation-size key still
 # reads; a paper not in --square-if stays a circle.
 _sq = families_figure.mark(100, 50, 5.0, 'fill="red"', square=True)
 _side = float(re.search(r'width="([\d.]+)"', _sq).group(1))
-check_true("a square marker has the area of its circle",
-           abs(_side ** 2 - 3.14159265 * 25) < 0.5, f"side {_side}")
+check_true("a square marker has the area of its circle (side printed to 0.1 px)",
+           abs(_side - 5.0 * 3.14159265 ** 0.5) <= 0.05, f"side {_side}")
 check_true("a square marker is centered on the dot",
            'x="95.6"' in _sq and 'y="45.6"' in _sq, _sq)
 check_true("an unshaped marker is still a circle",
            families_figure.mark(100, 50, 5.0, 'fill="red"').startswith("<circle"))
+_sl_svg, _sl_box = families_figure.shape_legend(["trained here", "reused"], 10, 90, 3, 2)
 check_true("the shape key names both kinds with their counts",
-           "trained here (3)" in families_figure.shape_legend(["trained here", "reused"], 10, 90, 3, 2)
-           and "reused (2)" in families_figure.shape_legend(["trained here", "reused"], 10, 90, 3, 2))
-check_true("--shape-by is an option of the figure",
-           "--shape-by" in families_figure.parser().format_help() if hasattr(families_figure, "parser")
-           else "--shape-by" in open(families_figure.__file__).read())
+           "trained here (3)" in _sl_svg and "reused (2)" in _sl_svg, _sl_svg)
+_sl_end = max(float(x) for x in re.findall(r'<text x="([\d.]+)"', _sl_svg)) + 6.6 * len("reused (2)")
+check_true("the shape key's box covers its text, so labels can avoid it",
+           _sl_box[0] <= 10 and _sl_box[1] >= _sl_end and _sl_box[2] <= 80 and _sl_box[3] >= 90, str(_sl_box))
+check_true("--shape-by, --square-if and --shape-legend are options of the figure",
+           all(f in families_figure.build_parser().format_help()
+               for f in ("--shape-by", "--square-if", "--shape-legend")))
+check("--square-if matches case-insensitively and reads JSON booleans",
+      [families_figure.field_text(v) for v in (True, False, " Reused ", None, 1)],
+      ["true", "false", "reused", "", "1"])
+_ffp = _sp.run([sys.executable, families_figure.__file__, "--rows", "x.json", "--families", "y.json",
+                "--out-prefix", "z", "--square-if", "reused"], capture_output=True, text=True)
+check_true("--square-if without --shape-by is refused, not silently ignored",
+           _ffp.returncode != 0 and "need --shape-by" in _ffp.stderr, _ffp.stderr[-200:])
+check_true("the square CSS ships only with --shape-by",
+           "__SHAPECSS__" in families_figure.HTML_SHELL and "rect.mk" not in families_figure.HTML_SHELL
+           and "rect.mk" in families_figure.SHAPE_CSS)
 
 # ---- spreadsheet --column: project fields as extra columns (2026-10-07) ------------
 _xtmp = os.path.join(tempfile.mkdtemp(), "x.xlsx")
@@ -5808,3 +5884,21 @@ with __import__("zipfile").ZipFile(_xtmp) as _z:
     _ss = _z.read("xl/sharedStrings.xml").decode()
 check_true("--column adds the header and the row's value",
            "Training" in _ss and "trained end-to-end here" in _ss)
+spreadsheet.build([{"ref": "A1", "apa": "A, B. (2020). T. V.", "link": "", "summary": "s", "topic": "t",
+                    "source": "search", "ev": ["quote one", "quote two"], "meta": {"k": 1}}],
+                  _xtmp, extra=[("ev", "Evidence"), ("meta", "Meta")])
+with __import__("zipfile").ZipFile(_xtmp) as _z:
+    _ss = _z.read("xl/sharedStrings.xml").decode()
+check_true("a list or dict field is written as text, not a crash",
+           "quote one; quote two" in _ss and '{"k": 1}' in _ss.replace("&quot;", '"'), _ss[-300:])
+check("--column parses FIELD=HEADER", spreadsheet.parse_columns(["training = Training"]), [("training", "Training")])
+for _bad in (["family=Family"], ["xref=X"], ["a=A", "a=B"], ["noequals"]):
+    check_true(f"--column refuses {_bad}", _raises(lambda: spreadsheet.parse_columns(_bad)))
+
+# ---- report ---------------------------------------------------------------
+if FAILURES:
+    print(f"FAILED {len(FAILURES)} check(s):\n")
+    for f in FAILURES:
+        print("  ✗ " + f)
+    sys.exit(1)
+print("✓ all formatting/audit/citation regression checks pass")
