@@ -1294,6 +1294,8 @@ Family · Cite (OpenAlex) · Cite (S2) · Verify note · Summary checked against
 PDF (local) · Xref`. The `Family`, `Cite`, `Verify note` and `Summary checked
 against` columns appear once any row carries them. `Link` is always the bare DOI
 URL. `Summary checked against` names the abstract's source, or says "no abstract".
+`--column FIELD=HEADER` (repeatable) adds a project field as a column after
+`Family`, for example the field a timeline's `--shape-by` draws as squares.
 
 Row color records where each paper came from:
 
@@ -1356,6 +1358,7 @@ families are mature and which are new, before any paper is read.
 | **A hollow dot** | no citation count available; not a count of zero |
 | **A labeled dot** | an automatically selected landmark |
 | **A ring and a ★** | a home-lab paper (only when opted in) |
+| **A square instead of a circle** | the paper's `--shape-by` field holds a `--square-if` value; the key under the subtitle says what each shape means (only when opted in) |
 
 | What you do | What happens |
 |---|---|

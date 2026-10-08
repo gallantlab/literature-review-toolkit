@@ -285,6 +285,29 @@ def num(v):
     return f"{float(v):.2f}".rstrip("0").rstrip(".") or "0"
 
 
+def mark(x, y, r, attrs, square=False):
+    """One paper's marker: a circle of radius r, or (--shape-by) a square of the
+    same AREA, so the citation-size encoding reads the same for both shapes."""
+    if not square:
+        return f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{num(r)}" {attrs}/>'
+    side = float(r) * math.sqrt(math.pi)
+    return (f'<rect class="mk" x="{x - side / 2:.1f}" y="{y - side / 2:.1f}" '
+            f'width="{side:.1f}" height="{side:.1f}" {attrs}/>')
+
+
+def shape_legend(texts, x, y, n_circle, n_square):
+    """Key for --shape-by: what a circle and what a square stand for, with counts."""
+    c_txt, s_txt = (list(texts) + ["", ""])[:2]
+    c_txt = c_txt or "circle"
+    s_txt = s_txt or "square"
+    out = [f'<circle cx="{x + 5}" cy="{y - 4}" r="5" fill="#777"/>',
+           f'<text x="{x + 15}" y="{y}" font-size="11.5" fill="#444">{esc(c_txt)} ({n_circle})</text>']
+    x2 = x + 30 + 6.6 * len(c_txt) + 40
+    out += [f'<rect x="{x2 + 0.6:.1f}" y="{y - 8.4:.1f}" width="8.9" height="8.9" fill="#777"/>',
+            f'<text x="{x2 + 15:.0f}" y="{y}" font-size="11.5" fill="#444">{esc(s_txt)} ({n_square})</text>']
+    return "".join(out)
+
+
 def size_legend(rad, cites, x_right, y_base, r_max, n_unknown=0):
     """A row of circles keying dot size to citation count.
 
@@ -453,6 +476,17 @@ def build_parser():
                          "ring and label. 'none' gives binary dots (big = landmark).")
     ap.add_argument("--size-range", default="2.0,11.0", metavar="MIN,MAX",
                     help="dot radius range in px for --size-by-citations (default 2.0,11.0)")
+    ap.add_argument("--shape-by", metavar="FIELD",
+                    help="draw a paper as a square instead of a circle when this rows.json "
+                         "field holds one of the --square-if values (a second, binary "
+                         "encoding; size and color keep their meaning). Squares have the "
+                         "area of the circle they replace, so the size key still reads.")
+    ap.add_argument("--square-if", metavar="V1,V2", default="",
+                    help="with --shape-by: the field values drawn as squares")
+    ap.add_argument("--shape-legend", metavar="CIRCLE|SQUARE",
+                    help="with --shape-by: key text for the two shapes, as "
+                         "'what a circle means|what a square means' (also shown in the "
+                         "click panel)")
     return ap
 
 
@@ -502,6 +536,10 @@ def main():
     subtitle = spec.get("subtitle") or fam_spec.get("principle", "")
 
     # papers with a usable year, grouped per lane
+    square_vals = {v.strip() for v in (args.square_if or "").split(",") if v.strip()}
+    if args.shape_by and not square_vals:
+        sys.exit("families_figure: --shape-by needs --square-if VALUES")
+    shape_text = (args.shape_legend or "").split("|", 1) if args.shape_by else []
     papers = {}
     for r in rows:
         y = year_of(r.get("apa"))
@@ -511,7 +549,10 @@ def main():
                                 "apa": r.get("apa", ""), "doi": r.get("link", ""),
                                 "topic": r.get("topic", ""), "source": r.get("source", ""),
                                 "summary": r.get("summary", ""),
-                                "oa": r.get("cite_openalex"), "s2": r.get("cite_s2")}
+                                "oa": r.get("cite_openalex"), "s2": r.get("cite_s2"),
+                                "sq": bool(args.shape_by) and str(r.get(args.shape_by, "")) in square_vals}
+            if args.shape_by and any(shape_text):
+                papers[r["ref"]]["kind"] = (shape_text + [""])[1 if papers[r["ref"]]["sq"] else 0]
 
     if not papers:
         sys.exit("families_figure: no papers with a parseable year and a known family — "
@@ -735,6 +776,11 @@ def main():
                                sum(1 for p in papers.values() if _cites(p) < 0))
                  + '</g>')
 
+    if args.shape_by:
+        s.append('<g id="shapelegend">' + shape_legend(shape_text, 10, PADT - 14,
+                 sum(not p["sq"] for p in papers.values()), sum(p["sq"] for p in papers.values()))
+                 + '</g>')
+
     for name in order:
         y, top, c = yf(name), yf(name) - laneH / 2, COLOR[name]
         s.append(f'<rect x="{PADL}" y="{top:.0f}" width="{plotW}" height="{laneH:.0f}" '
@@ -795,12 +841,11 @@ def main():
         # would be asserting a number it does not have — on reverse_polish_notation
         # that is a third of the corpus. Draw those hollow instead.
         if size_mode and _cites(p) < 0:
-            body = (f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{num(rr)}" fill="none" '
-                    f'stroke="{COLOR[p["family"]]}" stroke-width="1.1" stroke-opacity="0.75"/>')
+            body = mark(x, y, rr, f'fill="none" stroke="{COLOR[p["family"]]}" '
+                        f'stroke-width="1.1" stroke-opacity="0.75"', p["sq"])
         else:
             ring = ' stroke="#fff" stroke-width="0.9" stroke-opacity="0.85"' if size_mode else ''
-            body = (f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{num(rr)}" '
-                    f'fill="{COLOR[p["family"]]}"{ring}/>')
+            body = mark(x, y, rr, f'fill="{COLOR[p["family"]]}"{ring}', p["sq"])
         data[ref] = dict(p, ny=round(y, 1))
         s.append(f'<g class="node bg" data-key="{esc(ref)}" tabindex="0"><title>{esc(p["apa"])}</title>'
                  f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="{num(max(9.0, rr + 2))}" '
@@ -858,8 +903,8 @@ def main():
                  f'<title>{esc(p["apa"])}</title>'
                  f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="{num(max(12.0, rr + 3))}" '
                  f'fill="none" pointer-events="all"/>'
-                 f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{num(rr)}" fill="{COLOR[p["family"]]}" '
-                 f'stroke="{stroke}" stroke-width="{sw}"/>{label}</g>')
+                 + mark(x, y, rr, f'fill="{COLOR[p["family"]]}" stroke="{stroke}" '
+                        f'stroke-width="{sw}"', p["sq"]) + f'{label}</g>')
     s.append('</svg>')
     svg = "".join(s)
 
@@ -928,6 +973,10 @@ HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><titl
  .node.bg:hover circle:not(.hit),.node.bg:focus circle:not(.hit){r:6;opacity:1;}
  .node.spine:hover circle:not(.hit),.node.spine:focus circle:not(.hit){r:11;}
  .node:hover .lbl{fill:#000;} .node.sel circle:not(.hit){stroke:#000;stroke-width:2.6px;opacity:1;}
+ .node.bg rect.mk{opacity:.38;} rect.mk{transform-box:fill-box;transform-origin:center;}
+ .node.bg:hover rect.mk,.node.bg:focus rect.mk{opacity:1;transform:scale(1.5);}
+ .node.spine:hover rect.mk,.node.spine:focus rect.mk{transform:scale(1.25);}
+ .node.sel rect.mk{stroke:#000;stroke-width:2.6px;opacity:1;}
  .dim{opacity:.1;transition:opacity .15s;}
  aside{width:340px;border-left:1px solid #e5e5e5;padding:16px 18px;overflow:auto;font-size:13.5px;line-height:1.45;}
  #fam{display:inline-block;padding:2px 9px;border-radius:11px;color:#fff;font-size:12px;font-weight:bold;}
@@ -976,7 +1025,7 @@ function show(k){const d=DATA[k];if(!d)return;
  const doi=url?'<a class="doi" href="'+esc(url)+'" target="_blank" rel="noopener">Open paper \\u2197</a>':'<a class="doi off">no DOI</a>';
  const c=[];if(Number.isInteger(d.oa))c.push(d.oa+' (OpenAlex)');if(Number.isInteger(d.s2))c.push(d.s2+' (S2)');
  panel.innerHTML='<button id="close" onclick="resetPanel()">\\u00d7</button>'
-  +'<div id="fam" style="background:'+esc(FAMCOLOR[d.family]||'#666')+'">'+esc(d.family)+'</div> <span class="meta">'+esc(d.ref)+' \\u00b7 '+esc(d.topic)+'</span>'
+  +'<div id="fam" style="background:'+esc(FAMCOLOR[d.family]||'#666')+'">'+esc(d.family)+'</div> <span class="meta">'+esc(d.ref)+' \\u00b7 '+esc(d.topic)+(d.kind?' \\u00b7 '+esc(d.kind):'')+'</span>'
   +navHTML(k,doi)
   +'<div id="apa">'+esc(d.apa)+'</div>'+(d.summary?'<div id="summary">'+esc(d.summary)+'</div>':'')+(c.length?'<div class="meta">Cited by: '+esc(c.join(' \\u00b7 '))+'</div>':'');
  CUR=k; wireNav();}

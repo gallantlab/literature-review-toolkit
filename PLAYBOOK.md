@@ -692,7 +692,8 @@ A legacy (ungated) table is written despite its findings. It rebuilds the whole
 file from `rows.json` each time (xlsxwriter is write-only).
 
 Columns: `Topic | Ref # | APA reference | Link | Summary | Tag` then, when any row
-carries them, `Family` (Phase 6b), `Cite (OpenAlex) | Cite (S2)` (Phase 5b),
+carries them, `Family` (Phase 6b), any field passed as `--column FIELD=HEADER`
+(repeatable; e.g. the field a figure's `--shape-by` encodes), `Cite (OpenAlex) | Cite (S2)` (Phase 5b),
 `Verify note` (hand-check notes), `Summary checked against` (Phase 5c: the abstract
 source, or "no abstract"), then `PDF (local) | Xref`. The "Considered and
 excluded" sheet lists the ledger's `exclude` decisions (Phase 6) and the lanes'
@@ -987,6 +988,13 @@ on each family name for its claim and lineage) plus a standalone `.svg`, and `.p
 says nothing about how cited a paper is), normalized at the 95th percentile. Papers
 with no count draw **hollow**. When presenting, say that citation count is partly an
 age variable, so the right edge of any timeline runs small.
+
+**Marker shape (optional).** `--shape-by FIELD --square-if V1,V2 --shape-legend
+"circle text|square text"` draws a paper as a square when its `rows.json` field holds
+one of the values, adding a binary encoding without touching color or size (a square
+has its circle's area). The key goes under the subtitle and the click panel names
+the kind. First use: marking papers that train a network end-to-end themselves
+(circle) apart from papers that reuse or freeze one trained elsewhere (square).
 
 **Landmark labels are automatic; do not hand-build a labels overlay.** A paper is
 labeled if ANY of:
@@ -1563,7 +1571,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `sentence_case.py` | 3f | Post-canon pass: propose strict APA-7 sentence case for reference titles, for a human to review. | `--apply` `--include-foreign` `--out` `--proper` `--rows` `--vocab` |
 | `download.py` | 4 (opt-in) | Download open-access PDFs for a list of papers, only when the user asks for them. | `--email` `--manual-list` `--out-dir` `--papers` `--sleep` |
 | `reconcile_downloads.py` | 4 (opt-in) | Match PDFs the user downloaded by hand to a slug + title + DOI manifest, and file them. | `--downloads-dir` `--dry-run` `--manifest` `--out-dir` `--since-hours` |
-| `spreadsheet.py` | 5 | Build the bibliography .xlsx from rows.json, and refuse a table that fails the audit. | `--acks` `--candidates` `--draft` `--key` `--out` `--rows` `--sheet-name` |
+| `spreadsheet.py` | 5 | Build the bibliography .xlsx from rows.json, and refuse a table that fails the audit. | `--acks` `--candidates` `--column` `--draft` `--key` `--out` `--rows` `--sheet-name` |
 | `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--attach` `--attach-only` `--email` `--key` `--out` `--rows` `--sources` |
 | `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--acks` `--email` `--ingest-missing` `--key` `--out` `--per` `--prepare-missing` `--rows` |
 | `summary_audit.py` | 5c | Summary check: agents with no web access confirm each row's summary against its abstract. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
@@ -1571,7 +1579,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
 | `xref.py` | 6 | Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite. | `--allow-incomplete` `--cache` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--no-cache` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
 | `families.py` | 6b | Validate a family taxonomy, stamp `family` onto rows.json, and write families.json and families.md. | `--asof` `--assign` `--default-from-lanes` `--digest` `--md` `--out` `--per` `--prepare` `--results` `--rows` |
-| `families_figure.py` | 6b | Render the interactive lineage timeline of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--size-by-citations` `--size-range` `--spec` `--time-warp` `--title` `--xlsx` |
+| `families_figure.py` | 6b | Render the interactive lineage timeline of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--shape-by` `--shape-legend` `--size-by-citations` `--size-range` `--spec` `--square-if` `--time-warp` `--title` `--xlsx` |
 | `bib_viewer.py` | 7 | Render a searchable bibliography of the whole corpus, for a page that has no timeline. | `--author` `--author-note` `--families` `--out` `--rows` `--subtitle` `--title` |
 | `cite_check.py` | 7 | Gate: every in-text citation in a review must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
 | `prose_audit.py` | 7 | Measure a review's prose, and check that a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |

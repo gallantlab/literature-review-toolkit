@@ -5780,3 +5780,31 @@ check_true("curl_get sends a POST body from stdin",
            str(_s2cmds[-1]))
 check_true("http() no longer limits the curl fallback to GETs",
            "if not tried_curl:" in _CSRC.split("def http(")[1].split("def http_json")[0])
+
+# ---- families_figure --shape-by: a second, binary marker encoding (2026-10-07) ----
+# Squares carry the AREA of the circle they replace, so the citation-size key still
+# reads; a paper not in --square-if stays a circle.
+_sq = families_figure.mark(100, 50, 5.0, 'fill="red"', square=True)
+_side = float(re.search(r'width="([\d.]+)"', _sq).group(1))
+check_true("a square marker has the area of its circle",
+           abs(_side ** 2 - 3.14159265 * 25) < 0.5, f"side {_side}")
+check_true("a square marker is centered on the dot",
+           'x="95.6"' in _sq and 'y="45.6"' in _sq, _sq)
+check_true("an unshaped marker is still a circle",
+           families_figure.mark(100, 50, 5.0, 'fill="red"').startswith("<circle"))
+check_true("the shape key names both kinds with their counts",
+           "trained here (3)" in families_figure.shape_legend(["trained here", "reused"], 10, 90, 3, 2)
+           and "reused (2)" in families_figure.shape_legend(["trained here", "reused"], 10, 90, 3, 2))
+check_true("--shape-by is an option of the figure",
+           "--shape-by" in families_figure.parser().format_help() if hasattr(families_figure, "parser")
+           else "--shape-by" in open(families_figure.__file__).read())
+
+# ---- spreadsheet --column: project fields as extra columns (2026-10-07) ------------
+_xtmp = os.path.join(tempfile.mkdtemp(), "x.xlsx")
+spreadsheet.build([{"ref": "A1", "apa": "A, B. (2020). T. V.", "link": "", "summary": "s",
+                    "topic": "t", "source": "search", "training": "trained end-to-end here"}],
+                  _xtmp, extra=[("training", "Training")])
+with __import__("zipfile").ZipFile(_xtmp) as _z:
+    _ss = _z.read("xl/sharedStrings.xml").decode()
+check_true("--column adds the header and the row's value",
+           "Training" in _ss and "trained end-to-end here" in _ss)

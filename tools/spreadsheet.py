@@ -117,7 +117,7 @@ def lane_exclusions(report_path, rows, seen_dois=()):
     return out
 
 
-def build(rows, out, sheet_name="References", banner=None, excluded=None):
+def build(rows, out, sheet_name="References", banner=None, excluded=None, extra=()):
     """Write the xlsx. Returns (n_rows, has_cite)."""
     # Auto-detect citation counts on any row -> add the two columns.
     has_cite = any(
@@ -167,6 +167,10 @@ def build(rows, out, sheet_name="References", banner=None, excluded=None):
     ]
     if has_family:
         cols.append(("Family", "family", 14, "text"))
+    # Project-specific fields (--column FIELD=HEADER), shown after Family, e.g. how
+    # each paper's network was trained when the figure encodes that as a shape.
+    for field, header in extra:
+        cols.append((header, field, 24, "text"))
     if has_cite:
         cols += [("Cite (OpenAlex)", "cite_openalex", 13, "num"),
                  ("Cite (S2)",       "cite_s2",       12, "num")]
@@ -235,6 +239,9 @@ def main():
     ap.add_argument("--key", default=None, help="row key field (default: ref, else label)")
     ap.add_argument("--acks", help="acknowledged warnings (default: audit_acks.json beside --rows)")
     ap.add_argument("--candidates", help="candidate ledger (default: candidates.json beside --rows)")
+    ap.add_argument("--column", action="append", default=[], metavar="FIELD=HEADER",
+                    help="add a rows.json field as a column after Family (repeatable), "
+                         "e.g. --column training=Training")
     ap.add_argument("--draft", action="store_true",
                     help="write even if the audit fails, as <out>_DRAFT.xlsx with a banner")
     args = ap.parse_args()
@@ -277,7 +284,13 @@ def main():
     for src in unknown_sources(rows):
         print(f"  ⚠ source={src!r} has no color rule (known: {', '.join(COLORS)}); "
               "rendered white", file=sys.stderr)
-    n, has_cite = build(rows, out, args.sheet_name, banner=banner, excluded=excluded)
+    extra = []
+    for spec in args.column:
+        field, sep, header = spec.partition("=")
+        if not sep or not field.strip() or not header.strip():
+            ap.error(f"--column wants FIELD=HEADER, got {spec!r}")
+        extra.append((field.strip(), header.strip()))
+    n, has_cite = build(rows, out, args.sheet_name, banner=banner, excluded=excluded, extra=extra)
     n_pdf = sum(1 for r in rows if r.get("pdf"))
     extra = " + citation columns" if has_cite else ""
     print(f"Wrote {n} rows ({n_pdf} with PDFs){extra} to {out}")
