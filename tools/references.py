@@ -396,11 +396,14 @@ def audit(apa, has_source):
         elif re.search(r"[a-z](" + "|".join(sorted(common.GENERA)) + r")\b", t):
             # same bug where the tag wrapped a genus ("cockroachPeriplaneta")
             defects.append("missing-space (a genus is glued to the preceding word)")
-    if re.search(r"\?[A-Za-z]", apa) or re.search(r"\s\?\s", apa):
+    no_url = re.sub(r"https?://\S+", "", apa)
+    if re.search(r"\?[A-Za-z]", no_url) or re.search(r"\s\?\s", no_url):
         # A '?' glued to a letter, or floating alone, is a smart quote / dash the
         # source could not encode (Wehner 1987 came back as "?Matched filters? ?
         # neural models"). A real question mark is followed by a space or a
         # closing bracket, so "What is (was?) the fixed action pattern?" is fine.
+        # A URL's query string is not prose: a hand-checked ICLR reference ending
+        # "openreview.net/forum?id=HkEI22jeg" failed here (2026-10-07).
         defects.append("mangled-punct (a '?' where a quote or dash belongs — fix by hand)")
     if "‐" in apa or "‑" in apa:
         defects.append("unicode-hyphen (U+2010/U+2011 in a name — normalize to ASCII '-')")

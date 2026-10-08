@@ -691,6 +691,10 @@ check_true("stray ? before a letter is a defect", any(
 check_true("a legitimate question mark is not a defect", not any(
     "mangled-punct" in d for d in defects(
         "Dewsbury, D. (1978). What is (was?) the fixed action pattern? Animal Behaviour, 26, 310-311.")))
+check_true("a '?' in a URL's query string is not mangled punctuation", not any(
+    "mangled-punct" in d for d in defects(
+        "Batty, E., & Paninski, L. (2017). Multilayer recurrent network models. In International "
+        "Conference on Learning Representations. https://openreview.net/forum?id=HkEI22jeg")))
 
 # 2. A publisher back-file/digitization deposit re-dates an old paper. Seen three
 #    times in one corpus: Seyfarth 1991->2008, Lorenz 1943->2010, Schleidt 1962->2010.
@@ -5753,3 +5757,26 @@ if FAILURES:
         print("  ✗ " + f)
     sys.exit(1)
 print("✓ all formatting/audit/citation regression checks pass")
+
+# ---- S2 batch POSTs fall back to curl too (2026-10-07) ------------------------
+# urllib read every 300-paper S2 batch body short (IncompleteRead) while curl read
+# it whole, so a build's S2 column came back 0/315. http() now tries curl on a
+# network failure for a POST as well, and curl_get sends the body.
+_s2cmds = []
+
+
+def _s2run(cmd, capture_output=True, timeout=None, input=None):
+    _s2cmds.append((cmd, input))
+    return _sp.CompletedProcess(cmd, 0, stdout=b'[{"citationCount": 3}]\n200', stderr=b"")
+
+
+with _patched(common.shutil, which=lambda n: "/usr/bin/curl"), \
+        _patched(common.subprocess, run=_s2run):
+    check("curl_get POSTs its body and returns the reply",
+          common.curl_get("https://api.semanticscholar.org/graph/v1/paper/batch", {}, 10,
+                          data=b'{"ids": ["DOI:10.1/x"]}'), b'[{"citationCount": 3}]')
+check_true("curl_get sends a POST body from stdin",
+           "--data-binary" in _s2cmds[-1][0] and _s2cmds[-1][1] == b'{"ids": ["DOI:10.1/x"]}',
+           str(_s2cmds[-1]))
+check_true("http() no longer limits the curl fallback to GETs",
+           "if not tried_curl:" in _CSRC.split("def http(")[1].split("def http_json")[0])

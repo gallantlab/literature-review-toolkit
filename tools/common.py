@@ -107,8 +107,9 @@ def decompress(body, encoding):
     return body
 
 
-def curl_get(url, headers, timeout):
-    """GET via the curl binary. Bytes on success; raises on any failure.
+def curl_get(url, headers, timeout, data=None):
+    """GET (or POST `data`) via the curl binary. Bytes on success; raises on any
+    failure.
 
     A fallback, not a preference. Some hosts close the connection on urllib
     instantly and deterministically for particular URLs while curl fetches the
@@ -116,7 +117,10 @@ def curl_get(url, headers, timeout):
     rate limiting (random) and from truncation (same byte count each time). On
     one xref pass 71 of 536 reference-list fetches failed this way and every one
     of them succeeded through curl. `--compressed` matters here for the same
-    reason the Accept-Encoding header does above.
+    reason the Accept-Encoding header does above. POSTs need it too: Semantic
+    Scholar ignores Accept-Encoding, and urllib read every 300-paper batch body
+    short (IncompleteRead at ~7.7 of 31 KB) while curl read it whole, so for a
+    whole build S2 counted 0 of 315 papers (2026-10-07).
 
     Redirects are followed (`-L`, to https only), and the final HTTP status is
     captured (`-w`): without them a 301 page came back as a "successful" body,
@@ -130,8 +134,12 @@ def curl_get(url, headers, timeout):
         if k.lower() == "accept-encoding":
             continue                      # --compressed sets and decodes it
         cmd += ["-H", f"{k}: {v}"]
+    extra = {}
+    if data is not None:
+        cmd += ["--data-binary", "@-"]        # POST the body from stdin
+        extra["input"] = data
     cmd.append(url)
-    p = subprocess.run(cmd, capture_output=True, timeout=timeout + 10)
+    p = subprocess.run(cmd, capture_output=True, timeout=timeout + 10, **extra)
     if p.returncode != 0:
         raise OSError(f"curl exit {p.returncode}: {p.stderr.decode('utf-8', 'replace')[:120]}")
     body, _, code = p.stdout.rpartition(b"\n")
@@ -257,13 +265,14 @@ def http(url, retries=5, timeout=30, data=None, headers=None):
             # incompatibility rather than load, and urllib will reproduce it
             # exactly however long we wait — so sleeping 2+4+8+16s first only
             # makes a recoverable fetch slow. curl gets these on the first try.
-            # GETs only: a POST body is not worth re-sending through a second
-            # stack. If curl fails too, fall into the normal backoff, which is
-            # the right response to genuine load.
-            if data is None and not tried_curl:
+            # POSTs too: the only POSTs are read-only S2 batch lookups, safe to
+            # resend, and urllib truncated every large one (curl_get). If curl
+            # fails too, fall into the normal backoff, which is the right
+            # response to genuine load.
+            if not tried_curl:
                 tried_curl = True
                 try:
-                    return curl_get(url, hdrs, timeout)
+                    return curl_get(url, hdrs, timeout, data=data)
                 except Exception:
                     pass
             if attempt < retries - 1:

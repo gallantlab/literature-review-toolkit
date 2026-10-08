@@ -1465,7 +1465,7 @@ timing and determinism.
 |---|---|---|
 | Random requests fail, succeed on retry | genuine rate limiting | backoff; raise `--sleep` |
 | The **same** large records fail at the **same byte count**, small ones fine | truncation of a large uncompressed body (`IncompleteRead(1782210 bytes read, 399724 more expected)`) | `Accept-Encoding: gzip, deflate` + `common.decompress` |
-| The **same** records fail **instantly** (~0.3 s), curl fetches them fine | HTTP-stack / proxy incompatibility | `common.curl_get` at the first network failure |
+| The **same** records fail **instantly** (~0.3 s), or a large body comes back short even with gzip requested; curl fetches them fine | HTTP-stack / proxy incompatibility (Semantic Scholar ignores `Accept-Encoding`: every 300-paper batch POST read short, so S2 counted 0 of 315 papers on 2026-10-07) | `common.curl_get` at the first network failure, for GETs and POSTs |
 
 Only the first is fixed by waiting; against the other two a retry loop runs forever
 and reports as slowness. On the cortical-layers build, uncompressed: 117 of 537 rows

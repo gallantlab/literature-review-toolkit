@@ -1494,7 +1494,7 @@ the first.
 | HTTP 429s, spread across many URLs, easing with delay | throttling | raise `--sleep`; set `S2_API_KEY` |
 | Every OpenAlex request 429s with a Retry-After of hours (`OpenAlexBudgetError`) | the free daily budget is spent | set `OPENALEX_API_KEY`, or wait for the reset ([§2.3](#23-phase-0-run-the-preflight-before-every-new-search)) |
 | `IncompleteRead` on particular large records, failing at the same byte count every time | truncated uncompressed response | request gzip; `common.http` already does |
-| One URL fails under `urllib` but works under `curl` | client incompatibility | `common.curl_get`, which the tools try automatically |
+| One URL fails under `urllib` but works under `curl` (including a large Semantic Scholar batch POST read short: S2 ignores gzip) | client incompatibility | `common.curl_get`, which the tools try automatically, for GETs and POSTs |
 
 If retries never converge, you have the wrong diagnosis. To tell which case
 applies, run `curl -sS --compressed` on one failing URL.
