@@ -996,9 +996,12 @@ one of the values, adding a binary encoding without touching color or size (a sq
 has its circle's area). The key goes under the subtitle and the click panel names
 the kind. First use: marking papers that train a network end-to-end themselves
 (circle) apart from papers that reuse or freeze one trained elsewhere (square).
-Values match case-insensitively (a JSON `true` matches `true`). `--square-if` or
-`--shape-legend` without `--shape-by` is refused, and a run where no paper matches
-warns with the values it saw.
+`--triangle-if V3` adds a third kind, drawn as triangles of the same area, with a
+third key text (`--shape-legend "circle text|square text|triangle text"`); it was
+added to mark shallow one-hidden-layer and subunit networks apart from deep ones.
+Values match case-insensitively (a JSON `true` matches `true`). `--square-if`,
+`--triangle-if` or `--shape-legend` without `--shape-by` is refused, and a run where
+no paper matches warns with the values it saw.
 
 **Landmark labels are automatic; do not hand-build a labels overlay.** A paper is
 labeled if ANY of:
@@ -1584,7 +1587,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
 | `xref.py` | 6 | Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite. | `--allow-incomplete` `--cache` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--no-cache` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
 | `families.py` | 6b | Validate a family taxonomy, stamp `family` onto rows.json, and write families.json and families.md. | `--asof` `--assign` `--default-from-lanes` `--digest` `--md` `--out` `--per` `--prepare` `--results` `--rows` |
-| `families_figure.py` | 6b | Render the interactive lineage timeline of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--shape-by` `--shape-legend` `--size-by-citations` `--size-range` `--spec` `--square-if` `--time-warp` `--title` `--xlsx` |
+| `families_figure.py` | 6b | Render the interactive lineage timeline of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--shape-by` `--shape-legend` `--size-by-citations` `--size-range` `--spec` `--square-if` `--time-warp` `--title` `--triangle-if` `--xlsx` |
 | `bib_viewer.py` | 7 | Render a searchable bibliography of the whole corpus, for a page that has no timeline. | `--author` `--author-note` `--families` `--out` `--rows` `--subtitle` `--title` |
 | `cite_check.py` | 7 | Gate: every in-text citation in a review must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
 | `prose_audit.py` | 7 | Measure a review's prose, and check that a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |

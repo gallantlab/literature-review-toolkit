@@ -5847,7 +5847,7 @@ check("a curl 400 on an S2 POST is an HTTPError 400, so s2_batch can bisect",
 # ---- families_figure --shape-by: a second, binary marker encoding (2026-10-07) ----
 # Squares carry the AREA of the circle they replace, so the citation-size key still
 # reads; a paper not in --square-if stays a circle.
-_sq = families_figure.mark(100, 50, 5.0, 'fill="red"', square=True)
+_sq = families_figure.mark(100, 50, 5.0, 'fill="red"', "square")
 _side = float(re.search(r'width="([\d.]+)"', _sq).group(1))
 check_true("a square marker has the area of its circle (side printed to 0.1 px)",
            abs(_side - 5.0 * 3.14159265 ** 0.5) <= 0.05, f"side {_side}")
@@ -5855,15 +5855,25 @@ check_true("a square marker is centered on the dot",
            'x="95.6"' in _sq and 'y="45.6"' in _sq, _sq)
 check_true("an unshaped marker is still a circle",
            families_figure.mark(100, 50, 5.0, 'fill="red"').startswith("<circle"))
-_sl_svg, _sl_box = families_figure.shape_legend(["trained here", "reused"], 10, 90, 3, 2)
-check_true("the shape key names both kinds with their counts",
-           "trained here (3)" in _sl_svg and "reused (2)" in _sl_svg, _sl_svg)
-_sl_end = max(float(x) for x in re.findall(r'<text x="([\d.]+)"', _sl_svg)) + 6.6 * len("reused (2)")
+# a triangle (--triangle-if) also keeps the circle's area, centered on its centroid
+_tri = families_figure.mark(100, 50, 5.0, 'fill="red"', "triangle")
+_tp = [tuple(map(float, q.split(","))) for q in re.search(r'points="([^"]+)"', _tri).group(1).split()]
+_tarea = abs((_tp[1][0] - _tp[0][0]) * (_tp[2][1] - _tp[0][1]) - (_tp[2][0] - _tp[0][0]) * (_tp[1][1] - _tp[0][1])) / 2
+check_true("a triangle marker has the area of its circle",
+           abs(_tarea - 3.14159265 * 25) < 0.6, f"area {_tarea}")
+check_true("a triangle marker is centered on its centroid",
+           abs(sum(q[0] for q in _tp) / 3 - 100) < 0.1 and abs(sum(q[1] for q in _tp) / 3 - 50) < 0.1, str(_tp))
+_sl_svg, _sl_box = families_figure.shape_legend(
+    [("circle", "trained here", 3), ("square", "reused", 2), ("triangle", "shallow", 4)], 10, 90)
+check_true("the shape key names every kind with its count",
+           all(t in _sl_svg for t in ("trained here (3)", "reused (2)", "shallow (4)")) and "<polygon" in _sl_svg,
+           _sl_svg)
+_sl_end = max(float(x) for x in re.findall(r'<text x="([\d.]+)"', _sl_svg)) + 6.6 * len("shallow (4)")
 check_true("the shape key's box covers its text, so labels can avoid it",
            _sl_box[0] <= 10 and _sl_box[1] >= _sl_end and _sl_box[2] <= 80 and _sl_box[3] >= 90, str(_sl_box))
-check_true("--shape-by, --square-if and --shape-legend are options of the figure",
+check_true("--shape-by, --square-if, --triangle-if and --shape-legend are options of the figure",
            all(f in families_figure.build_parser().format_help()
-               for f in ("--shape-by", "--square-if", "--shape-legend")))
+               for f in ("--shape-by", "--square-if", "--triangle-if", "--shape-legend")))
 check("--square-if matches case-insensitively and reads JSON booleans",
       [families_figure.field_text(v) for v in (True, False, " Reused ", None, 1)],
       ["true", "false", "reused", "", "1"])
@@ -5871,9 +5881,33 @@ _ffp = _sp.run([sys.executable, families_figure.__file__, "--rows", "x.json", "-
                 "--out-prefix", "z", "--square-if", "reused"], capture_output=True, text=True)
 check_true("--square-if without --shape-by is refused, not silently ignored",
            _ffp.returncode != 0 and "need --shape-by" in _ffp.stderr, _ffp.stderr[-200:])
-check_true("the square CSS ships only with --shape-by",
-           "__SHAPECSS__" in families_figure.HTML_SHELL and "rect.mk" not in families_figure.HTML_SHELL
-           and "rect.mk" in families_figure.SHAPE_CSS)
+# A full render with a triangle kind; and a listed value no paper holds (here one
+# split in two by its comma) is named, not silently drawn as zero triangles.
+_ffd = tempfile.mkdtemp()
+json.dump([{"ref": f"A{i}", "family": "F", "apa": f"A, B. (20{10 + i}). T{i}. V.",
+            "kind": "deep" if i % 2 else "shallow"} for i in range(4)], open(os.path.join(_ffd, "rows.json"), "w"))
+json.dump({"principle": "p", "families": [{"key": "f", "name": "F", "claim": "c", "lineage": ""}],
+           "assignments": {}}, open(os.path.join(_ffd, "families.json"), "w"))
+
+
+def _ff_render(*extra):
+    p = _sp.run([sys.executable, families_figure.__file__, "--rows", "rows.json", "--families", "families.json",
+                 "--out-prefix", "f", "--title", "T", "--no-raster", "--shape-by", "kind", *extra],
+                capture_output=True, text=True, cwd=_ffd)
+    svg = open(os.path.join(_ffd, "f.svg")).read() if p.returncode == 0 else ""
+    return p, svg
+
+
+_ffp, _ffsvg = _ff_render("--triangle-if", "shallow", "--shape-legend", "deep|shallow")
+check_true("--triangle-if draws its papers as triangles and keys them",
+           _ffp.returncode == 0 and _ffsvg.count('<polygon class="mk"') == 2 and "shallow (2)" in _ffsvg,
+           _ffp.stderr[-300:])
+_ffp, _ffsvg = _ff_render("--triangle-if", "shallow, trained here")
+check_true("a --triangle-if value no paper holds is named in a warning",
+           "warning" in _ffp.stderr and "trained here" in _ffp.stderr, _ffp.stderr[-300:])
+check_true("the shape CSS ships only with --shape-by",
+           "__SHAPECSS__" in families_figure.HTML_SHELL and ".mk" not in families_figure.HTML_SHELL
+           and ".node.sel .mk" in families_figure.SHAPE_CSS)
 
 # ---- spreadsheet --column: project fields as extra columns (2026-10-07) ------------
 _xtmp = os.path.join(tempfile.mkdtemp(), "x.xlsx")

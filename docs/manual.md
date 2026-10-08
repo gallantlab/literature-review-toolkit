@@ -1119,6 +1119,7 @@ year. A lineage recalled from memory can be wrong in the same ways a citation ca
     | `--lab-color '#c1121f'` | sets the ring color; quote it, or the shell treats `#` as a comment |
     | `--spec figure_spec.json` | editorial overlay: manual labels, arrows, notes, lane order |
     | `--shape-by FIELD --square-if V1,V2 --shape-legend "circle text\|square text"` | draws a paper as a square when its field holds a listed value (case-insensitive); the key sits under the subtitle |
+    | `--triangle-if V3` | with `--shape-by`: a third kind, drawn as triangles; give the key a third text (`"circle\|square\|triangle"`) |
 
     **Raising a threshold must not remove a label already shown.** A higher
     `--motif-min` shrinks the pool of qualifying papers, not only the cap. Compare
@@ -1360,7 +1361,7 @@ families are mature and which are new, before any paper is read.
 | **A hollow dot** | no citation count available; not a count of zero |
 | **A labeled dot** | an automatically selected landmark |
 | **A ring and a ★** | a home-lab paper (only when opted in) |
-| **A square instead of a circle** | the paper's `--shape-by` field holds a `--square-if` value; the key under the subtitle says what each shape means (only when opted in) |
+| **A square or triangle instead of a circle** | the paper's `--shape-by` field holds a `--square-if` (or `--triangle-if`) value; the key under the subtitle says what each shape means (only when opted in) |
 
 | What you do | What happens |
 |---|---|

@@ -62,10 +62,11 @@ a download button. --emphasize-source lab draws one source's rows large.
 
 MARKER SHAPE. --shape-by FIELD --square-if V1,V2 draws a paper as a square when
 its rows.json FIELD holds one of the values (case-insensitive; true/false match
-JSON booleans), and as a circle otherwise -- a second, binary encoding beside
-color. A square has the area of the circle it replaces, so the size key still
-reads. --shape-legend "circle text|square text" labels the key drawn under the
-subtitle, and the click panel names each paper's kind.
+JSON booleans), and as a circle otherwise -- a second encoding beside color.
+--triangle-if V3 adds a third kind, drawn as triangles. Every shape has the area
+of the circle it replaces, so the size key still reads. --shape-legend
+"circle text|square text|triangle text" labels the key drawn under the subtitle,
+and the click panel names each paper's kind.
 
   python3 tools/families_figure.py --rows rows.json --families families.json \\
           --out-prefix mytopic_families --title "My topic — theoretical families"
@@ -292,30 +293,37 @@ def num(v):
     return f"{float(v):.2f}".rstrip("0").rstrip(".") or "0"
 
 
-def mark(x, y, r, attrs, square=False):
-    """One paper's marker: a circle of radius r, or (--shape-by) a square of the
-    same AREA, so the citation-size encoding reads the same for both shapes."""
-    if not square:
-        return f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{num(r)}" {attrs}/>'
-    side = float(r) * math.sqrt(math.pi)
-    return (f'<rect class="mk" x="{x - side / 2:.1f}" y="{y - side / 2:.1f}" '
-            f'width="{side:.1f}" height="{side:.1f}" {attrs}/>')
+SHAPES = ("circle", "square", "triangle")
 
 
-def shape_legend(texts, x, y, n_circle, n_square):
-    """Key for --shape-by: what a circle and what a square stand for, with counts
-    -> (svg, bounding box (x0, x1, y0, y1)). Label placement treats the box as an
+def mark(x, y, r, attrs, shape="circle"):
+    """One paper's marker: a circle of radius r, or (--shape-by) a square or an
+    upward triangle of the same AREA, so the citation-size encoding reads the same
+    for every shape. The triangle is centered on its centroid."""
+    if shape == "square":
+        side = float(r) * math.sqrt(math.pi)
+        return (f'<rect class="mk" x="{x - side / 2:.1f}" y="{y - side / 2:.1f}" '
+                f'width="{side:.1f}" height="{side:.1f}" {attrs}/>')
+    if shape == "triangle":
+        side = float(r) * math.sqrt(4 * math.pi / math.sqrt(3))
+        h = side * math.sqrt(3) / 2
+        pts = [(x, y - 2 * h / 3), (x - side / 2, y + h / 3), (x + side / 2, y + h / 3)]
+        return (f'<polygon class="mk" points="{" ".join(f"{px:.1f},{py:.1f}" for px, py in pts)}" '
+                f'{attrs}/>')
+    return f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{num(r)}" {attrs}/>'
+
+
+def shape_legend(entries, x, y):
+    """Key for --shape-by: [(shape, text, count)] drawn left to right ->
+    (svg, bounding box (x0, x1, y0, y1)). Label placement treats the box as an
     obstacle, since the key sits inside the plot's top edge."""
-    c_txt, s_txt = (list(texts) + ["", ""])[:2]
-    c_txt = c_txt or "circle"
-    s_txt = s_txt or "square"
-    out = [f'<circle cx="{x + 5}" cy="{y - 4}" r="5" fill="#777"/>',
-           f'<text x="{x + 15}" y="{y}" font-size="11.5" fill="#444">{esc(c_txt)} ({n_circle})</text>']
-    x2 = x + 30 + 6.6 * len(c_txt) + 40
-    out += [f'<rect x="{x2 + 0.6:.1f}" y="{y - 8.4:.1f}" width="8.9" height="8.9" fill="#777"/>',
-            f'<text x="{x2 + 15:.0f}" y="{y}" font-size="11.5" fill="#444">{esc(s_txt)} ({n_square})</text>']
-    x_end = x2 + 15 + 6.6 * (len(s_txt) + 3 + len(str(n_square))) + 4
-    return "".join(out), (x, x_end, y - 12, y + 4)
+    out, cx = [], x
+    for shape, text, n in entries:
+        out.append(mark(cx + 5, y - 4, 5, 'fill="#777"', shape).replace(' class="mk"', ""))
+        label = f"{text or shape} ({n})"
+        out.append(f'<text x="{cx + 15:.0f}" y="{y}" font-size="11.5" fill="#444">{esc(label)}</text>')
+        cx += 15 + 6.6 * len(label) + 30
+    return "".join(out), (x, cx - 26, y - 12, y + 4)
 
 
 def field_text(v):
@@ -495,16 +503,18 @@ def build_parser():
     ap.add_argument("--size-range", default="2.0,11.0", metavar="MIN,MAX",
                     help="dot radius range in px for --size-by-citations (default 2.0,11.0)")
     ap.add_argument("--shape-by", metavar="FIELD",
-                    help="draw a paper as a square instead of a circle when this rows.json "
-                         "field holds one of the --square-if values (a second, binary "
-                         "encoding; size and color keep their meaning). Squares have the "
-                         "area of the circle they replace, so the size key still reads.")
+                    help="draw a paper as a square (or triangle) instead of a circle when this "
+                         "rows.json field holds one of the --square-if (--triangle-if) values: "
+                         "a second encoding; size and color keep their meaning. Every shape has "
+                         "the area of the circle it replaces, so the size key still reads.")
     ap.add_argument("--square-if", metavar="V1,V2", default="",
                     help="with --shape-by: the field values drawn as squares")
-    ap.add_argument("--shape-legend", metavar="CIRCLE|SQUARE",
-                    help="with --shape-by: key text for the two shapes, as "
-                         "'what a circle means|what a square means' (also shown in the "
-                         "click panel)")
+    ap.add_argument("--triangle-if", metavar="V1,V2", default="",
+                    help="with --shape-by: the field values drawn as triangles (a third kind)")
+    ap.add_argument("--shape-legend", metavar="CIRCLE|SQUARE[|TRIANGLE]",
+                    help="with --shape-by: key text for the shapes, as "
+                         "'what a circle means|what a square means|what a triangle means' "
+                         "(also shown in the click panel)")
     return ap
 
 
@@ -535,8 +545,8 @@ def year_ticks(ymin, ymax, xf, warp, min_gap=34):
 def main():
     argv = sys.argv[1:]
     args = build_parser().parse_args(argv)
-    if not args.shape_by and (args.square_if or args.shape_legend):
-        sys.exit("families_figure: --square-if and --shape-legend need --shape-by FIELD")
+    if not args.shape_by and (args.square_if or args.triangle_if or args.shape_legend):
+        sys.exit("families_figure: --square-if, --triangle-if and --shape-legend need --shape-by FIELD")
     args.internal = resolve_internal(args.internal, args.rows)
     if args.internal:
         print(f"landmarks: within-corpus citations from {args.internal}")
@@ -556,10 +566,19 @@ def main():
     subtitle = spec.get("subtitle") or fam_spec.get("principle", "")
 
     # papers with a usable year, grouped per lane
-    square_vals = {v.strip().lower() for v in (args.square_if or "").split(",") if v.strip()}
-    if args.shape_by and not square_vals:
-        sys.exit("families_figure: --shape-by needs --square-if VALUES")
-    shape_text = (args.shape_legend or "").split("|", 1) if args.shape_by else []
+    def values(spec):
+        return {v.strip().lower() for v in (spec or "").split(",") if v.strip()}
+    shape_of = {**{v: "triangle" for v in values(args.triangle_if)},
+                **{v: "square" for v in values(args.square_if)}}
+    if args.shape_by and not shape_of:
+        sys.exit("families_figure: --shape-by needs --square-if (or --triangle-if) VALUES")
+    if values(args.square_if) & values(args.triangle_if):
+        sys.exit("families_figure: a value cannot be both --square-if and --triangle-if")
+    shapes_used = ["circle", "square"] + (["triangle"] if args.triangle_if else [])
+    if not args.square_if:
+        shapes_used.remove("square")
+    texts = (args.shape_legend or "").split("|") if args.shape_by else []
+    shape_text = dict(zip(SHAPES, texts)) if len(texts) == 3 else dict(zip(shapes_used, texts))
     papers = {}
     for r in rows:
         y = year_of(r.get("apa"))
@@ -571,14 +590,19 @@ def main():
                                 "summary": r.get("summary", ""),
                                 "oa": r.get("cite_openalex"), "s2": r.get("cite_s2")}
             if args.shape_by:       # only then, so the page data is unchanged without it
-                papers[r["ref"]]["sq"] = field_text(r.get(args.shape_by)) in square_vals
-            if args.shape_by and any(shape_text):
-                papers[r["ref"]]["kind"] = (shape_text + [""])[1 if papers[r["ref"]]["sq"] else 0]
+                shape = shape_of.get(field_text(r.get(args.shape_by)), "circle")
+                papers[r["ref"]]["shape"] = shape
+                if shape_text.get(shape):
+                    papers[r["ref"]]["kind"] = shape_text[shape]
 
-    if args.shape_by and not any(p.get("sq", False) for p in papers.values()):
-        seen = sorted({field_text(r.get(args.shape_by)) for r in rows})[:8]
-        sys.stderr.write(f"warning: no paper's {args.shape_by!r} matches --square-if; "
-                         f"values seen: {seen}\n")
+    if args.shape_by:
+        # Name each listed value no paper holds: a value containing a comma is split
+        # in two and silently matches nothing, and the key then just reads "(0)".
+        seen = {field_text(r.get(args.shape_by)) for r in rows}
+        unmatched = sorted(set(shape_of) - seen)
+        if unmatched:
+            sys.stderr.write(f"warning: no paper's {args.shape_by!r} is {unmatched} (values are "
+                             f"comma-separated); values seen: {sorted(seen)[:8]}\n")
     if not papers:
         sys.exit("families_figure: no papers with a parseable year and a known family — "
                  "nothing to plot (check rows.json has `family` + a (YYYY) in each apa).")
@@ -749,9 +773,9 @@ def main():
     loff, placed_lbl = {}, []                     # placed_lbl: label bounding boxes
     lx_of = {}                                     # label x, pulled in from the figure's edges
     HEAD = 84           # the title and subtitle end here; a label above it covers them
-    shape_svg, shape_box = (shape_legend(shape_text, 10, PADT - 14,
-                                         sum(not p.get("sq", False) for p in papers.values()),
-                                         sum(p.get("sq", False) for p in papers.values()))
+    shape_svg, shape_box = (shape_legend([(sh, shape_text.get(sh, ""),
+                                           sum(p["shape"] == sh for p in papers.values()))
+                                          for sh in shapes_used], 10, PADT - 14)
                             if args.shape_by else ("", None))
     # and below H - PADB it covers the year axis
     for name in order:
@@ -869,10 +893,10 @@ def main():
         # that is a third of the corpus. Draw those hollow instead.
         if size_mode and _cites(p) < 0:
             body = mark(x, y, rr, f'fill="none" stroke="{COLOR[p["family"]]}" '
-                        f'stroke-width="1.1" stroke-opacity="0.75"', p.get("sq", False))
+                        f'stroke-width="1.1" stroke-opacity="0.75"', p.get("shape", "circle"))
         else:
             ring = ' stroke="#fff" stroke-width="0.9" stroke-opacity="0.85"' if size_mode else ''
-            body = mark(x, y, rr, f'fill="{COLOR[p["family"]]}"{ring}', p.get("sq", False))
+            body = mark(x, y, rr, f'fill="{COLOR[p["family"]]}"{ring}', p.get("shape", "circle"))
         data[ref] = dict(p, ny=round(y, 1))
         s.append(f'<g class="node bg" data-key="{esc(ref)}" tabindex="0"><title>{esc(p["apa"])}</title>'
                  f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="{num(max(9.0, rr + 2))}" '
@@ -931,7 +955,7 @@ def main():
                  f'<circle class="hit" cx="{x:.0f}" cy="{y:.0f}" r="{num(max(12.0, rr + 3))}" '
                  f'fill="none" pointer-events="all"/>'
                  + mark(x, y, rr, f'fill="{COLOR[p["family"]]}" stroke="{stroke}" '
-                        f'stroke-width="{sw}"', p.get("sq", False)) + f'{label}</g>')
+                        f'stroke-width="{sw}"', p.get("shape", "circle")) + f'{label}</g>')
     s.append('</svg>')
     svg = "".join(s)
 
@@ -989,14 +1013,14 @@ def main():
                          "by hand so the figure can be reproduced\n")
 
 
-# Square markers (--shape-by) mirror the circle rules above. CSS `r` cannot grow
-# a rect, so hover scales it instead. Emitted only when squares are drawn: without
+# Square and triangle markers (--shape-by) mirror the circle rules above. CSS `r`
+# cannot grow a rect or polygon, so hover scales it instead. Emitted only when squares are drawn: without
 # --shape-by the SVG and the page data match a render from before the option, and
 # the page differs only by the panel script's inert d.kind check.
-SHAPE_CSS = """ .node.bg rect.mk{opacity:.38;} rect.mk{transform-box:fill-box;transform-origin:center;}
- .node.bg:hover rect.mk,.node.bg:focus rect.mk{opacity:1;transform:scale(1.5);}
- .node.spine:hover rect.mk,.node.spine:focus rect.mk{transform:scale(1.25);}
- .node.sel rect.mk{stroke:#000;stroke-width:2.6px;opacity:1;}
+SHAPE_CSS = """ .node.bg .mk{opacity:.38;} .mk{transform-box:fill-box;transform-origin:center;}
+ .node.bg:hover .mk,.node.bg:focus .mk{opacity:1;transform:scale(1.5);}
+ .node.spine:hover .mk,.node.spine:focus .mk{transform:scale(1.25);}
+ .node.sel .mk{stroke:#000;stroke-width:2.6px;opacity:1;}
 """
 
 HTML_SHELL = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>__TITLE__</title>

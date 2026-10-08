@@ -48,7 +48,7 @@ and CI fails if any copy is stale.
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
 | `xref.py` | 6 | Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite. | `--allow-incomplete` `--cache` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--no-cache` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
 | `families.py` | 6b | Validate a family taxonomy, stamp `family` onto rows.json, and write families.json and families.md. | `--asof` `--assign` `--default-from-lanes` `--digest` `--md` `--out` `--per` `--prepare` `--results` `--rows` |
-| `families_figure.py` | 6b | Render the interactive lineage timeline of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--shape-by` `--shape-legend` `--size-by-citations` `--size-range` `--spec` `--square-if` `--time-warp` `--title` `--xlsx` |
+| `families_figure.py` | 6b | Render the interactive lineage timeline of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--shape-by` `--shape-legend` `--size-by-citations` `--size-range` `--spec` `--square-if` `--time-warp` `--title` `--triangle-if` `--xlsx` |
 | `bib_viewer.py` | 7 | Render a searchable bibliography of the whole corpus, for a page that has no timeline. | `--author` `--author-note` `--families` `--out` `--rows` `--subtitle` `--title` |
 | `cite_check.py` | 7 | Gate: every in-text citation in a review must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
 | `prose_audit.py` | 7 | Measure a review's prose, and check that a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |
@@ -1148,10 +1148,11 @@ a download button. --emphasize-source lab draws one source's rows large.
 
 MARKER SHAPE. --shape-by FIELD --square-if V1,V2 draws a paper as a square when
 its rows.json FIELD holds one of the values (case-insensitive; true/false match
-JSON booleans), and as a circle otherwise -- a second, binary encoding beside
-color. A square has the area of the circle it replaces, so the size key still
-reads. --shape-legend "circle text|square text" labels the key drawn under the
-subtitle, and the click panel names each paper's kind.
+JSON booleans), and as a circle otherwise -- a second encoding beside color.
+--triangle-if V3 adds a third kind, drawn as triangles. Every shape has the area
+of the circle it replaces, so the size key still reads. --shape-legend
+"circle text|square text|triangle text" labels the key drawn under the subtitle,
+and the click panel names each paper's kind.
 
   python3 tools/families_figure.py --rows rows.json --families families.json \
           --out-prefix mytopic_families --title "My topic — theoretical families"
