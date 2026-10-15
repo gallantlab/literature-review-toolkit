@@ -33,7 +33,8 @@ families_figure.py and forward.py use to pick landmarks.
 Every completed reference list is cached, by slug and DOI (or PDF), in
 <out>.refs.json or --cache. So a re-run after a throttled or interrupted pass
 fetches only the lists that are missing, incomplete or for an edited DOI;
---no-cache refetches everything.
+--no-cache refetches everything. A CrossRef record that verify or canon already
+fetched is read from .record_cache/ beside --rows instead of the network.
 
 Semantic Scholar needs S2_API_KEY to be reliable. xref, citations and abstracts
 share one key, and their requests take turns through a pacer shared across
@@ -95,6 +96,9 @@ def crossref_refs(doi):
     failure that exhausts http_json's backoff returns None — incomplete; the
     caller must NOT count it as "this paper cites nothing", which silently
     deflates the frequency table and the --internal-out in-degrees."""
+    msg = common.cache_get("crossref", doi)      # verify/canon cached the same message
+    if msg is not None:
+        return _cr_ref_list(msg)
     url = f"{common.CROSSREF_API}{urllib.parse.quote(doi)}"
     try:
         d = http_json(url)
@@ -106,7 +110,13 @@ def crossref_refs(doi):
     except Exception as e:
         print(f"  CR fail {doi}: {e}", file=sys.stderr)
         return None
-    refs = d["message"].get("reference", [])
+    common.cache_put("crossref", doi, d["message"])
+    return _cr_ref_list(d["message"])
+
+
+def _cr_ref_list(msg):
+    """The reference list of one CrossRef work message, in xref's shape."""
+    refs = msg.get("reference", [])
     return [{
         "doi": (r.get("DOI") or "").lower(),
         "author": (r.get("author") or "").strip(),
@@ -172,6 +182,10 @@ def _s2_all_refs(pid):
         offset = page["next"]
 
 
+# A batch reference list this long may have been cut at a cap; shorter ones are complete.
+S2_BATCH_REF_CAP = 500
+
+
 def s2_refs(dois, chunk=10, retry_wait=0):
     """Reference lists from Semantic Scholar -> {doi: [refs] | None}. None = the
     fetch could not complete; [] = S2 has no such paper, rejects its id (named
@@ -206,13 +220,15 @@ def s2_refs(dois, chunk=10, retry_wait=0):
             out[d] = []
             continue
         refs = p.get("references") or []
-        if (p.get("referenceCount") or 0) > len(refs) and p.get("paperId"):
+        # referenceCount also counts references S2 cannot list (publisher-elided):
+        # on 2026-10-15, paging 11 such papers returned nothing beyond the batch, and
+        # each page was a paced request. Page only a list long enough to be capped.
+        if (p.get("referenceCount") or 0) > len(refs) >= S2_BATCH_REF_CAP and p.get("paperId"):
             try:
                 refs = _s2_all_refs(p["paperId"])
             except Exception as e:
-                print(f"  S2 references {d}: {type(e).__name__}: {e}", file=sys.stderr)
-                out[d] = None
-                continue
+                print(f"  S2 references {d}: {type(e).__name__}: {e} (keeping the batch's "
+                      f"{len(refs)})", file=sys.stderr)
         out[d] = [_s2_ref(r) for r in refs if r]
     return out
 
@@ -276,35 +292,43 @@ def fetch_all(papers, sleep=0.4, retry_wait=60.0, email=""):
     incomplete fetch); Semantic Scholar, batched, for arXiv DOIs and for any
     paper CrossRef holds no reference list for."""
     all_refs, incomplete, to_s2 = {}, [], []
-    for p in papers:
-        doi = p.get("doi")
-        if doi and common.ARXIV_DOI.match(doi):
-            to_s2.append(p)
-            continue
+
+    def one(p):
+        # Runs on a pmap worker: CrossRef's polite pool allows common.WORKERS at once,
+        # and each worker pauses only after a fetch that went to the network (a cached
+        # record or a PDF needs no courtesy delay).
         before = common.request_count()
-        refs = crossref_refs(doi) if doi else pdf_refs(p.get("pdf"))
+        refs = crossref_refs(p["doi"]) if p.get("doi") else pdf_refs(p.get("pdf"))
+        if common.request_count() != before:
+            time.sleep(sleep)
+        return refs
+
+    todo = []
+    for p in papers:
+        if p.get("doi") and common.ARXIV_DOI.match(p["doi"]):
+            to_s2.append(p)
+        else:
+            todo.append(p)
+    for p, refs in zip(todo, common.pmap(one, todo)):
         if refs is None:
             incomplete.append(p)
             refs = []
-        elif doi and not refs:
+        elif p.get("doi") and not refs:
             to_s2.append(p)
-        print(f"  {p['slug']:50s} {len(refs):>4d} refs ({'crossref' if doi else 'pdf'})", file=sys.stderr)
+        print(f"  {p['slug']:50s} {len(refs):>4d} refs ({'crossref' if p.get('doi') else 'pdf'})",
+              file=sys.stderr)
         all_refs[p["slug"]] = refs
-        if common.request_count() != before:
-            time.sleep(sleep)
     if incomplete:
         print(f"  [retry] {len(incomplete)} incomplete CrossRef fetch(es); cooling down {retry_wait:.0f}s…",
               file=sys.stderr)
         time.sleep(retry_wait)
         still = []
-        for p in incomplete:
-            refs = crossref_refs(p["doi"])
+        for p, refs in zip(incomplete, common.pmap(one, incomplete)):
             if refs is None:
                 still.append(p)
             elif not refs:
                 to_s2.append(p)
             all_refs[p["slug"]] = refs or []
-            time.sleep(sleep)
         incomplete = still
     if to_s2:
         # OpenAlex first (batched, not rate-limited like S2), Semantic Scholar for the rest
@@ -397,6 +421,7 @@ def main():
     else:
         papers = common.load_json(args.papers)
     excludes = set(d.lower() for d in (common.load_json(args.exclude) if args.exclude else []))
+    common.enable_record_cache(args.rows or args.papers)   # reuse the records verify and canon fetched
 
     cache_path = args.cache or f"{args.out}.refs.json"
     cache = {} if args.no_cache else common.load_optional_json(cache_path, {})
@@ -454,15 +479,18 @@ def main():
     if args.resolve_unknown:
         n_unknown = sum(1 for d, _ in ranked if not meta[d].get("title"))
         print(f"\nResolving titles for {n_unknown} unknown DOIs...", file=sys.stderr)
-        for doi, _ in ranked:
-            if not meta[doi].get("title"):
-                m = resolve_doi(doi)
-                if m:
-                    meta[doi]["title"] = m["title"]
-                    meta[doi]["year"] = m["year"]
-                    meta[doi]["first_author"] = m["first_author"]
-                    meta[doi]["journal"] = m["journal"]
+        unknown = [d for d, _ in ranked if not meta[d].get("title")]
+
+        def look(doi):
+            before = common.request_count()
+            m = resolve_doi(doi)
+            if common.request_count() != before:
                 time.sleep(args.sleep)
+            return m
+
+        for doi, m in zip(unknown, common.pmap(look, unknown)):
+            if m:
+                meta[doi].update({k: m[k] for k in ("title", "year", "first_author", "journal")})
 
     out = []
     for doi, slugs in ranked:

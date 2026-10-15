@@ -287,16 +287,23 @@ def http(url, retries=5, timeout=30, data=None, headers=None):
             # incompatibility rather than load, and urllib will reproduce it
             # exactly however long we wait — so sleeping 2+4+8+16s first only
             # makes a recoverable fetch slow. curl gets these on the first try.
-            # POSTs too (they are read-only lookups, safe to resend). If curl
-            # fails too, fall into the normal backoff, which is the right
-            # response to genuine load.
+            # POSTs too (they are read-only lookups, safe to resend). A definite
+            # answer from curl (404: no such DOI) is raised as HTTPError, exactly
+            # as if urllib had got it, so a missing record is never mistaken for a
+            # network failure (it read as ERROR in verify, and skipped the DataCite
+            # fallback). If curl fails too, or gets a transient status, fall into
+            # the normal backoff, which is the right response to genuine load.
             if not tried_curl:
                 tried_curl = True
                 _count_request()
                 try:
-                    return curl_get(url, hdrs, timeout, data=data)
+                    code, body = _curl(url, hdrs, timeout, data=data)
                 except Exception:
-                    pass
+                    code, body = None, b""
+                if code is not None and 200 <= code < 300:
+                    return body
+                if code is not None and code not in TRANSIENT_HTTP:
+                    raise urllib.error.HTTPError(url, code, f"HTTP {code} (via curl)", {}, None)
             if attempt < retries - 1:
                 time.sleep(2 * 2 ** attempt)          # 2, 4, 8, 16s
                 continue
@@ -655,6 +662,56 @@ def title_match(a, b):
     sa, sb = set(ta), set(tb)
     return (sum(w in sb for w in ta) / len(ta) >= TITLE_MATCH
             and sum(w in sa for w in tb) / len(tb) >= TITLE_MATCH)
+
+
+def title_prep(t):
+    """(normalized title, content words, their set) — the parts title_match and
+    title_score compare, computed once so a scan over many titles need not
+    renormalize the same title for every pair."""
+    n = _title_words(t)
+    w = [x for x in n.split() if x not in _TITLE_STOP]
+    return n, w, frozenset(w)
+
+
+def char_ratio(sm, a, b, floor):
+    """SequenceMatcher(None, a, b).ratio() when it can reach `floor`, else 0.0.
+    real_quick_ratio() and quick_ratio() are upper bounds on ratio(), so a pair
+    that fails either can never pass; `sm` is a SequenceMatcher reused by the caller."""
+    sm.set_seqs(a, b)
+    if sm.real_quick_ratio() < floor or sm.quick_ratio() < floor:
+        return 0.0
+    return sm.ratio()
+
+
+class TitleIndex:
+    """title_match against many titles, each normalized once and each pair
+    prefiltered: same answers as calling title_match pair by pair, without the
+    quadratic renormalizing (recall.misses, candidates.same_paper, merge_lanes)."""
+
+    def __init__(self, titles):
+        self._e = [title_prep(t) for t in titles]
+
+    def matches(self, title):
+        """Indexes (in input order) of the titles that title_match `title`."""
+        import difflib
+        a, ta, sa = title_prep(title)
+        if not a:
+            return
+        sm = difflib.SequenceMatcher()
+        for i, (b, tb, sb) in enumerate(self._e):
+            if not b:
+                continue
+            if a == b:
+                yield i
+            elif (ta and tb and sum(w in sb for w in ta) / len(ta) >= TITLE_MATCH
+                  and sum(w in sa for w in tb) / len(tb) >= TITLE_MATCH):
+                yield i
+            elif char_ratio(sm, a, b, TITLE_MATCH) >= TITLE_MATCH:
+                yield i
+
+    def first(self, title):
+        """Index of the first title that title_match `title`, else None."""
+        return next(self.matches(title), None)
 
 
 def _main_title(t):
@@ -1244,11 +1301,25 @@ def crossref_work(doi, fallback_venue=""):
     """Fetch one DOI from CrossRef -> crossref_record(). Raises on a transient
     failure (so callers can tell ERROR from NOT-FOUND); a 404 propagates too —
     callers that want None on a clean miss check is_transient(). Served from the
-    record cache when one is set (set_record_cache)."""
+    record cache when one is set (set_record_cache).
+
+    A CrossRef 404 is cached too, but honored only while DataCite's record for
+    the DOI is also cached: a Zenodo/figshare DOI then skips the CrossRef round
+    trip on every rerun, while a DOI neither registry knows is asked again (a
+    newly registered DOI must not stay "not found" for RECORD_CACHE_DAYS)."""
+    import urllib.error
     import urllib.parse
     msg = cache_get("crossref", doi)
     if msg is None:
-        msg = http_json(f"{CROSSREF_API}{urllib.parse.quote(doi)}")["message"]
+        url = f"{CROSSREF_API}{urllib.parse.quote(doi)}"
+        if cache_get("crossref-404", doi) and cache_get("datacite", doi) is not None:
+            raise urllib.error.HTTPError(url, 404, "Not Found (cached; a DataCite DOI)", None, None)
+        try:
+            msg = http_json(url)["message"]
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                cache_put("crossref-404", doi, True)
+            raise
         cache_put("crossref", doi, msg)
     return crossref_record(msg, fallback_venue)
 
@@ -1465,42 +1536,9 @@ def datacite_record(attrs, fallback_venue=""):
 
 
 def _datacite_get(url, retries=5, timeout=30):
-    """http() for DataCite: urllib first, curl on a network failure -- but a
-    curl 404 is raised as urllib.error.HTTPError(404), so a DOI missing from both
-    registries is still "does not exist", never ERROR. urllib's connection is
-    dropped deterministically on some networks for api.datacite.org while curl
-    fetches the same URL (the stack/proxy interaction http()'s fallback exists
-    for); through http(), curl's --fail turned every such 404 into an error."""
-    tried_curl = False
-    for attempt in range(retries):
-        try:
-            _count_request()
-            req = urllib.request.Request(url, headers=HDRS)
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                return decompress(r.read(), r.headers.get("Content-Encoding", ""))
-        except urllib.error.HTTPError as e:
-            if e.code in TRANSIENT_HTTP and attempt < retries - 1:
-                wait = retry_after(e)
-                time.sleep(wait if wait is not None else 3 * 2 ** attempt)
-                continue
-            raise
-        except TRANSIENT_NETWORK:
-            if not tried_curl:
-                tried_curl = True
-                _count_request()
-                try:
-                    code, body = _curl(url, HDRS, timeout)
-                except Exception:
-                    code, body = None, b""
-                if code is not None and 200 <= code < 300:
-                    return body
-                if code is not None and code not in TRANSIENT_HTTP:
-                    # a definite answer (404: no such DOI) -- not a failure to retry
-                    raise urllib.error.HTTPError(url, code, f"HTTP {code} (via curl)", {}, None)
-            if attempt < retries - 1:
-                time.sleep(2 * 2 ** attempt)
-                continue
-            raise
+    """http() for DataCite. Kept as a name because callers and tests use it; the
+    curl-404-as-HTTPError handling it once added now lives in http() itself."""
+    return http(url, retries=retries, timeout=timeout)
 
 
 def datacite_work(doi, fallback_venue=""):
@@ -1583,13 +1621,16 @@ def arxiv_batch(ids, chunk=50, sleep=3.0):
     uniq = list(dict.fromkeys(norm_arxiv(a) for a in ids if a))
     for i in range(0, len(uniq), chunk):
         batch = uniq[i:i + chunk]
+        before = request_count()
         try:
             got = arxiv_fetch(batch)
         except Exception:
             errored.update(batch)
         else:
             entries.update({a: got[a] for a in batch if a in got})
-        if i + chunk < len(uniq):
+        # pause only after a chunk that reached arXiv: a chunk served whole from the
+        # record cache (canon right after verify) sent nothing to be polite about
+        if i + chunk < len(uniq) and request_count() != before:
             time.sleep(sleep)
     return entries, errored
 

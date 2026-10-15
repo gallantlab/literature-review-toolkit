@@ -50,17 +50,32 @@ def pick_landmarks(rows, keyf, indeg, n):
 
 
 def openalex_ids(dois, email):
-    out = {}
+    """-> ({doi: OpenAlex work id}, set of DOIs whose batch lookup failed).
+
+    A failed batch is recorded, not raised, so one transient error cannot abort the
+    run before any landmark is pulled; main() marks the run incomplete. A spent
+    budget (OpenAlexBudgetError) still stops it."""
+    out, failed = {}, set()
     for i in range(0, len(dois), 50):
-        filt = "doi:" + "|".join(dois[i:i + 50])
+        part = dois[i:i + 50]
+        filt = "doi:" + "|".join(part)
         url = (f"{OA}?filter={urllib.parse.quote(filt, safe=':|/.')}"
                f"&per-page=100&select=id,doi&mailto={email}")
-        for w in common.http_json(url).get("results", []):
+        try:
+            res = common.http_json(url).get("results", [])
+        except common.OpenAlexBudgetError:
+            raise
+        except Exception as e:
+            print(f"  ✗ OpenAlex id lookup, DOIs {i + 1}-{i + len(part)}: {type(e).__name__}: {e}",
+                  file=sys.stderr)
+            failed.update(part)
+            continue
+        for w in res:
             d = (w.get("doi") or "").lower().replace("https://doi.org/", "")
             if d:
                 out[d] = _short(w.get("id"))
         time.sleep(0.2)
-    return out
+    return out, failed
 
 
 def citing(wid, per, email):
@@ -123,11 +138,18 @@ def main():
         print("  WARNING: no row carries cite_openalex (attach citation counts first, Phase 5b):"
               " landmark ties fall back to table order", file=sys.stderr)
     dois = sorted({common.doi_of(r, lower=True) for r in rows if common.doi_of(r)})
-    wids = openalex_ids(dois, args.email)
+    wids, id_failed = openalex_ids(dois, args.email)
     marks = pick_landmarks(rows, keyf, indeg, args.landmarks)
     by_landmark, failed = {}, []
+    if id_failed:
+        # corpus papers whose id lookup failed cannot be excluded from the candidates
+        failed.append(f"id-lookup ({len(id_failed)} DOIs)")
     for r in marks:
         wid = wids.get(common.doi_of(r, lower=True))
+        if not wid and common.doi_of(r, lower=True) in id_failed:
+            print(f"  ✗ {r.get(keyf)}: its OpenAlex id lookup failed", file=sys.stderr)
+            failed.append(r.get(keyf))
+            continue
         if not wid:
             print(f"  · {r.get(keyf)}: not in OpenAlex", file=sys.stderr)
             continue

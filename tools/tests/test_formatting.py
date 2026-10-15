@@ -288,7 +288,7 @@ if _sp.run(["which", "curl"], capture_output=True).returncode == 0:
 with open(os.path.join(os.path.dirname(common.__file__), "common.py"), encoding="utf-8") as _csrc:
     _CSRC = _csrc.read()
 check_true("http() falls back to curl after exhausting retries",
-           "curl_get" in _CSRC.split("def http(")[1].split("def http_json")[0])
+           "_curl(" in _CSRC.split("def http(")[1].split("def http_json")[0])
 
 # OpenAlex: a key rides in an Authorization header (never the URL), only to
 # OpenAlex; and a spent daily budget (429, Retry-After to midnight UTC, 63160 s
@@ -459,6 +459,22 @@ check("pair_score: identical short titles still pair",
 check_true("pair_score: a dropped subtitle on a longer title still pairs",
            merge_lanes.pair_score("Deep image reconstruction from human brain activity",
                                   "Deep image reconstruction from human brain activity: a new method") >= 0.9)
+
+# review 2026-10-15: pair_scan and TitleIndex give the pairwise answers, prefiltered
+_pt = [("A", "The human visual cortex"),
+       ("B", "Increased activity in human visual cortex during directed attention"),
+       ("C", "Deep image reconstruction from human brain activity"),
+       ("D", "Deep image reconstruction from human brain activity: a new method"),
+       ("E", "Cortical surface-based analysis"), ("F", "Cortical surface based analysis."),
+       ("G", ""), ("H", "The"), ("I", "Deep learning"),
+       ("J", "Deep learning in neural networks: An overview")]
+_brute = [(ka, kb, s) for i, (ka, ta) in enumerate(_pt) for kb, tb in _pt[i + 1:]
+          for s in [merge_lanes.pair_score(ta, tb)] if s is not None and s >= merge_lanes.PAIR_MATCH]
+check("pair_scan: same pairs and scores as pair_score on every pair", merge_lanes.pair_scan(_pt), _brute)
+_ti = common.TitleIndex(t for _, t in _pt)
+check("TitleIndex.matches: same answers as title_match on every title",
+      [list(_ti.matches(q)) for _, q in _pt],
+      [[i for i, (_, t) in enumerate(_pt) if common.title_match(q, t)] for _, q in _pt])
 
 # handcheck --reject: a row whose candidate DOIs are all the wrong paper used to
 # bounce between --prepare and --adopt-dois forever, never reaching the hand check.
@@ -1499,6 +1515,7 @@ class _FakeArxiv:
 
     def __call__(self, ids):
         self.calls.append(list(ids))
+        common._count_request()            # a real fetch reaches the network
         if len(self.calls) in self.fail_calls:
             raise urllib.error.HTTPError("u", 429, "slow down", {}, None)
         return {e["id"]: e for e in common.arxiv_entries(_atom(ids))}
@@ -1512,6 +1529,10 @@ with _patched(common, arxiv_fetch=_fa), _sleeps() as _sl:
 check("arxiv_batch: 120 ids take 3 requests of <=50", [len(c) for c in _fa.calls], [50, 50, 20])
 check("arxiv_batch: every id resolved", (len(_ent), _err), (120, set()))
 check("arxiv_batch: 3 s courtesy pause between chunks only", _sl, [3.0, 3.0])
+with _patched(common, arxiv_fetch=lambda ids: {e["id"]: e for e in common.arxiv_entries(_atom(ids))}), \
+        _sleeps() as _sl:
+    common.arxiv_batch(_ids)
+check("arxiv_batch: no pause after chunks served from the cache (no request sent)", _sl, [])
 _fa = _FakeArxiv(fail_calls={2})
 with _patched(common, arxiv_fetch=_fa), _sleeps():
     _ent, _err = common.arxiv_batch(_ids)
@@ -1698,7 +1719,7 @@ with _patched(common, s2_request=_s2_batch_stub([
         [{"paperId": "P1", "referenceCount": 3, "references": [{"externalIds": {"DOI": "10.1/r1"}}]}],
         {"data": [{"citedPaper": {"externalIds": {"DOI": "10.1/r1"}}},
                   {"citedPaper": {"externalIds": {"DOI": "10.1/r2"}}}], "next": 2},
-        {"data": [{"citedPaper": {"externalIds": {"DOI": "10.1/r3"}}}]}])):
+        {"data": [{"citedPaper": {"externalIds": {"DOI": "10.1/r3"}}}]}])), _patched(xref, S2_BATCH_REF_CAP=1):
     _got = xref.s2_refs(["10.1/long"])
 check("s2_refs pages a list longer than the batch returned",
       [r["doi"] for r in _got["10.1/long"]], ["10.1/r1", "10.1/r2", "10.1/r3"])
@@ -1726,6 +1747,59 @@ with _patched(xref, crossref_refs=lambda d: [],
                                  sleep=0, retry_wait=0)
 check("xref: OpenAlex supplies a list CrossRef lacks, and only the rest go to S2",
       (_refs["O"], _s2_asked), ([{"doi": "10.1/cited"}], ["10.1/none"]))
+# review 2026-10-15: xref reads the CrossRef record verify/canon already cached
+_rcd = _tf.mkdtemp()
+common.set_record_cache(_rcd)
+common.cache_put("crossref", "10.1/cached", {"reference": [{"DOI": "10.1/X", "year": "2001"}]})
+with _patched(xref, http_json=_no_network):
+    check("xref.crossref_refs serves a cached record without the network",
+          [r["doi"] for r in xref.crossref_refs("10.1/cached")], ["10.1/x"])
+with _patched(xref, http_json=lambda url, **k: {"message": {"reference": [{"DOI": "10.1/Y"}]}}):
+    xref.crossref_refs("10.1/fresh")
+check_true("xref.crossref_refs caches a record it fetched", common.cache_get("crossref", "10.1/fresh") is not None)
+# review 2026-10-15: a DataCite DOI's CrossRef 404 is cached; a DOI no registry knows is not
+_cr404_calls = []
+
+
+def _cr404_http(url, **k):
+    _cr404_calls.append(url)
+    raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
+
+
+with _patched(common, http_json=_cr404_http):
+    for _d in ("10.5281/zenodo.1", "10.5281/zenodo.1", "10.9/nowhere", "10.9/nowhere"):
+        try:
+            common.crossref_work(_d)
+        except urllib.error.HTTPError as _e:
+            check("crossref_work: a cached 404 still raises a 404", _e.code, 404)
+check("crossref_work: an uncached 404 asks CrossRef every time", len(_cr404_calls), 4)
+common.cache_put("datacite", "10.5281/zenodo.1", {"titles": [{"title": "T"}]})
+_cr404_calls.clear()
+with _patched(common, http_json=_cr404_http):
+    for _d in ("10.5281/zenodo.1", "10.9/nowhere"):
+        try:
+            common.crossref_work(_d)
+        except urllib.error.HTTPError:
+            pass
+check("crossref_work: a 404 on a DOI DataCite holds skips CrossRef; an unknown DOI does not",
+      _cr404_calls, [f"{common.CROSSREF_API}10.9/nowhere"])
+common.set_record_cache(None)
+
+# review 2026-10-15: a short list with a larger referenceCount is publisher-elided, not capped
+_s2calls = []
+_s2stub = _s2_batch_stub([
+    [{"paperId": "P1", "referenceCount": 40, "references": [{"externalIds": {"DOI": "10.1/r1"}}]}]])
+with _patched(common, s2_request=lambda path, body=None: _s2calls.append(path) or _s2stub(path, body)):
+    _got = xref.s2_refs(["10.1/elided"])
+check("s2_refs does not page a short list whose count includes elided references",
+      ([r["doi"] for r in _got["10.1/elided"]], len(_s2calls)), (["10.1/r1"], 1))
+with _patched(common, s2_request=_s2_batch_stub([
+        [{"paperId": "P1", "referenceCount": 3, "references": [{"externalIds": {"DOI": "10.1/r1"}}]}],
+        urllib.error.HTTPError("u", 429, "x", {}, None)])), _patched(xref, S2_BATCH_REF_CAP=1), \
+        _ctx.redirect_stderr(open(os.devnull, "w")):
+    _got = xref.s2_refs(["10.1/long"])
+check("s2_refs keeps the batch list when paging fails (not incomplete)",
+      [r["doi"] for r in (_got["10.1/long"] or [])], ["10.1/r1"])
 
 
 def _oa_fake(url, *a, **k):
@@ -2932,7 +3006,16 @@ check("score matches a corpus DOI case-insensitively", _cands_case, [])
 with _patched(common, http_json=lambda url, **k: {"results": [{"id": "https://openalex.org/W1",
                                                                "doi": "https://doi.org/10.1/A"}]}), _sleeps():
     check("openalex_ids maps DOIs to short work ids", forward.openalex_ids(["10.1/a"], "t@example.org"),
-          {"10.1/a": "W1"})
+          ({"10.1/a": "W1"}, set()))
+
+
+def _oa_boom(url, **k):
+    raise urllib.error.URLError("dropped")
+
+
+with _patched(common, http_json=_oa_boom), _sleeps():
+    check("openalex_ids records a failed batch instead of aborting the run",
+          forward.openalex_ids(["10.1/a", "10.1/b"], "t@example.org"), ({}, {"10.1/a", "10.1/b"}))
 
 # ---- candidates.py and the audit's candidate check (2026-09-26) ------------
 import candidates  # noqa: E402
@@ -3568,7 +3651,7 @@ def _i8_forward(*extra):
     argv = sys.argv
     sys.argv = ["forward.py", "--rows", _i8rp, "--email", "t@example.org", *extra]
     try:
-        with _patched(forward, openalex_ids=lambda dois, email: {"10.1/a": "W1"}, citing=boom), _sleeps(), \
+        with _patched(forward, openalex_ids=lambda dois, email: ({"10.1/a": "W1"}, set()), citing=boom), _sleeps(), \
                 _ctx.redirect_stdout(io.StringIO()), _ctx.redirect_stderr(io.StringIO()):
             forward.main()
         return 0
@@ -4173,7 +4256,7 @@ def _t4f_run(citing_fn, *extra):
     argv = sys.argv
     sys.argv = ["forward.py", "--rows", _t4frp3, "--email", "t@example.org", *extra]
     try:
-        with _patched(forward, openalex_ids=lambda dois, email: {"10.1/a": "W1"}, citing=citing_fn), \
+        with _patched(forward, openalex_ids=lambda dois, email: ({"10.1/a": "W1"}, set()), citing=citing_fn), \
                 _sleeps(), _ctx.redirect_stdout(io.StringIO()), _ctx.redirect_stderr(io.StringIO()):
             forward.main()
     except SystemExit:
@@ -4568,6 +4651,27 @@ with _patched(common, crossref_work=_cr_404), _patched(common.urllib.request, ur
 check_true("M1: verify of a DOI missing from both registries (DataCite via curl) is not ERROR",
            _m1_v["verdict"] != "ERROR", str(_m1_v))
 check("M1: canonical says 'DOI does not exist'", _m1_cn, {"error": "DOI does not exist (404)", "source": "missing"})
+
+
+# review 2026-10-15: http() itself (CrossRef, not only DataCite) must raise curl's 404 as HTTPError
+def _http_fetch(run):
+    with _patched(common.urllib.request, urlopen=_m1_urlopen_drop), _patched(common.subprocess, run=run), \
+            _patched(common.shutil, which=lambda n: "/usr/bin/curl"), _sleeps() as _hs:
+        try:
+            return common.http("https://api.crossref.org/works/10.1/nope"), _hs
+        except Exception as e:
+            return e, _hs
+
+
+_he, _hs = _http_fetch(_m1_curl("404"))
+check("http: a dropped connection then a curl 404 raises HTTPError 404",
+      (type(_he).__name__, getattr(_he, "code", None)), ("HTTPError", 404))
+check("http: ...without any backoff sleep", sum(_hs), 0)
+_he, _hs = _http_fetch(_m1_curl("200", b"ok"))
+check("http: a dropped connection then a curl 200 returns the body", _he, b"ok")
+_he, _hs = _http_fetch(_m1_curl("503"))
+check_true("http: a curl 503 stays transient (backs off, then a network error)",
+           common.is_transient(_he) and sum(_hs) > 0, repr(_he))
 
 # ---- final review M2: the run sidecar names its tool and paper count (2026-09-26) ----
 # A forward sidecar added as --source xref (or an xref run over an older, smaller

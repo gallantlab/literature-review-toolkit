@@ -227,6 +227,30 @@ def pair_score(a, b):
     return s
 
 
+def pair_scan(titles):
+    """[(keyA, keyB, score)] for every pair in [(key, title)] whose pair_score
+    reaches PAIR_MATCH, with each title normalized once and each pair
+    prefiltered: the all-pairs pair_score loop took minutes on a 1,000-row merge."""
+    import difflib
+    prep = [(k, common.title_prep(t)) for k, t in titles]
+    sm, out = difflib.SequenceMatcher(), []
+    for i, (ka, (a, ta, sa)) in enumerate(prep):
+        if not a:
+            continue
+        for kb, (b, tb, sb) in prep[i + 1:]:
+            if not b:
+                continue
+            if min(len(ta), len(tb)) < PAIR_MIN_WORDS:
+                contained = 0.0               # a short title must match on characters
+            else:
+                short, long_ = (ta, sb) if len(ta) <= len(tb) else (tb, sa)
+                contained = sum(w in long_ for w in short) / len(short)
+            s = max(contained, common.char_ratio(sm, a, b, max(PAIR_MATCH, contained)))
+            if s >= PAIR_MATCH:
+                out.append((ka, kb, s))
+    return out
+
+
 def merge(lanes):
     rows, idx, refs = [], {}, set()
     rep = {"lanes": [], "duplicates": [], "conflicts": [], "possible_pairs": [], "rejected": [],
@@ -276,36 +300,32 @@ def merge(lanes):
         if (target and returned < THIN * target) or st.get("websearch_exhausted"):
             rep["thin"].append({"lane": name, "target": target, "returned": returned,
                                 "websearch_exhausted": bool(st.get("websearch_exhausted"))})
-    titles = [(r["ref"], r.get("search_title") or "") for r in rows]
-    for i, (ka, ta) in enumerate(titles):
-        for kb, tb in titles[i + 1:]:
-            s = pair_score(ta, tb)
-            if s is not None and s >= PAIR_MATCH:
-                rep["possible_pairs"].append({"a": ka, "b": kb, "score": round(s, 3)})
+    for ka, kb, s in pair_scan([(r["ref"], r.get("search_title") or "") for r in rows]):
+        rep["possible_pairs"].append({"a": ka, "b": kb, "score": round(s, 3)})
+    by_title = common.TitleIndex(r.get("search_title") for r in rows)
     for lane in lanes:
         if lane["deferred"] is None:
             rep["no_deferral_check"].append(lane["lane"])
             continue
         for d in lane["deferred"]:
             doi = _bare(d.get("doi") or "").lower()
-            match, by_title = (idx.get(("doi", doi)) if doi else None), False
+            match, matched_title = (idx.get(("doi", doi)) if doi else None), False
             if match is None:
-                for r in rows:
-                    if common.title_match(d.get("title"), r.get("search_title")) and _defer_agrees(d, r):
-                        match, by_title = r, True
-                        break
+                match = next((rows[i] for i in by_title.matches(d.get("title"))
+                              if _defer_agrees(d, rows[i])), None)
+                matched_title = match is not None
             entry = dict(d, from_lane=lane["lane"])
             if match is None:
                 rep["lost"].append(entry)
                 continue
-            if by_title and (verify.is_unknown(d.get("first_author"))
+            if matched_title and (verify.is_unknown(d.get("first_author"))
                              or (not d.get("first_author") and d.get("year") in (None, ""))):
                 # a title alone, with nothing to corroborate it (or an unreadable
                 # first author, "?"), cannot confirm the paper was kept
                 rep["unconfirmed"].append(dict(entry, found_as=match["ref"]))
                 continue
             rep["deferrals_matched"].append(dict(entry, found_as=match["ref"]))
-            if by_title:
+            if matched_title:
                 score = common.title_score(d.get("title"), match.get("search_title")) or 0
                 rep["matched_by_title"].append({"title": d.get("title"), "from_lane": lane["lane"],
                                                 "found_as": match["ref"], "score": round(score, 3)})
@@ -313,8 +333,8 @@ def merge(lanes):
             doi = _bare(e.get("doi") or "").lower()
             kept = idx.get(("doi", doi)) if doi else None
             if kept is None:
-                kept = next((r for r in rows if common.title_match(e.get("title"), r.get("search_title"))
-                             and _defer_agrees(e, r)), None)
+                kept = next((rows[i] for i in by_title.matches(e.get("title"))
+                             if _defer_agrees(e, rows[i])), None)
             rep["excluded"].append(dict(e, from_lane=lane["lane"], kept_as=kept["ref"] if kept else ""))
     return rows, rep
 

@@ -165,12 +165,16 @@ def row_titles(rows, keyf):
     return out
 
 
-def same_paper(title, year, titles):
+def same_paper(title, year, titles, index=None):
     """The key of the row in `titles` that is this candidate under another DOI:
-    a matching title, and years (when both known) within DUP_YEARS. Else None."""
+    a matching title, and years (when both known) within DUP_YEARS. Else None.
+    `index`, a common.TitleIndex over the titles, saves rebuilding it per call."""
+    if not title:
+        return None
     y = _year(year)
-    for k, rt, ry, *_ in titles:
-        if title and common.title_match(title, rt) and (y is None or ry is None or abs(y - ry) <= DUP_YEARS):
+    for i in (index or common.TitleIndex(t[1] for t in titles)).matches(title):
+        k, _, ry, *_ = titles[i]
+        if y is None or ry is None or abs(y - ry) <= DUP_YEARS:
             return k
     return None
 
@@ -196,6 +200,7 @@ def add(ledger, found, source, corpus, asof=None, complete=True, n_papers=None, 
     if n_papers is not None:
         runs[source]["n_papers"] = n_papers
     added = skipped = 0
+    index = common.TitleIndex(t[1] for t in titles)
     for e in found:
         d = _doi(e.get("doi"))
         if not d:
@@ -209,7 +214,7 @@ def add(ledger, found, source, corpus, asof=None, complete=True, n_papers=None, 
             ledger[d] = {"title": e.get("title") or "", "year": str(e.get("year") or ""),
                          "first_author": e.get("first_author") or e.get("author") or "",
                          "sources": {source: score}, "decision": "pending", "reason": "", "at": ""}
-            same = same_paper(ledger[d]["title"], ledger[d]["year"], titles)
+            same = same_paper(ledger[d]["title"], ledger[d]["year"], titles, index)
             if same:
                 ledger[d].update(decision="exclude", at=asof or datetime.date.today().isoformat(),
                                  reason=f"already in the table as {same} under another DOI (same title)")

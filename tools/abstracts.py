@@ -144,7 +144,7 @@ def _pubmed_articles(root):
 
 def fetch_pubmed_by_doi(dois, batch=50):
     """PubMed abstracts looked up by DOI, for rows with no PMID: one esearch per
-    batch of DOIs (term "a[doi] OR b[doi]"), then one efetch for the PMIDs it
+    batch of DOIs (term '"a"[doi] OR "b"[doi]'), then one efetch for the PMIDs it
     returns, matched back to each DOI by the article's own DOI record. On
     gallant_lab_v2 the landing-page agents found most of 171 missing abstracts in
     PubMed and Europe PMC; this and fetch_europepmc do that step in the tool."""
@@ -152,7 +152,10 @@ def fetch_pubmed_by_doi(dois, batch=50):
     out, failed = {}, set()
     for i in range(0, len(dois), batch):
         part = dois[i:i + batch]
-        term = " OR ".join(f"{d}[doi]" for d in part)
+        # quoted, so query syntax inside a DOI (SICI "<...>;", brackets) stays literal
+        term = " OR ".join(f'"{d}"[doi]' for d in part if '"' not in d)
+        if not term:
+            continue
         try:
             ids = common.http_json(f"{base}esearch.fcgi?db=pubmed&retmode=json&retmax={2 * len(part)}&term="
                                    + urllib.parse.quote(term)).get("esearchresult", {}).get("idlist", [])

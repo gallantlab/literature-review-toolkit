@@ -115,9 +115,11 @@ report (--only A-01,B-02 names rows explicitly).
 
 Record cache. verify and canon (references.py) keep every CrossRef, DataCite and
 arXiv record they fetch in .record_cache/ beside --rows (or --citations) for 14
-days. So canon reuses what verify fetched, and a targeted re-run makes almost no
-requests. Only successful records are cached, so a missing or failed lookup still
-reads as NOT-FOUND or ERROR. LITREVIEW_RECORD_CACHE=off turns the cache off; any
+days. So canon (and xref, for CrossRef reference lists) reuses what verify
+fetched, and a targeted re-run makes almost no requests. A failed lookup is never
+cached, so it still reads as ERROR. A CrossRef 404 is remembered only for a DOI
+whose DataCite record is cached, so a Zenodo or figshare DOI skips CrossRef on a
+re-run while a DOI neither registry knows is asked again. LITREVIEW_RECORD_CACHE=off turns the cache off; any
 other value is used as its folder.
 """
 import argparse

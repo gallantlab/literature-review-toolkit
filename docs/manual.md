@@ -282,7 +282,7 @@ and reach the scripts as `../tools/`. To make that path work, link the toolkit's
 │   ├── citation_counts.json                (Phase 5b, cached)
 │   ├── abstracts.json, summary_audit/      (Phase 5c summary checks)
 │   ├── xref_visual_cerebellum.json         (Phase 6 frequency table, + .run.json, .refs.json)
-│   ├── .record_cache/                      (registry records verify fetched; canon reuses them)
+│   ├── .record_cache/                      (registry records verify fetched; canon and xref reuse them)
 │   ├── forward_candidates.json             (Phase 6 forward citations, + .run.json)
 │   ├── internal_citations.json             (Phase 6, within-corpus in-degree)
 │   ├── candidates.json                     (Phase 6 candidate ledger)
@@ -988,7 +988,8 @@ pending: in a densely inter-cited literature, raise `--min-cites` /
   cached in `<out>.refs.json` (`--cache`), keyed by paper and DOI. A re-run after a
   throttled pass fetches only the papers missing from the cache or whose DOI
   changed. A fetch that did not complete is never cached. `--no-cache` refetches
-  everything.
+  everything. CrossRef records that `verify.py` already fetched are read from
+  `.record_cache/` rather than requested again.
 - **Four or more citations across about 40 papers is a strong signal**; three is
   borderline.
 - **CrossRef coverage varies by publisher.** Nature, Cell, OUP and J Neurosci

@@ -33,13 +33,13 @@ def misses(new_rows, old_rows):
     """(found count, [missed old rows]) matching by DOI, arXiv id, then title."""
     dois = {d for d in (common.doi_of(r, lower=True) for r in new_rows) if d}
     aids = {common.norm_arxiv(a).lower() for a in (common.arxiv_id_of(r) for r in new_rows) if a}
-    titles = [t for t in (_title(r) for r in new_rows) if t]
+    titles = common.TitleIndex(t for t in (_title(r) for r in new_rows) if t)
     found, missed = 0, []
     for r in old_rows:
         d = common.doi_of(r, lower=True)
         a = common.norm_arxiv(common.arxiv_id_of(r) or "").lower()
         t = _title(r)
-        if (d and d in dois) or (a and a in aids) or (t and any(common.title_match(t, x) for x in titles)):
+        if (d and d in dois) or (a and a in aids) or (t and titles.first(t) is not None):
             found += 1
         else:
             missed.append(r)
