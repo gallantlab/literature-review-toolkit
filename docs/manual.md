@@ -808,7 +808,10 @@ flags on the row as `canon_warnings`, and the audit makes you acknowledge each (
 
 **The audit.** `references.py --audit` is a hard gate: it exits 1 on any defect.
 It also warns about near-duplicate rows, and about multi-word surnames that may be
-mis-split given names. Both need a human verdict, so read the warnings even when
+mis-split given names. Registries also swap given and family names for a whole
+author list, put a generational suffix inside the surname (`Náñez Sr, J. E.`), or
+(Research Square) list the corresponding author first; check the order against
+PubMed or the landing page and fix it in `hand_fixes.json`. Both need a human verdict, so read the warnings even when
 the gate passes. On a gated table, an unacknowledged warning fails the audit too.
 `--repair` fixes string damage (markup, Unicode hyphens, `?.`) offline, without
 re-fetching or undoing hand fixes. It stamps `canonical_at` only on a legacy
@@ -905,9 +908,10 @@ and written to `abstracts_failed.json`.
 
 **Text that is not an abstract is refused.** Sources sometimes hold something else
 in the abstract field: a journal's self-description, JSTOR's terms of use, a
-citation line for another item, or an author list and venue. A summary written
-from one of these describes the text, not the paper. So `abstracts.py` reports it
-and tries the next source.
+citation line for another item, an author list and venue, or a real abstract with
+text lost around a `<` or `>` (a section that starts mid-statistic, "RESULTS: =
+0.8"). A summary written from one of these describes the text, not the paper. So
+`abstracts.py` reports it and tries the next source.
 
 **Every row needs a summary.** On a gated table, a row with an empty summary is a
 defect (`no-summary`). Rows exported from the candidate ledger arrive without one,
@@ -948,6 +952,11 @@ A row with no abstract is recorded as `no-abstract`, a warning you acknowledge
   landing-page entry, or an entry with an empty `text` if it has none. Rewrite the
   summary from it, then run `--prepare` again.
 
+**Numbers extracted from abstracts (optional).** When a review reports statistics
+taken from the papers, `extract_check.py` batches only rows whose summary check is
+current and refuses any number not quoted verbatim from the abstract; see its
+`--help`.
+
 ### 5.6 Phase 6: cross-citation pass and the candidate ledger
 
 The pass looks in two directions. **Backward** (`xref.py`): what does the corpus
@@ -964,7 +973,9 @@ python3 ../tools/forward.py --rows rows.json --out forward_candidates.json
 
 **Backward: `xref.py`.** It tallies the corpus's own reference lists, from
 CrossRef, to find papers the corpus cites often but does not contain. It usually
-finds 25–35 candidates per topic.
+finds 25–35 candidates per topic. `candidates.py --add` warns when hundreds are
+pending: in a densely inter-cited literature, raise `--min-cites` /
+`--min-shared` and record why.
 
 - **Semantic Scholar fills the gaps.** For an arXiv paper, and for any paper whose
   CrossRef record has no reference list, xref asks Semantic Scholar instead (set

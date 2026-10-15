@@ -50,6 +50,7 @@ A row with a summary that no source could fill goes to landing-page agents:
 """
 import argparse
 import glob
+import html
 import os
 import re
 import sys
@@ -189,7 +190,10 @@ def fetch_europepmc(dois, batch=20):
         want = set(part)
         for r in (res.get("resultList") or {}).get("result", []):
             d = (r.get("doi") or "").lower()
-            text = re.sub(r"<[^>]+>", " ", r.get("abstractText") or "")
+            # Strip only real tags: a bare r"<[^>]+>" also deletes the text between a
+            # statistic's "<" and a later ">" ("p < 0.05 ... AUC > 0.8"), which is how
+            # Europe PMC abstracts reached two builds with their results missing.
+            text = html.unescape(common.MARKUP.sub(" ", r.get("abstractText") or ""))
             if d in want and text.strip() and d not in out:
                 out[d] = " ".join(text.split())
     return out, failed
@@ -204,10 +208,27 @@ def _s2_id(row):
 
 
 _BOILERPLATE = re.compile(
+    r"thank you for your interest in spreading the word|self-archived author copy|"
+    r"Symbol\. No caption available|^\W*arising from\s*:|"
+    r"^\W*(?:OPINION|EDITORIAL|COMMENTARY|PERSPECTIVE) article\b|"
     r"\ba peer[- ]reviewed journal\b|JSTOR is a not-for-profit|terms (and conditions )?of use|"
     r"all rights reserved|this content downloaded from|use of the jstor archive|"
     r"content in the JSTOR archive|you may not download an entire issue|"
     r"\bVolume \d+,? Issue \d+\b", re.I)
+
+
+# A section that starts mid-statistic ("RESULTS: = 92%) were calculated", "Methods: = 52).",
+# "Results: < 0.05].") or a sentence cut at "(p" just before the next heading: the text
+# between a "<" and a later ">" was lost upstream (or by a bare tag-stripping regex).
+# Seen in 37 abstracts across two 2026-10-14 builds, 18 of which fed wrong numbers into
+# an extraction before the summary check caught them. PubMed's XML had them intact.
+_SECTION = (r"(?:RESULTS?|METHODS?|FINDINGS|RECENT FINDINGS|CONCLUSIONS?|INTERPRETATION|SIGNIFICANCE|"
+            r"Results?|Methods?|Findings|Conclusions?|Interpretation|Significance|Discussion|DISCUSSION)")
+_GARBLED = re.compile(
+    rf"\b{_SECTION}\s*:\s*[=<>≤≥]\s*[-−]?\s*\d"          # "RESULTS: = 0.8", "Results: < 0.05"
+    rf"|\b{_SECTION}\s*:\s*:\s*[-−]?\s*\d"                # "RESULTS: : 9.4% for ..."
+    rf"|\b{_SECTION}\s*:\s*[-−]?\d[\d.,]*\s*\)"             # "Methods: 584) and included"
+    rf"|\(\s*p\s+{_SECTION}\b")                           # "... (p Conclusions"
 
 
 def not_an_abstract(text):
@@ -215,15 +236,20 @@ def not_an_abstract(text):
 
     Sources sometimes hold something else in the abstract field: a journal's
     self-description ("PNAS, a peer reviewed journal..."), JSTOR's terms of use,
-    a citation line for another item ("...; Preface: ..., Volume 1, Issue 1"), or
-    just the author list and venue. A summary written from one of these describes
-    the text, not the paper, so it is refused here and the next source is tried."""
+    a citation line for another item ("...; Preface: ..., Volume 1, Issue 1"),
+    just the author list and venue, a publisher's share-page or self-archiving
+    note, or a real abstract with a section cut off mid-statistic (_GARBLED). A
+    summary written from one of these describes the text, not the paper, so it is
+    refused here and the next source is tried."""
     t = " ".join((text or "").split())
     if not t:
         return "empty"
     m = _BOILERPLATE.search(t)
     if m:
         return f"boilerplate ({m.group(0)!r})"
+    m = _GARBLED.search(t)
+    if m:
+        return f"text lost around a '<' or '>' ({m.group(0)!r}); try another source"
     words = t.split()
     if len(words) < 60 and re.search(r"\b(Proceedings of|In Proceedings|Conference on)\b", t) and \
             re.match(r"^\W*(?:[A-Z][\w.'’\- ]{1,40}, ){2,}", t):

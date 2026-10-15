@@ -67,7 +67,9 @@ the row's `canon_warnings`, and each must be acknowledged in the audit.
     (text inside a URL is ignored, so an OpenReview `forum?id=` link passes);
   - U+FFFD mojibake;
   - a truncated or empty venue;
-  - an uppercase title (three or more all-caps words in a row);
+  - an uppercase title (three or more all-caps words in a row, one of them a word of
+    6+ letters with no hyphen, or five in a row; acronym runs such as
+    "DSM-III-R (SCID): II" pass);
   - a hand fix that is no longer in the row (hand-fix-lost, below).
 A DOI-less book or report is not a formatting defect. It is listed for a check by
 hand, which a gated table requires (handcheck.py).
@@ -432,11 +434,20 @@ def audit(apa, has_source):
     # Catch an uppercase TITLE (norm_title misses titles that are only MOSTLY
     # caps). Scan the title sentence ONLY — author initials ("R. B. H.") and
     # venue acronyms ("PLOS ONE") legitimately have caps and must be excluded.
+    # A run of acronyms is not a shouted title: "DSM-III-R (SCID): II" and
+    # "DSM-5 (K-SADS-PL-C DSM-5)" are real titles. A run counts only when it holds
+    # a word (6+ letters, no hyphen) that is no acronym, or is 5+ tokens long.
     title = parts["title"] if parts else ""
     run = mx = 0
+    worded = False
     for t in re.findall(r"[A-Za-z][A-Za-z'/-]*", title):   # no '.', so initials aren't tokens
-        run = run + 1 if (t.isupper() and len(t) >= 2) else 0
-        mx = max(mx, run)
+        if t.isupper() and len(t) >= 2:
+            run += 1
+            worded = worded or (len(t) >= 6 and "-" not in t)
+        else:
+            run, worded = 0, False
+        if run >= 3 and (worded or run >= 5):
+            mx = max(mx, run)
     if mx >= 3:
         defects.append(f"uppercase-title run ({mx} consecutive caps words)")
     for fam in common.suspect_surnames(apa):

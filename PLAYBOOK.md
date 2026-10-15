@@ -771,8 +771,9 @@ Scholar, PubMed by PMID, then PubMed and Europe PMC by DOI), into `abstracts.jso
 records the `doi` and `arxiv` it was fetched for, so when a row's ids change its
 entry is fetched again. A fetch that could not complete goes to
 `abstracts_failed.json` and makes the run exit 1: that is not "no abstract", so
-re-run it. A source text that is boilerplate, a citation line or an author list
-is refused (`abstracts.not_an_abstract`) and the next source is tried. For the papers
+re-run it. A source text that is boilerplate, a citation line, an author list, or a
+real abstract with text lost around a `<` or `>` (a section that starts mid-statistic,
+"RESULTS: = 0.8") is refused (`abstracts.not_an_abstract`) and the next source is tried. For the papers
 no source has, `abstracts.py --prepare-missing manual_check/abs` writes batches and a
 brief for landing-page agents, and `--ingest-missing 'manual_check/abs/result_*.json'`
 records their answers: a verbatim abstract, or "none" with the pages checked (an empty
@@ -798,6 +799,11 @@ warning to acknowledge (Phase 3f). An "unsupported" summary is a defect
 (`summary-flagged`): fix it, then `--prepare` and `--ingest` again. A
 "wrong-abstract" verdict is a defect too (`abstract-wrong`): add the real abstract
 as a landing-page entry, rewrite the summary from it, and re-check.
+
+**Numbers extracted from abstracts (optional).** When a review reports statistics
+taken from the papers, `extract_check.py` batches only rows whose summary check is
+current and refuses any number not quoted verbatim from the abstract; see its
+`--help`.
 
 ### Phase 6 — Cross-citation analysis (second pass)
 
@@ -882,7 +888,8 @@ python3 tools/candidates.py --rows rows.json --export-included cand_lane.json
   paper is visibly one that was considered.
 - Expect ~25–35 included additions per topic pass (almost half as many again as the
   search found). Many more makes the spreadsheet unwieldy; far fewer usually means
-  under-mining.
+  under-mining. `--add` warns when hundreds are pending: in a densely inter-cited
+  literature, raise `--min-cites` / `--min-shared` and record why.
 - A hand-edited or truncated `candidates.json` is refused by name by
   `candidates.py`, the audit and the spreadsheet.
 
@@ -1429,6 +1436,10 @@ by `tools/tests/test_formatting.py`. Keep them in mind when changing a formatter
   Noah`). The audit warns on every multi-word surname; expect some legitimate ones
   (Spanish, Vietnamese, Italian double surnames). Fix a real mis-split in
   `hand_fixes.json` (Phase 3f).
+- **Whole author lists can be wrong in other ways:** given and family names swapped
+  for every author, a generational suffix inside the surname (`Náñez Sr, J. E.`), or a
+  preprint server listing the corresponding author first (Research Square). Check the
+  author order against PubMed or the landing page and fix it in `hand_fixes.json`.
 - **`U+FFFD` mojibake is unrecoverable at the source** (`Bürgel`, `Zeitschrift für
   Anatomie`), and every re-canon pulls it back in; that is why hand fixes live in
   `hand_fixes.json`, which canon re-applies (Phase 3f).
@@ -1583,6 +1594,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--attach` `--attach-only` `--email` `--key` `--out` `--rows` `--sources` |
 | `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--acks` `--email` `--ingest-missing` `--key` `--out` `--per` `--prepare-missing` `--rows` |
 | `summary_audit.py` | 5c | Summary check: agents with no web access confirm each row's summary against its abstract. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
+| `extract_check.py` | 5d | Gate for numbers extracted from abstracts: batch only checked abstracts, refuse unquoted numbers. | `--abstracts` `--check` `--key` `--only` `--per` `--prepare` `--rows` `--skip-family` `--vocab` |
 | `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--email` `--export-included` `--ingest` `--lane` `--ledger` `--list` `--no-fetch` `--per` `--prepare` `--reason` `--rows` `--scope` `--source` |
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
 | `xref.py` | 6 | Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite. | `--allow-incomplete` `--cache` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--no-cache` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |

@@ -425,6 +425,20 @@ check_true("not_an_abstract: an author list and venue", bool(abstracts.not_an_ab
 check("not_an_abstract: a short real abstract passes", abstracts.not_an_abstract(
     "A recent study has put forward a physiologically plausible population model that implements a "
     "parts-based shape-coding scheme for macaque visual area V4."), "")
+# Text lost between a "<" and a later ">" (2026-10-14: 37 abstracts across two builds)
+for _lab, _t in (("RESULTS: = n", "Quality was assessed using QUADAS-2. RESULTS: = 92%) were calculated."),
+                 ("Results: < p", "Areas were determined. Results: < 0.05]. Conclusion: ASL helps."),
+                 ("Methods: = n", "We assessed patients. Methods: = 52). A total of 24 children."),
+                 ("RESULTS: : n", "We pooled studies. RESULTS: : 9.4% for FDG-PET, 6.5% for ASL-MRI)."),
+                 ("(p Conclusions", "fMRI reached an accuracy of 86% (p Conclusions These findings matter."),
+                 ("BMJ share page", "Thank you for your interest in spreading the word about The BMJ."),
+                 ("self-archive note", "Self-archived author copy of a scholarly work originally published."),
+                 ("matters-arising line", "arising from : S. Marek et al. Reproducible brain-wide association.")):
+    check_true(f"not_an_abstract: garbled or non-abstract ({_lab})", bool(abstracts.not_an_abstract(_t)))
+for _lab, _t in (("p < 0.05 in results", "RESULTS: In 41 patients the AUC was 0.80 (p < 0.05). CONCLUSIONS: good."),
+                 ("a cutoff in parentheses", "Scores (≥ 8 points) identified anxiety with sensitivity 0.83."),
+                 ("a sample size in parentheses", "We studied 120 adults (< 65 years) with depression.")):
+    check("not_an_abstract: a real abstract with comparisons passes " + _lab, abstracts.not_an_abstract(_t), "")
 _rj = {}
 _abx, _m, _f, _s = abstracts.collect(
     [{"ref": "Q1", "doi": "10.1/q1", "summary": "x"}], "ref", {},
@@ -524,6 +538,15 @@ check_true("missing year still caught", "no-year" in defects("Yang, W. Title. Ve
 check_true("uppercase title caught behind a year suffix",
            any("uppercase" in d for d in
                defects("Yang, W. (2025a). THE FULLY UPPERCASE TITLE HERE. Venue, 1(1), 1-2.")))
+check_true("acronym run is not an uppercase title",
+           not any("uppercase" in d for d in
+                   defects("Williams, J. B. W. (1992). The structured clinical interview for DSM-III-R (SCID): "
+                           "II. Multisite test-retest reliability. Archives of General Psychiatry, 49(8), 630-636.")))
+check_true("hyphenated acronym run is not an uppercase title",
+           not any("uppercase" in d for d in
+                   defects("Dun, Y. (2022). Chinese version DSM-5 (K-SADS-PL-C DSM-5). J, 317, 72-78.")))
+check_true("a short shouted title is still caught",
+           any("uppercase" in d for d in defects("Yang, W. (2025). THE BRAIN DIAGNOSIS. Venue, 1(1), 1-2.")))
 check_true("markup caught",
            any("markup" in d for d in defects("A, B. (2008). <i>T</i>. V, 1(1), 1-2.")))
 check_true("double terminal punctuation caught",
@@ -5928,6 +5951,51 @@ check_true("a list or dict field is written as text, not a crash",
 check("--column parses FIELD=HEADER", spreadsheet.parse_columns(["training = Training"]), [("training", "Training")])
 for _bad in (["family=Family"], ["xref=X"], ["a=A", "a=B"], ["noequals"]):
     check_true(f"--column refuses {_bad}", _raises(lambda: spreadsheet.parse_columns(_bad)))
+
+# ---- extract_check: numbers quoted from abstracts -----------------------------
+import extract_check as xc  # noqa: E402
+
+_ab = ("RESULTS: Pooled sensitivity was 88·1% and specificity 0.887; AUC 0.8932. Sixteen percent were "
+       "misdiagnosed. Accuracy ranged 0.86-0.88 across sites. Kappa was −0.12.")
+check("extract: a quoted proportion, percent and middle dot pass", xc.check_record(
+    {"sens": 0.881, "spec": 0.887, "quote": "Pooled sensitivity was 88·1% and specificity 0.887"}, _ab), "")
+check("extract: a 4-decimal AUC passes", xc.check_record({"auc": 0.8932, "quote": "AUC 0.8932"}, _ab), "")
+check("extract: a number written as words passes", xc.check_record(
+    {"misdx": 0.16, "quote": "Sixteen percent were misdiagnosed"}, _ab), "")
+check("extract: the top of a hyphenated range is not read as negative", xc.check_record(
+    {"acc": 0.88, "quote": "Accuracy ranged 0.86-0.88 across sites"}, _ab), "")
+check("extract: a negative kappa passes", xc.check_record({"kappa": -0.12, "quote": "Kappa was −0.12"}, _ab), "")
+check_true("extract: a number missing from the quote is refused", "not in the quote" in xc.check_record(
+    {"sens": 0.91, "quote": "Pooled sensitivity was 88·1%"}, _ab))
+check_true("extract: a quote not in the abstract is refused", "quote not in abstract" in xc.check_record(
+    {"sens": 0.881, "quote": "sensitivity was 88.1% in all patients"}, _ab))
+check_true("extract: a value outside the vocabulary is refused", "vocabulary" in xc.check_record(
+    {"auc": 0.8932, "quote": "AUC 0.8932", "disorder": "Flu"}, _ab, {"disorder": ["AD", "PD"]}))
+check("extract: an effect size matches regardless of sign", xc.check_effect(
+    {"effect_type": "d", "value": 0.12, "quote": "Kappa was −0.12"}, _ab), "")
+_xd = _tf.mkdtemp()
+_xrows = [{"ref": "X1", "summary": "s", "apa": "Lee, A. (2020). T. V.",
+           "summary_check": {"verdict": "supported", "abstract_sha": common.summary_sha(_ab)}},
+          {"ref": "X2", "summary": "s", "apa": "Kim, B. (2021). T. V.",
+           "summary_check": {"verdict": "wrong-abstract"}}]
+_xab = {"X1": {"text": _ab}, "X2": {"text": "Some abstract."}}
+_n, _ref = xc.prepare(_xrows, _xab, "ref", os.path.join(_xd, "ex"))
+check("extract --prepare refuses a row whose summary check is not supported",
+      (_n, [k for k, _ in _ref]), (0, ["X2"]))
+check_true("extract --prepare writes nothing when it refuses", not os.path.exists(os.path.join(_xd, "ex")))
+_n, _ref = xc.prepare(_xrows[:1], _xab, "ref", os.path.join(_xd, "ex"))
+check("extract --prepare batches a checked row", (_n, _ref), (1, []))
+common.dump_json({"papers": [{"ref": "X1", "evidence": "meta-analysis", "records": [
+    {"auc": 0.8932, "quote": "AUC 0.8932"}, {"sens": 0.5, "quote": "AUC 0.8932"}]}]},
+    os.path.join(_xd, "ex", "result_01.json"))
+_ok, _eff, _bad, _miss, _drift, _p = xc.check(_xab, "ref", os.path.join(_xd, "ex"))
+check("extract --check passes the good record and rejects the bad one", (len(_ok), len(_bad), _miss), (1, 1, []))
+_xab2 = {"X1": {"text": _ab + " Extra."}}
+check("extract --check reports an abstract that changed since --prepare",
+      xc.check(_xab2, "ref", os.path.join(_xd, "ex"))[4], ["X1"])
+
+check("candidates: flood limit is half the table, at least 150",
+      (candidates.flood_limit(100), candidates.flood_limit(541), candidates.flood_limit(1000)), (150, 270, 500))
 
 # ---- report ---------------------------------------------------------------
 if FAILURES:

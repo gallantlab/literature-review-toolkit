@@ -44,6 +44,7 @@ and CI fails if any copy is stale.
 | `citations.py` | 5b | Fetch citation counts for every row from OpenAlex and Semantic Scholar. | `--asof` `--attach` `--attach-only` `--email` `--key` `--out` `--rows` `--sources` |
 | `abstracts.py` | 5c | Fetch each row's abstract into abstracts.json, for the summary check. | `--acks` `--email` `--ingest-missing` `--key` `--out` `--per` `--prepare-missing` `--rows` |
 | `summary_audit.py` | 5c | Summary check: agents with no web access confirm each row's summary against its abstract. | `--abstracts` `--asof` `--batch` `--dir` `--ingest` `--key` `--prepare` `--recheck` `--rows` |
+| `extract_check.py` | 5d | Gate for numbers extracted from abstracts: batch only checked abstracts, refuse unquoted numbers. | `--abstracts` `--check` `--key` `--only` `--per` `--prepare` `--rows` `--skip-family` `--vocab` |
 | `candidates.py` | 6 | The candidate ledger: record a decision on every paper that xref, forward citation or a survey suggests. | `--add` `--asof` `--decide` `--decision` `--email` `--export-included` `--ingest` `--lane` `--ledger` `--list` `--no-fetch` `--per` `--prepare` `--reason` `--rows` `--scope` `--source` |
 | `forward.py` | 6 | Find papers that cite the corpus's landmark papers but are not in the corpus. | `--allow-incomplete` `--email` `--internal` `--key` `--landmarks` `--min-shared` `--out` `--per-landmark` `--rows` |
 | `xref.py` | 6 | Build a cross-citation index: the DOIs that at least --min-cites corpus papers cite. | `--allow-incomplete` `--cache` `--email` `--exclude` `--internal-out` `--key` `--min-cites` `--no-cache` `--out` `--papers` `--resolve-unknown` `--retry-wait` `--rows` `--sleep` |
@@ -492,7 +493,9 @@ the row's `canon_warnings`, and each must be acknowledged in the audit.
     (text inside a URL is ignored, so an OpenReview `forum?id=` link passes);
   - U+FFFD mojibake;
   - a truncated or empty venue;
-  - an uppercase title (three or more all-caps words in a row);
+  - an uppercase title (three or more all-caps words in a row, one of them a word of
+    6+ letters with no hyphen, or five in a row; acronym runs such as
+    "DSM-III-R (SCID): II" pass);
   - a hand fix that is no longer in the row (hand-fix-lost, below).
 A DOI-less book or report is not a formatting defect. It is listed for a check by
 hand, which a gated table requires (handcheck.py).
@@ -868,6 +871,49 @@ abstracts.json (an empty text if it has none), rewrite the summary from it, and
     python3 tools/summary_audit.py --rows rows.json --prepare
     #   checking agents write summary_audit/result_NN.json
     python3 tools/summary_audit.py --rows rows.json --ingest
+```
+
+### Phase 5d: `extract_check.py`
+
+```text
+Gate for numbers extracted from abstracts: batch only checked abstracts, refuse unquoted numbers.
+
+When a review reports statistics (accuracy, effect sizes, yields) pulled from the
+papers, agents extract each figure with a verbatim quote from the abstract. This
+tool frames that work and checks it, the same way verify.py checks citations.
+
+  --prepare DIR   writes DIR/input_NN.json ({ref, cite, title, abstract}, --per rows
+                  each) for every row with a summary and an abstract. It REFUSES (exit
+                  1, naming them) rows whose summary check is not "supported" for the
+                  abstract text now on file: run summary_audit.py first. Why: on two
+                  2026-10-14 builds, 37 abstracts on file were truncated, garbled or
+                  another paper's; 18 of them fed wrong numbers into an extraction
+                  before the summary check caught them. --skip-family PREFIX leaves
+                  out rows whose `family` starts with PREFIX (e.g. a methods family);
+                  --only REF,REF limits the batch (a re-extraction).
+  --check DIR     reads DIR/input_*.json and DIR/result_*.json (plus DIR/effect_result*.json),
+                  and writes DIR/records.json and DIR/rejected.json. A record passes
+                  only if every " ... "-separated piece of its `quote` occurs in the
+                  abstract now on file (after whitespace, dash, middle-dot and
+                  narrow-space normalization) and every numeric field it fills appears
+                  in the quote, as a percentage or a proportion (up to 4 decimals),
+                  a word number ("sixteen percent"), or one end of a range written
+                  with a hyphen ("0.86-0.88"). With --vocab FILE ({field: [allowed
+                  values]}) it also refuses values outside the vocabularies. Exit 1 on
+                  any rejected record, any input ref with no result, or an abstract
+                  that changed since --prepare.
+
+The extraction brief (what to extract, field meanings) is project-specific and is
+the agents' job; this tool owns only what code can check. A semantic audit of each
+record's fields (is the 0.88 the sensitivity, not a CI bound?) still needs a second,
+independent agent pass.
+
+  python3 tools/extract_check.py --rows rows.json --prepare extraction --skip-family Foundations
+  python3 tools/extract_check.py --rows rows.json --check extraction --vocab extraction/vocab.json
+
+Result files (one per input batch): {"papers": [{"ref", "evidence", "records": [ {...,
+"quote", numeric fields} ], "why_none"}]}. Effect-size files: the same shape with
+records carrying `effect_type` and `value` (sign ignored when matching the quote).
 ```
 
 ### Phase 6: `candidates.py`

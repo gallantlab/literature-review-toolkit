@@ -175,6 +175,13 @@ def same_paper(title, year, titles):
     return None
 
 
+def flood_limit(n_rows):
+    """Pending candidates beyond which --add warns: half the table, at least 150. Past
+    builds included 25-35 per pass; hundreds pending means the floor let in a field's
+    general literature, and triage cost scales with every one of them."""
+    return max(150, n_rows // 2)
+
+
 def add(ledger, found, source, corpus, asof=None, complete=True, n_papers=None, titles=()):
     """Record `found` (xref / forward output) as candidates, and the run itself
     under ledger["_runs"][source]. `complete` records whether the run that
@@ -445,6 +452,16 @@ def main():
         dup = sum(1 for _, c in entries(ledger) if c.get("decision") == "exclude") - before
         print(f"added {a} candidate(s) ({dup} excluded at once: same title as a row), "
               f"skipped {s} already in the corpus -> {path}")
+        pending = sum(1 for _, c in entries(ledger) if not c.get("decision"))
+        if pending > flood_limit(len(rows)):
+            decided = sum(1 for _, c in entries(ledger) if c.get("decision"))
+            print(f"  ⚠ {pending} candidates are pending for a {len(rows)}-row table (limit "
+                  f"{flood_limit(len(rows))}): the floor is too low for a densely inter-cited literature "
+                  "(2026-10-14: 1,077 mostly general-methods candidates for 541 fMRI rows). Rerun xref.py "
+                  "--min-cites / forward.py --min-shared with a higher floor (14 cut that case to 162), "
+                  + ("then rebuild the ledger (no decisions are recorded yet) and --add again."
+                     if not decided else "and record the reason; decisions already made are kept."),
+                  file=sys.stderr)
         for d, c in entries(ledger):
             if c.get("upgrade_row") and c["upgrade_row"] in {r.get(keyf) for r in rows} and d not in corpus:
                 print(f"  ✗ {c['upgrade_row']} cites a preprint; its published version is {d}. Set the row's "
