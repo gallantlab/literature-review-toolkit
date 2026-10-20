@@ -186,6 +186,8 @@ Every figure is real output from a finished review, copied into `docs/assets/`:
 | File | Source |
 |---|---|
 | `assets/figures/lineage_*.png` | `families_figure.py` output from each project folder |
+| `assets/figures/lineage_microtesla.png` | a docs-only re-render of the microtesla timeline, with the label that named the company shortened to "Canori 2026"; the project's own figure is unchanged |
+| `assets/figures/plot_diagnostic_accuracy.png` | a screenshot of the top of the diagnostic-accuracy review's `accuracy_by_disorder.html` |
 | `assets/figures/lab_*.png` | the `gallant_lab` trajectory and in-context timelines |
 | `assets/examples/creatine/` | the creatine review's real spreadsheet, timeline and written review, copied unchanged from its project folder, plus a preview screenshot of each. The home page shows the previews, labeled as examples, with general captions and no links; the Example results page links the three files under the creatine timeline |
 | `assets/examples/example_review_*.png` | pages of a written review `.docx`, rendered with LibreOffice, then `pdftoppm`, and trimmed with ImageMagick |

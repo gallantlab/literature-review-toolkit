@@ -10,7 +10,7 @@ Each example has the same parts:
 - **Why it works**: what in the request shaped the review.
 - **What the agent asked**: the questions the request left open.
 - **Follow-ups**: later messages in the same conversation.
-- **Result**: what the review produced.
+- **Result**: what the review produced, with a picture of its main output.
 
 For what to put in your own request, see
 [Step 3 of the tutorial](tutorial.md#step-3-describe-the-review).
@@ -47,8 +47,14 @@ position, and a conclusion: "layers are functionally important". support your
 debate points with citations from the bibliography."*
 
 **Result.** 555 papers from 1909 to 2026, in six families, and a written review
-that ends in a debate. The [timeline](examples.md#differences-across-cortical-layers)
-is on the Example results page.
+that ends in a debate.
+
+<figure class="fig" markdown>
+![A timeline of papers on differences across cortical layers](assets/figures/lineage_cortical_layers.png){ loading=lazy }
+<figcaption markdown>
+**The timeline from this request.** Each lane is one answer to the question of what a cortical layer is.
+</figcaption>
+</figure>
 
 ### Linear and nonlinear summation
 
@@ -74,6 +80,13 @@ follow the lab's writing rules.
 
 **Result.** 874 papers in six families, and a written review citing 499 of them.
 
+<figure class="fig" markdown>
+![A timeline of papers on linear and nonlinear summation](assets/figures/lineage_summation.png){ loading=lazy }
+<figcaption markdown>
+**The timeline from this request.** Each lane is a different rule for how a neuron combines its inputs.
+</figcaption>
+</figure>
+
 ### The alignment problem in AI
 
 **Request.**
@@ -90,6 +103,13 @@ them.
 **Follow-ups.** *"the timeline families are fine, do it."*
 
 **Result.** 475 papers in seven families.
+
+<figure class="fig" markdown>
+![A timeline of papers on the AI alignment problem](assets/figures/lineage_alignment.png){ loading=lazy }
+<figcaption markdown>
+**The timeline from this request.** Each lane locates the source of misalignment in a different place, and so asks something different of alignment.
+</figcaption>
+</figure>
 
 ### Creatine deficiency
 
@@ -110,8 +130,14 @@ physical anatomy (ultrastructure, synpases, neurons, etc) in creatine disorders.
 are there any?"*
 
 **Result.** 587 papers from 1886 to 2026, in seven families, and a written review
-citing 244 of them. The [timeline](examples.md#creatine-deficiency) is on the
-Example results page.
+citing 244 of them.
+
+<figure class="fig" markdown>
+![A timeline of papers on creatine deficiency](assets/figures/lineage_creatine.png){ loading=lazy }
+<figcaption markdown>
+**The timeline from this request.** Each lane is one part of the story, from why the brain needs creatine to how it is restored.
+</figcaption>
+</figure>
 
 ## Requests built on papers you know
 
@@ -150,6 +176,13 @@ is correcting course with one example.
 
 **Result.** 168 papers in four families.
 
+<figure class="fig" markdown>
+![A timeline of papers that train neural networks on neural data, with three dot shapes](assets/figures/lineage_end_to_end.png){ loading=lazy }
+<figcaption markdown>
+**The timeline from this request.** Each lane is what the trained network is used for. The dot shapes mark deep networks trained end to end, reused pretrained networks and shallow networks: the distinction the user's correction asked for.
+</figcaption>
+</figure>
+
 ### Synthesizing images to probe visual neurons
 
 **Request.**
@@ -174,6 +207,13 @@ broad reading, which excludes decoding images from brain activity.
 papers: the first is by Srinath et al., with Connor as senior author, and the
 second appeared at NeurIPS in 2023, not 2024. Details from memory are fine in a
 request.
+
+<figure class="fig" markdown>
+![A timeline of papers on synthesizing images to probe visual neurons](assets/figures/lineage_stimulus_synthesis.png){ loading=lazy }
+<figcaption markdown>
+**The timeline from this request.** Each lane is a job the synthesized image does: find a neuron's preferred stimulus, map its tuning, decide between models, drive the brain, or stand in for a model's assumptions.
+</figcaption>
+</figure>
 
 ## Requests that describe the output
 
@@ -212,6 +252,13 @@ review's numbers.
 **Result.** 745 papers, two plots and a summary page with its sources. The fMRI
 review added 582 papers.
 
+<figure class="fig" markdown>
+![A plot of diagnostic accuracy by disorder and kind of evidence](assets/figures/plot_diagnostic_accuracy.png){ loading=lazy }
+<figcaption markdown>
+**One of the two plots this request asked for.** Diagnostic accuracy for each disorder, with each kind of evidence in its own lane. Each dot is one estimate from one paper.
+</figcaption>
+</figure>
+
 ### A therapy you doubt
 
 **Request.**
@@ -234,6 +281,13 @@ thousand times stronger could then be set aside.
 **Result.** 668 papers in eight families, and a written review that gives the
 case for, the case against and a verdict, citing 199 papers.
 
+<figure class="fig" markdown>
+![A timeline of papers for and against microtesla magnetic therapy](assets/figures/lineage_microtesla.png){ loading=lazy }
+<figcaption markdown>
+**The timeline from this request.** Each lane is the role a paper plays in the argument: evidence for, evidence against, and the mechanisms each side proposes.
+</figcaption>
+</figure>
+
 ## Short requests
 
 Short requests work too. The agent writes down how it read the request, and asks
@@ -254,6 +308,13 @@ mathematics teaching.
 **Result.** 177 papers. Only seven are experiments comparing notations, and they
 disagree.
 
+<figure class="fig" markdown>
+![A timeline of papers on reverse Polish notation, with notes](assets/figures/lineage_rpn.png){ loading=lazy }
+<figcaption markdown>
+**The timeline from this request.** Each lane is a kind of claim about notation. The notes mark when the few experiments were done.
+</figcaption>
+</figure>
+
 ### Meditation and brain networks
 
 **Request.**
@@ -265,3 +326,10 @@ widest answer each time: fMRI, EEG, MEG, brain structure and brain chemistry;
 experienced meditators and beginners, patients, children and older adults.
 
 **Result.** 396 papers in six families.
+
+<figure class="fig" markdown>
+![A timeline of papers on meditation and brain networks](assets/figures/lineage_meditation.png){ loading=lazy }
+<figcaption markdown>
+**The timeline from this request.** Each lane is a claim about what meditation does to the brain.
+</figcaption>
+</figure>
