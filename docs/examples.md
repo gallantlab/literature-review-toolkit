@@ -2,7 +2,8 @@
 
 Finished runs: one review in each mode, pages from a review article, and a
 gallery of lineage figures. Every figure here is unedited toolkit output. Click
-any figure to enlarge it.
+any figure to enlarge it. For the requests behind recent builds, see
+[Writing the request](prompts.md).
 
 **How to read a lineage figure.** Each horizontal lane is one theoretical family,
 labeled at left with its claim. Each dot is one verified paper, placed by

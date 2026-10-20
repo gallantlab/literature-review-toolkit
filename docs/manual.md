@@ -303,6 +303,8 @@ and reach the scripts as `../tools/`. To make that path work, link the toolkit's
     English, including how big a search you want. The agent reads `PLAYBOOK.md`,
     creates the subdirectory, runs the preflight, runs the phases, and reports
     when done. It asks about scope only when the request is ambiguous.
+    [Writing the request](prompts.md) shows real requests and what made them
+    work.
 
     ```text
     i want a literature review on the anatomical connections between the visual

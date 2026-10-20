@@ -3,7 +3,7 @@
 **Scripts that let an LLM agent run a literature review without fabricating
 references.**
 
-Version 2.4.0 · MIT license · [AI disclosure](#ai-disclosure)
+Version 2.4.1 · MIT license · [AI disclosure](#ai-disclosure)
 
 The agent decides what to search, what matters, how to group it, and optionally
 how to write it up. The scripts handle the API calls, verification and
@@ -141,6 +141,7 @@ review. Say how big a search you want, in your own words: "a quick look at the
 key papers", "the core literature", "about 300 papers" or "everything". Say
 nothing and you get the standard search. Every check runs at every size. The
 scales are listed in [Topic mode](manual.md#41-topic-mode).
+[Writing the request](prompts.md) shows requests from real builds.
 
 Before it searches, the agent runs the
 [preflight](manual.md#23-phase-0-run-the-preflight-before-every-new-search). It
@@ -153,6 +154,8 @@ manual.
 
 ## Next steps
 
+- **[Writing the request](prompts.md)**: requests from real builds, what each
+  one got right, and what the agent still had to ask.
 - **[Operator manual](manual.md)**: install, rules, every phase with its command
   and gate, how to read the outputs, and troubleshooting.
 - **[Examples](examples.md)**: a finished review in each mode and a gallery of
