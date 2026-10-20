@@ -123,21 +123,6 @@ figure.fig img {
   .hero h1 { font-size: 1.7rem; }
 }
 
-/* ==== Stat strip ==== */
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 1rem;
-  margin: 0 0 1rem;
-}
-.stats > div {
-  padding: 0.9rem 1rem;
-  border-radius: 0.8rem;
-  border: 1px solid var(--lr-line);
-}
-.stat { display: block; font-size: 1.7rem; font-weight: 800; color: var(--lr-accent); line-height: 1.1; }
-.stat-label { display: block; font-size: 0.72rem; color: var(--md-default-fg-color--light); margin-top: 0.3em; }
-
 /* ==== Cards ==== */
 .cards {
   display: grid;

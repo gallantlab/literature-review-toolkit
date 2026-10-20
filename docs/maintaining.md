@@ -38,6 +38,9 @@ Keep the parts separate:
   reference", not "the reference will be rebuilt".
 - **Keep sentences short.** Aim for under 25 words, one idea per sentence. Do not
   chain clauses with semicolons.
+- **Inform; do not sell.** This is documentation for a research tool. No
+  promotional stat strips, slogans or marketing claims. State what the toolkit
+  does and what it checks, plainly.
 - **Describe current behavior only.** History, dated incidents and old versions
   belong in commit messages. A measured number may stay when it is the reason
   for a rule ("without the duty, about 1 in 4 citations were wrong").

@@ -17,7 +17,7 @@ up. Scripts check every reference against the publishers' databases.
 [Start the tutorial](tutorial.md){ .md-button .md-button--primary }
 [See examples](examples.md){ .md-button }
 
-<p class="hero-meta">Version 2.4.5 · MIT license · <a href="#ai-disclosure">AI disclosure</a></p>
+<p class="hero-meta">Version 2.4.6 · MIT license · <a href="#ai-disclosure">AI disclosure</a></p>
 
 </div>
 
@@ -28,12 +28,6 @@ up. Scripts check every reference against the publishers' databases.
 </figcaption>
 </figure>
 
-</div>
-
-<div class="stats" markdown>
-<div><span class="stat">1 in 4</span><span class="stat-label">citations an agent gets wrong from memory</span></div>
-<div><span class="stat">0</span><span class="stat-label">references typed by the agent: each is rebuilt from its DOI</span></div>
-<div><span class="stat">3</span><span class="stat-label">decisions left to you: scope, families, write-up</span></div>
 </div>
 
 ## Where to start
