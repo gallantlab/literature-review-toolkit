@@ -6,7 +6,7 @@ JSON and writes JSON or a file. For the order of the phases, read the playbook
 first. This page covers each script's inputs, outputs and gates, one section per
 script in phase order; the two lab-mode scripts come last. For the commands in
 the order you run them, see
-[§5 of the manual](https://gallantlab.org/literature-review-toolkit/manual/#5-the-shared-backbone).
+[the order the agent runs](https://gallantlab.org/literature-review-toolkit/pipeline/#the-order-the-agent-runs).
 
 ## Before you run anything: email and API keys
 

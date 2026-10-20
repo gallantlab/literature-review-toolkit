@@ -79,8 +79,10 @@ The public site at **https://gallantlab.org/literature-review-toolkit/** is buil
 from `docs/` (MkDocs + Material). It is a superset of this PLAYBOOK and the README,
 not a fork. **When you change the toolkit (a tool, a phase, a command or flag, a
 guardrail or lesson), update the matching page under `docs/` in the same change.**
-`docs/manual.md` drifts fastest, since it carries every phase command, guardrail
-and flag. The tool index in `docs/tools.md`, `tools/README.md` and this file is
+The developer pages (`docs/pipeline.md`, `search.md`, `checks.md`,
+`deliverables.md`, `reruns.md`, `troubleshooting.md`) drift fastest, since they
+carry every phase command, guardrail and flag. `docs/maintaining.md` holds the
+style guide every page follows. The tool index in `docs/tools.md`, `tools/README.md` and this file is
 generated: run `python3 tools/gen_docs.py` after adding a tool or a flag. CI
 (`.github/workflows/tests.yml`) runs `ruff check .`,
 `tools/tests/test_formatting.py` and `gen_docs.py --check`, and fails on a stale

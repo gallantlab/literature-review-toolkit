@@ -1,207 +1,189 @@
-# Examples
+# Example results
 
-Finished runs: one review in each mode, pages from a review article, and a
-gallery of lineage figures. Every figure here is unedited toolkit output. Click
-any figure to enlarge it. For the requests behind recent builds, see
-[Writing the request](prompts.md).
+These are unedited results from finished reviews. Click any figure to enlarge
+it. To learn how to read a timeline, see
+[Step 7 of the tutorial](tutorial.md#the-timeline). The requests behind several
+of these reviews are on [Example requests](requests.md).
 
-**How to read a lineage figure.** Each horizontal lane is one theoretical family,
-labeled at left with its claim. Each dot is one verified paper, placed by
-publication year. Dot area is proportional to citation count, and a hollow dot
-has no count. Labeled dots are landmarks, chosen automatically by citation count
-and by how often the corpus itself cites them. A ring and a ★ mark a home-lab
-paper: a row from the lab's own record in lab mode, or any paper by an author
-named in `LITREVIEW_LAB_AUTHOR`. [§7.2 of the manual](manual.md#72-the-lineage-figure)
-gives the full key.
+Every review produces a spreadsheet and, unless you skip it, a timeline. A
+written review is optional. The [tutorial](tutorial.md#the-spreadsheet) shows
+rows from a real spreadsheet.
 
 ---
 
-## Topic mode: visual–cerebellar anatomy
+## Timelines
 
-| | |
-|---|---|
-| **Prompt** | *"anatomical connections between visual system and cerebellum, primate or human, any tractography method, back to the 1970s"* |
-| **Deliverable** | `visual_cerebellum_bibliography.xlsx`, 72 papers |
-| **From the search** | 42 papers, 1980–2025 (<span class="swatch search"></span> cream rows) |
-| **From the cross-citation pass** | 30 papers, 1944–2010 (<span class="swatch xref"></span> green rows) |
-| **Caught by verification** | 3 fabrications: a real 2025 paper by Schmahmann et al. returned as "Olson et al.", a DOI off by one digit, and an invented PMCID |
-| **Built** | May 2026, with an early version of the toolkit: before the antecedents pass and the reference gates |
-| **Time** | about 7 minutes, without PDFs |
+Each timeline below comes from a different review. Each lane is a family of
+papers that share a claim, and each dot is one paper.
 
-This run is small and early. A current build runs more steps and takes hours;
-see the manual's [reference card](manual.md#10-reference-card) for measured
-times.
-
-The cross-citation pass found the field's older anatomy (1944–2010) that the
-topic search missed. The output directory keeps that run's audit trail:
-`agent_out.json` (raw search results), `verify_report.json` (what verification
-caught), `xref_visual_cerebellum.json` (the cross-citation table),
-`xref_picks.json` (the 30 papers taken from it), and `rows.json` (the table the
-spreadsheet is built from).
-
----
-
-## Lab mode: the Gallant lab in context
-
-| | |
-|---|---|
-| **Prompt** | *"review the Gallant lab's human-imaging work in the context of the broader field"* |
-| **Front end** | `lab_corpus.py` ingest → prune false positives → derive themes |
-| **Deliverables** | `gallant_lab_in_context_bibliography.xlsx`, two lineage figures, an AI-authored review `.docx` |
+### Differences across cortical layers
 
 <figure class="fig" markdown>
-![The Gallant lab's 61 human-imaging papers in six themes, 1990 to 2025](assets/figures/lab_trajectory.png){ loading=lazy }
+![Timeline of 555 papers on differences across cortical layers, in six family lanes from 1909 to 2026](assets/figures/lineage_cortical_layers.png){ loading=lazy }
 <figcaption markdown>
-**Lab mode first maps the lab's own work.** The 61 human-imaging papers from the
-Gallant lab, grouped into six research themes derived in Phase L3. Every paper is
-a lab paper, so every dot is ringed and starred. The lab's work moves from visual
-encoding and stimulus reconstruction (2000–2015) to semantic maps of visual
-cortex (from 2012) and then to language (from 2016). A methods-and-software lane
-runs throughout. This map defines the themes that the next step places in the
-wider field.
+**Six answers to the question "what is a cortical layer?"** 555 papers,
+1909–2026. The families treat a layer as a boundary to measure, a population of
+cells, a station on a signal's route, a representation, something that changes,
+or a step in a computation. The "representation" lane rests on Hubel and
+Wiesel's work from 1959 to 1968; most of the "something that changes" lane is
+recent. [Request](requests.md#differences-across-cortical-layers).
+</figcaption>
+</figure>
+
+### Creatine deficiency
+
+<figure class="fig" markdown>
+![Timeline of 587 papers on cerebral creatine deficiency syndromes, in seven family lanes from 1886 to 2026](assets/figures/lineage_creatine.png){ loading=lazy }
+<figcaption markdown>
+**From the chemistry of creatine to the search for a treatment.** 587 papers,
+1886–2026. The families run from energy metabolism, synthesis and imaging,
+through defining the disorders and finding patients, to how the loss harms the
+brain and how to restore it. Most imaging papers date from 1980–2000, while the
+treatment lane is still growing. [Request](requests.md#creatine-deficiency).
+</figcaption>
+</figure>
+
+### How the brain represents complexity
+
+<figure class="fig" markdown>
+![Timeline of 190 papers on how the brain represents complexity, in six family lanes from 1948 to 2026](assets/figures/lineage_complexity.png){ loading=lazy }
+<figcaption markdown>
+**Six answers to "what is complexity?"** 190 papers, 1948–2026. The families
+treat complexity as information, redundancy to compress, hierarchy,
+representational geometry, bounded capacity, or integrated information. Three of
+them rest on landmarks from the 1950s; the geometry lane starts in the mid-2000s.
+</figcaption>
+</figure>
+
+### The cognitive map
+
+<figure class="fig" markdown>
+![Timeline of 110 papers on the cognitive map, in six family lanes from 1948 to 2026](assets/figures/lineage_cognitive_map.png){ loading=lazy }
+<figcaption markdown>
+**Six accounts of what the brain's map is for.** 110 papers, 1948–2026. The
+families treat the map as a spatial metric, replayed sequences, abstract
+structure, prediction and planning, relational memory, or structure learned from
+experience. Maps of abstract, non-spatial structure appear only from 2008.
+</figcaption>
+</figure>
+
+### World models
+
+<figure class="fig" markdown>
+![Timeline of 348 papers on world models, in six family lanes from 1943 to 2026](assets/figures/lineage_world_models.png){ loading=lazy }
+<figcaption markdown>
+**Six things a world model can do.** 348 papers, 1943–2026. The families are
+named for what the model does: compress, infer, control, map, simulate, or emerge
+in trained networks. The compression lane is almost all before 2005; the
+simulation and emergence lanes are densest in 2023–2025.
+</figcaption>
+</figure>
+
+### Concepts in the brain
+
+<figure class="fig" markdown>
+![Timeline of 450 papers on the distributed conceptual network, in six family lanes from 1950 to 2026](assets/figures/lineage_distributed_conceptual.png){ loading=lazy }
+<figcaption markdown>
+**Six accounts of where concepts are stored.** 450 papers, 1950–2026. Concepts
+live in sensory and motor systems, in a central hub, in a map across cortex,
+in a handoff from vision to language, in memory, or shaped by goals. Papers from
+the home lab, marked with stars, cluster in the "map across cortex" lane.
+</figcaption>
+</figure>
+
+### Data structures in the brain
+
+<figure class="fig" markdown>
+![Timeline of 117 papers on how the brain represents data structures, in six family lanes from 1948 to 2026](assets/figures/lineage_structure.png){ loading=lazy }
+<figcaption markdown>
+**Six strategies for holding a structure in mind.** 117 papers, 1948–2026.
+Compression, statistical learning, codes for order, cognitive maps, symbols that
+combine, and predictive maps. Each strategy has roots between 1948 and 1990; the
+cognitive-map lane grows fastest after 2005.
+</figcaption>
+</figure>
+
+### The evolution of the language network
+
+<figure class="fig" markdown>
+![Timeline of 122 papers on the comparative language network, in five family lanes from 1940 to 2026, with two arrows](assets/figures/lineage_comparative_language.png){ loading=lazy }
+<figcaption markdown>
+**Five arguments for how language arose from a primate brain.** 122 papers,
+1940–2026. The two arrows were added by hand: each links an old claim that a
+feature is uniquely human to a recent paper that found it in monkeys. Every
+paper in the "revising the gap" lane dates from 2008 or later.
+</figcaption>
+</figure>
+
+### Brain recordings during conversation
+
+<figure class="fig" markdown>
+![Timeline of 131 papers on recording brain activity during conversation, in six family lanes from 1989 to 2025](assets/figures/lineage_conversation.png){ loading=lazy }
+<figcaption markdown>
+**Six views of what the neuroscience of dialogue studies.** 131 papers,
+1989–2025. Coupling between two brains, shared codes for speaking and listening,
+turn timing, social context, decoding the message, and recording two brains at
+once. Nearly all of it is from after 2004, and the decoding lane holds only four
+papers.
+</figcaption>
+</figure>
+
+---
+
+## A lab review
+
+A lab review starts from one lab's publications instead of a question. It groups
+the lab's work into themes, then searches outward to place each theme in its
+field. This one began with the request *"review the Gallant lab's human-imaging
+work in the context of the broader field."*
+
+<figure class="fig" markdown>
+![Timeline of the Gallant lab's 61 human-imaging papers in six themes, 1990 to 2025](assets/figures/lab_trajectory.png){ loading=lazy }
+<figcaption markdown>
+**First, the lab's own work.** 61 human-imaging papers from the Gallant lab,
+1990–2025, in six themes. Every dot is a lab paper, so every dot carries a star.
+The work moves from visual encoding (2000–2015) to meaning in visual cortex
+(from 2012) and then to language (from 2016).
 </figcaption>
 </figure>
 
 <figure class="fig" markdown>
-![The same six themes with 287 field papers added around 72 lab papers](assets/figures/lab_in_context.png){ loading=lazy }
+![The same six themes with 287 papers from other groups added around 72 lab papers](assets/figures/lab_in_context.png){ loading=lazy }
 <figcaption markdown>
-**The same themes, placed in the field.** Phase L4c searched outward from each
-theme, adding 287 papers from other groups to 72 lab papers (359 in total).
-Ringed, starred dots are lab papers; plain dots are the field. In visual encoding
-the lab's papers sit inside a dense literature that began decades earlier. In
-language, most of the field's papers postdate the lab's 2016 landmark. The figure
-shows which themes the lab entered as established literatures and which grew
-after its work.
+**Then, the same themes in their fields.** 287 papers from other groups added
+around 72 lab papers, 359 in all. Starred dots are the lab's. In visual encoding,
+the lab's papers sit inside a literature that began decades earlier; in language,
+most of the field's papers came after the lab's 2016 landmark.
 </figcaption>
 </figure>
 
 ---
 
-## A finished review article
+## A written review
 
-Pages from the `complexity_representation` review `.docx` (Phase 7).
+When you ask for one, the agent drafts a written review from the papers'
+abstracts. These pages come from the review of how the brain represents
+complexity.
 
 <div class="gallery" markdown>
 
 <figure class="fig" markdown>
-![Review title page with author block, disclosure and abstract](assets/examples/example_review_title.png){ loading=lazy }
+![Title page of a written review, with its author block, disclosure and abstract](assets/examples/example_review_title.png){ loading=lazy }
 <figcaption markdown>
-**The title page states who wrote the review and how it was checked.** Below the
-title, the author block names the AI model. The author's disclosure explains that
-every citation was machine-verified and every reference rebuilt from its DOI, and
-that the author read abstracts, not full texts. The abstract and introduction
-follow.
+**The title page says who wrote the review and how it was checked.** The author
+block names the AI model. The disclosure says every citation was checked by
+machine, every reference was rebuilt from its DOI, and the summaries come from
+abstracts, not full texts.
 </figcaption>
 </figure>
 
 <figure class="fig" markdown>
-![First page of the reference list](assets/examples/example_review_refs.png){ loading=lazy }
+![First page of a written review's reference list](assets/examples/example_review_refs.png){ loading=lazy }
 <figcaption markdown>
-**The reference list is generated from the verified corpus, not typed.** Each
-entry has its full author list, a sentence-case title and a DOI link. Entries
-follow APA-7 order: one author's works by year, and a sole author before that
-author's co-authored papers (Attneave, 1959, then Attneave & Arnoult, 1956). The
-one entry without a link is a DOI-less book, which keeps a hand-written
-reference.
+**The reference list is generated from the checked papers, not typed.** Each
+entry has its full author list, its title in sentence case and a DOI link, in
+APA order. The one entry without a link is a book with no DOI.
 </figcaption>
 </figure>
 
 </div>
-
----
-
-## Lineage figure gallery
-
-<div class="gallery" markdown>
-
-<figure class="fig" markdown>
-![Complexity representation: six families, 1948 to 2026](assets/figures/lineage_complexity.png){ loading=lazy }
-<figcaption markdown>
-**How the brain represents complexity (190 papers).** Six families, each a
-different answer to what complexity is: information, redundancy to compress,
-hierarchy, representational geometry, bounded capacity, or integrated
-information. The information, redundancy and capacity lanes rest on 1950s
-landmarks (Shannon, Attneave, Miller). Hierarchy follows in the 1960s,
-integration in the 1990s, and geometry in the mid-2000s. The six answers accumulated
-over seven decades; none replaced the others.
-</figcaption>
-</figure>
-
-<figure class="fig" markdown>
-![Cognitive map: six families, 1948 to 2026](assets/figures/lineage_cognitive_map.png){ loading=lazy }
-<figcaption markdown>
-**The cognitive map (110 papers).** Six families, each a different account of
-what the map is for: a spatial metric, replayed sequences, abstract structure,
-prediction and planning, relational memory, or structure learned from
-experience. The spatial and memory lanes start with Tolman (1948), Scoville
-(1957) and O'Keefe (1971). The abstraction lane starts in 2008. Extending the
-map beyond physical space is a recent idea.
-</figcaption>
-</figure>
-
-<figure class="fig" markdown>
-![World models: six families, 1943 to 2026](assets/figures/lineage_world_models.png){ loading=lazy }
-<figcaption markdown>
-**World models (348 papers).** Families are named for what the model does:
-compress, infer, control, map, simulate, or emerge in trained networks. The
-compression lane is almost entirely pre-2005 (Attneave, Barlow, Olshausen). The
-simulation and emergence lanes are densest in 2023–2025. The field's recent growth
-is concentrated in its two newest families.
-</figcaption>
-</figure>
-
-<figure class="fig" markdown>
-![Distributed conceptual network: six families, 1950 to 2026](assets/figures/lineage_distributed_conceptual.png){ loading=lazy }
-<figcaption markdown>
-**The distributed conceptual network (450 papers).** Six accounts of how
-concepts are stored: in sensory and motor systems, in an amodal hub, as a map
-tiling cortex, handed from vision to language, built from memory, or bent by
-goals. The sensory and hub accounts have run in parallel since the 1970s. Most
-home-lab papers (★) fall in the "meaning tiles the cortex" lane, from 2008 on.
-</figcaption>
-</figure>
-
-<figure class="fig" markdown>
-![Data-structure representation: six families, 1948 to 2026](assets/figures/lineage_structure.png){ loading=lazy }
-<figcaption markdown>
-**How the brain represents data structures (117 papers).** Six strategies for
-holding a structure: compression, statistical learning, ordinal codes, cognitive
-maps, compositional symbols, or predictive maps. Each strategy has its own roots
-between 1948 and 1990 (Tolman, Miller, Sternberg, Smolensky). The cognitive-map
-lane grows fastest after 2005. Most of today's accounts of structure descend from
-ideas older than neuroimaging.
-</figcaption>
-</figure>
-
-<figure class="fig" markdown>
-![Comparative language network: five families, 1940 to 2026, with two editorial arrows](assets/figures/lineage_comparative_language.png){ loading=lazy }
-<figcaption markdown>
-**The comparative language network (122 papers).** Five evolutionary arguments
-for how human language arose from a primate brain. The axis is linear
-(no time warp). The two arrows are editorial (`--spec`). Each links an older claim
-that a feature is unique to humans or apes to a recent paper that found it in
-monkeys. Every "revising the gap" paper dates from 2008 or later, so the case
-for gradual evolution is recent.
-</figcaption>
-</figure>
-
-<figure class="fig" markdown>
-![Conversation and brain recording: six families, 1989 to 2025](assets/figures/lineage_conversation.png){ loading=lazy }
-<figcaption markdown>
-**Recording brain activity during conversation (131 papers).** Six views of what
-the neuroscience of dialogue is about: brain-to-brain coupling, shared
-production and comprehension codes, turn timing, social context, decoding the
-message, and the two-brain method itself. Nearly all of it postdates 2004. The
-decoding lane holds only four papers, three from 2024–2025, so computational
-decoding of conversation has barely begun.
-</figcaption>
-</figure>
-
-</div>
-
-!!! tip "The HTML version is interactive"
-    Each run also produces an interactive HTML figure. Hover a dot for its
-    reference, click it for its summary, counts and DOI, and step through papers
-    with Next/Prev or the arrow keys. For publication, each run also writes an
-    SVG copy, plus PNG and PDF when `rsvg-convert` or Inkscape is installed. See
-    [Reading the lineage figure](manual.md#72-the-lineage-figure).

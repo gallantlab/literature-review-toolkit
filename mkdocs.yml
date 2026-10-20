@@ -9,7 +9,7 @@ repo_url: https://github.com/gallantlab/literature-review-toolkit
 repo_name: gallantlab/literature-review-toolkit
 edit_uri: edit/main/docs/
 copyright: >-
-  Version 2.4.1 · MIT license · Gallant Lab, UC Berkeley ·
+  Version 2.4.2 · MIT license · Gallant Lab, UC Berkeley ·
   Code and documentation written largely by Claude (Anthropic);
   <a href="https://gallantlab.org/literature-review-toolkit/#ai-disclosure">AI disclosure</a>
 
@@ -90,8 +90,24 @@ extra:
 
 nav:
   - Home: index.md
-  - Writing the request: prompts.md
-  - Operator manual: manual.md
-  - Tools reference: tools.md
-  - Examples: examples.md
-  - Maintaining this site: maintaining.md
+  - Tutorial: tutorial.md
+  - Examples:
+      - Example requests: requests.md
+      - Example results: examples.md
+  - For developers:
+      - How it works: pipeline.md
+      - Searching: search.md
+      - Checking: checks.md
+      - Deliverables: deliverables.md
+      - Reruns and upgrades: reruns.md
+      - Troubleshooting: troubleshooting.md
+      - Tools reference: tools.md
+      - Maintaining the docs: maintaining.md
+
+# manual.md is a stub for links to the old single-page manual.
+not_in_nav: |
+  /manual.md
+
+validation:
+  links:
+    anchors: warn

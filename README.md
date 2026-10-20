@@ -5,12 +5,14 @@ fabricating references. The agent decides what to search, how to group the
 papers, and how to write them up. The scripts do the API calls, verification and
 bookkeeping.
 
-Version 2.4.1 · MIT license
+Version 2.4.2 · MIT license
 
-📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**, with the
-[operator manual](https://gallantlab.org/literature-review-toolkit/manual/),
-[tools reference](https://gallantlab.org/literature-review-toolkit/tools/) and
-[worked examples](https://gallantlab.org/literature-review-toolkit/examples/).
+📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**. To run a
+review, start with the [tutorial](https://gallantlab.org/literature-review-toolkit/tutorial/)
+and the [example requests](https://gallantlab.org/literature-review-toolkit/requests/).
+To change the toolkit, start with
+[how it works](https://gallantlab.org/literature-review-toolkit/pipeline/) and the
+[tools reference](https://gallantlab.org/literature-review-toolkit/tools/).
 
 ## What it does
 
@@ -82,7 +84,7 @@ started under 1.x needs these before its next build:
   those, and the audit fails a fix that no longer matches its row.
 - Give every row a summary. The audit now fails an empty one.
 
-[§8.1 of the manual](https://gallantlab.org/literature-review-toolkit/manual/#81-upgrading-an-old-corpus) covers the rest. For a corpus
+[Upgrade an old corpus](https://gallantlab.org/literature-review-toolkit/reruns/#upgrade-an-old-corpus) covers the rest. For a corpus
 built well before 2.0, a fresh build is often quicker.
 
 ## Start a review
@@ -107,13 +109,13 @@ You can also say how big a search you want, in your own words:
 | nothing about size | the standard search: each lane's target is a floor, not a cap |
 
 Every check runs at every size, so a smaller search is only smaller. The full
-table is in [§4.1 of the manual](https://gallantlab.org/literature-review-toolkit/manual/#41-topic-mode).
+table is in [Set the scope and size](https://gallantlab.org/literature-review-toolkit/search/#set-the-scope-and-size-phase-1).
 
 Before it searches, the agent runs `tools/preflight.py`. If GitHub has a newer
 version of the toolkit, the agent offers to install it. If a key is missing or
 the OpenAlex budget is short, it stops and asks you to choose: get the API keys,
 cap the search, or be prepared to wait. To run the same check yourself, see
-[§2.3 of the manual](https://gallantlab.org/literature-review-toolkit/manual/#23-phase-0-run-the-preflight-before-every-new-search).
+[Run the preflight](https://gallantlab.org/literature-review-toolkit/search/#run-the-preflight-phase-0).
 
 The agent then follows [`PLAYBOOK.md`](./PLAYBOOK.md). It creates one
 subdirectory per topic and delivers the spreadsheet there. When the repo is
@@ -121,7 +123,7 @@ installed as a Claude Code plugin, its skill points the agent at the playbook.
 Without the plugin, name the playbook in your request.
 
 To run the phases by hand, see
-[§5 of the manual](https://gallantlab.org/literature-review-toolkit/manual/#5-the-shared-backbone).
+[the order the agent runs](https://gallantlab.org/literature-review-toolkit/pipeline/#the-order-the-agent-runs).
 Every phase is one script in [`tools/`](./tools).
 
 ## Repository layout

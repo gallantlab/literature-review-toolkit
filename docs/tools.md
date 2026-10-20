@@ -51,8 +51,8 @@ in `tools/README.md` and `PLAYBOOK.md`.
 
 When a tool cannot establish something, it stops or says so; it does not guess.
 This section lists, tool by tool, what each one will not decide for you and will
-not do silently. The [operator manual](manual.md) gives the full procedure, and
-each entry links to its section there.
+not do silently. [How it works](pipeline.md) gives the full procedure, and each
+entry links to its section there.
 
 ### Before and during the search
 
@@ -63,13 +63,13 @@ each entry links to its section there.
   prepared to wait. It prints the update command but never installs anything. It
   records the outcome, and the user's choice (`--accept`), in the project's
   `preflight.json`. For a build already under way, pass `--no-update-check`.
-  See [§2.3](manual.md#23-phase-0-run-the-preflight-before-every-new-search).
+  See [Run the preflight](search.md#run-the-preflight-phase-0).
 - **`lane_briefs.py`** (Phase 2) does not let a brief go out incomplete, or out of
   step with the search scale. It refuses a spec with a missing field, a repeated
   key, a seed that names an author, no antecedent lane, or more or fewer lanes
   than the scale allows. After the user chose at the preflight to cap the search,
   it refuses an uncapped scale. It never writes a brief with anything left
-  unfilled. See [§4.1](manual.md#41-topic-mode).
+  unfilled. See [Write the lane spec](search.md#write-the-lane-spec-phase-2).
 - **`merge_lanes.py`** (Phase 2c) does not build a table before the preflight. It
   refuses to run without a recent, cleared `preflight.json`, unless
   `--no-preflight "reason"`, and it keeps the reason. It never merges two rows on
@@ -84,11 +84,11 @@ each entry links to its section there.
       read a schema-1 lane file without `--allow-v1`.
     - `--append` never changes an existing row, and refuses an empty `--into`.
 
-    See [§4.1, Phase 2c](manual.md#41-topic-mode).
+    See [Write the lane spec](search.md#write-the-lane-spec-phase-2).
 - **`recall.py`** (Phase 2c, reruns) does not decide a missed paper. It lists
   each old paper the rerun lacks as input for one recovery lane, whose agent
   decides it again from the landing page: the old reference is a pointer, not a
-  claim. See [§8.1](manual.md#81-upgrading-an-old-corpus).
+  claim. See [Upgrade an old corpus](reruns.md#upgrade-an-old-corpus).
 
 ### Verification and canon (Phase 3)
 
@@ -107,7 +107,7 @@ each entry links to its section there.
     - `--override REF --reason "..."` is refused without an existing stamp,
       without a reason, or when the row's ids changed since it was verified.
 
-    See [§5.1](manual.md#51-phase-3-verify-every-citation).
+    See [Verify every citation](checks.md#verify-every-citation-phase-3).
 - **`handcheck.py`** does not treat a reference with no DOI or arXiv id as
   verified. `--prepare` first searches CrossRef and OpenAlex for a DOI the row
   turns out to have. `--adopt-dois` applies a DOI only when exactly one candidate
@@ -117,7 +117,7 @@ each entry links to its section there.
   changed since, the ref was never prepared, or the result's `apa_sha` echo is
   missing or differs. It exits 1 on any refused or `not-found` result. A later
   edit to the `apa` lapses the check.
-  See [§5.2](manual.md#52-phase-3-hand-check-the-references-with-no-doi).
+  See [Hand-check references with no DOI](checks.md#hand-check-references-with-no-doi-phase-3e).
 - **`references.py`** (canon) rebuilds a row only when its verify stamp is OK, or
   overridden, for its current ids. This refusal holds on every table, however old.
   A row it does not rebuild keeps its `apa`, is named, and makes the run exit 1.
@@ -135,14 +135,14 @@ each entry links to its section there.
     - `--repair` fixes string damage offline, without re-fetching or undoing
       hand fixes.
 
-    See [§5.3](manual.md#53-phase-3f-canonicalize-every-reference) and
-    [§5.8](manual.md#58-acknowledge-what-needs-a-human-verdict).
+    See [Rebuild every reference](checks.md#rebuild-every-reference-phase-3f) and
+    [Acknowledge warnings](checks.md#acknowledge-warnings).
 - **`sentence_case.py`** only proposes; it writes nothing until `--apply`, and
   `--apply` keeps each hand fix's exact text. It skips titles that look German or
   French unless `--include-foreign`. It never cases a DataCite deposit's
   `(Version …)` or `[Descriptor]`. Proper nouns specific to the corpus go in a
   `--proper` file.
-  See [§5.3](manual.md#53-phase-3f-canonicalize-every-reference).
+  See [Rebuild every reference](checks.md#rebuild-every-reference-phase-3f).
 
 ### Counts, summaries and the spreadsheet (Phases 5 to 5c)
 
@@ -152,7 +152,7 @@ each entry links to its section there.
   endpoint and keeps the higher count. A re-run keeps an earlier count that its
   own lookup lost. A row with neither a DOI nor an arXiv id gets no count. It
   leaves `rows.json` alone unless you pass `--attach` or `--attach-only`.
-  See [§5.4](manual.md#54-phase-5b-citation-counts).
+  See [Fetch citation counts](checks.md#fetch-citation-counts-phase-5b).
 - **`abstracts.py`** does not take a journal's boilerplate, a citation line or an
   author list for an abstract: it refuses the text and tries the next source. It
   does not count a failed fetch as a missing abstract. It lists failures in
@@ -161,7 +161,7 @@ each entry links to its section there.
   (`"source": "landing-page"`) is never overwritten; when its ids no longer match
   the row, it is reported as stale. The run exits 1 on any failed fetch or stale
   entry.
-  See [§5.5](manual.md#55-phase-5c-check-each-summary-against-its-abstract).
+  See [Check every summary](checks.md#check-every-summary-phase-5c).
 - **`summary_audit.py`** does not judge a summary itself. It writes batches for
   checking agents with no web access, and `--ingest` binds each verdict to what
   that agent saw. It refuses a result when the summary, the row's ids or the
@@ -170,7 +170,7 @@ each entry links to its section there.
   `wrong-abstract` verdict: the abstract on file is not the paper's. A row with no
   abstract is a `no-abstract` warning to acknowledge. On a gated table, a row with
   no summary at all fails the audit (`no-summary`).
-  See [§5.5](manual.md#55-phase-5c-check-each-summary-against-its-abstract).
+  See [Check every summary](checks.md#check-every-summary-phase-5c).
 - **`spreadsheet.py`** is the release gate. It runs the same audit as
   `references.py --audit`, and writes nothing for a failing gated table.
   `--draft` writes `<out>_DRAFT.xlsx` with a banner instead, which is never the
@@ -178,9 +178,9 @@ each entry links to its section there.
   `candidates.json` is refused on any table, draft or not. An unknown `source`
   renders white, with a warning. The "Considered and excluded" sheet lists each
   excluded candidate and each lane exclusion, with its reason.
-  See [§5.9](manual.md#59-phase-5-build-the-spreadsheet-the-release-gate).
+  See [Build the spreadsheet](deliverables.md#build-the-spreadsheet-phase-5).
 
-### The cross-citation pass (Phase 6)
+### Finding missed papers (Phase 6)
 
 - **`xref.py`** does not report a partial tally as complete. When any reference
   list could not be fetched, it exits 1 unless `--allow-incomplete`. Either way
@@ -188,7 +188,7 @@ each entry links to its section there.
   For an arXiv paper, or one whose CrossRef record has no reference list, it asks
   Semantic Scholar. Each completed list is cached in `<out>.refs.json`, so a
   re-run after a throttled pass fetches only the lists still missing.
-  See [§5.6](manual.md#56-phase-6-cross-citation-pass-and-the-candidate-ledger).
+  See [Find missed papers](checks.md#find-missed-papers-phase-6).
 - **`forward.py`** exits 1 when any landmark pull failed, unless
   `--allow-incomplete`, and writes the same run record. Because each pull is
   ordered by citation count, recent papers are under-represented; the output says
@@ -196,7 +196,7 @@ each entry links to its section there.
   candidate. It ranks landmarks by within-corpus in-degree, then citation count.
   So run it after `xref.py --internal-out` and after the counts are attached; it
   warns when either is missing.
-  See [§5.6](manual.md#56-phase-6-cross-citation-pass-and-the-candidate-ledger).
+  See [Find missed papers](checks.md#find-missed-papers-phase-6).
 - **`candidates.py`** does not let a suggested paper drop out unseen. Each
   candidate needs a decision:
   `--decide DOI --decision include|exclude --reason "..."`. The audit fails while
@@ -207,7 +207,7 @@ each entry links to its section there.
   one that read fewer rows than the table has (not counting the candidates the
   passes added). A malformed ledger is refused by name rather than crashing the
   audit.
-  See [§5.6](manual.md#56-phase-6-cross-citation-pass-and-the-candidate-ledger).
+  See [Find missed papers](checks.md#find-missed-papers-phase-6).
 
 ### Families and the timeline (Phase 6b)
 
@@ -218,39 +218,39 @@ each entry links to its section there.
   families (3–8 recommended). It warns on a one-paper family, or one holding more
   than 60% of the papers. It prints the assignment's hard calls to read before
   rendering, and warns when none are recorded.
-  See [§5.7](manual.md#57-phase-6b-families-and-the-timeline-always-offered).
+  See [Families and the timeline](deliverables.md#families-and-the-timeline-phase-6b).
 - **`families_figure.py`** does not cut labels silently. When `--max-labels`
   binds, it prints how many qualifying papers went unlabeled. It never
   overwrites an existing `figure_render_args.txt`, and says when a render is not
   recorded there. A paper with no citation count is drawn hollow, not as zero.
   Arrows and notes stay editorial, in `--spec`; a `labels` map there replaces the
   automatic choice.
-  See [§5.7](manual.md#57-phase-6b-families-and-the-timeline-always-offered) and
-  [§9.4](manual.md#94-the-figure-hides-landmarks-or-looks-wrong).
+  See [Families and the timeline](deliverables.md#families-and-the-timeline-phase-6b) and
+  [The timeline looks wrong](troubleshooting.md#the-timeline-hides-landmarks-or-looks-wrong).
 
-### The review (Phase 7)
+### The written review (Phase 7)
 
 - **`bib_viewer.py`** is for a page with no timeline. A review page embeds the
   interactive timeline instead, whose panel already shows each paper's reference
   and summary, so it does not add the viewer. Without `--author`, the page
   carries no note on who wrote the summaries, and the tool warns.
-  See [the review web page](manual.md#the-review-web-page).
+  See [The review web page](deliverables.md#the-review-web-page).
 - **`checks/*.mjs`** do not judge a page's interactive code by reading it. They
   run the page's own code against its own data, with Node.js and no browser:
   `verify_bib_filter.mjs` for the viewer's filter, `verify_hover.mjs` and
   `verify_nav_order.mjs` for the timeline's hover panels and Prev/Next order.
-  See [the review web page](manual.md#the-review-web-page).
+  See [The review web page](deliverables.md#the-review-web-page).
 - **`cite_check.py`** exits 1 when an in-text citation in `content.json` names
   no row. When one author-year matches two rows, it warns rather than pick one;
   name more authors (APA-7 §8.19).
-  See [§6.2](manual.md#62-phase-7-the-review-article).
+  See [Write the review](deliverables.md#write-the-review-phase-7).
 - **`prose_audit.py`** reports long sentences but does not fail on them. The gate
   is `--baseline`, which exits 1 when a revision lost a citation.
-  See [making the prose readable](manual.md#make-the-prose-readable).
+  See [Make the prose readable](deliverables.md#make-the-prose-readable).
 - **`review_paper.py`** does not write prose or check citations. It renders the
   `.docx` from `content.json`, so run `cite_check.py` first. Its reference list
   comes from `reference_list(rows)`, in APA-7 order; an HTML page should reuse
-  that function. See [§6.2](manual.md#62-phase-7-the-review-article).
+  that function. See [Write the review](deliverables.md#write-the-review-phase-7).
 
 ### Lab mode, PDFs and maintenance
 
@@ -258,15 +258,15 @@ each entry links to its section there.
   can merge several people, or one person can be split across ids, and nothing
   fails when a record is missing. To tell ids apart, `--search` prints each one's
   year span and ORCID. Its references come from OpenAlex metadata, so verify and
-  canonicalize them as in topic mode. See [§4.2](manual.md#42-lab-mode).
+  canonicalize them as in topic mode. See [Build a lab corpus](search.md#build-a-lab-corpus-lab-mode).
 - **`lab_lane.py`** does not classify the lab's record from database tags. Agents
   check each item by content, and `--build` refuses to write lane L while an item
-  is unchecked, or an included item is a duplicate or not by the PI. See [§4.2](manual.md#42-lab-mode).
+  is unchecked, or an included item is a duplicate or not by the PI. See [Build a lab corpus](search.md#build-a-lab-corpus-lab-mode).
 - **`download.py`** and **`reconcile_downloads.py`** run only when you ask for
   PDFs (Phase 4). `download.py` keeps a file only when its bytes are a PDF. The
   reconciler matches filename to DOI first, then author, year and title on the
   first page. When unsure, it leaves the PDF in place; it never overwrites a PDF
-  already filed. See [§6.1](manual.md#61-phase-4-pdfs-opt-in).
+  already filed. See [Download PDFs](deliverables.md#download-pdfs-phase-4).
 - **`gen_docs.py`** regenerates the index above, so no one edits it by hand.
   `--check` writes nothing and exits 1 when the index is stale; CI runs it. It is
   a maintainer tool, so the index does not list it.
