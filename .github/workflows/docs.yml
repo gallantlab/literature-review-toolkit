@@ -34,6 +34,15 @@ jobs:
           cache: pip
       - run: pip install -r docs/requirements.txt
       - run: mkdocs build --strict
+      # A plugin regression once stripped every image from the built site while
+      # the build still passed. Fail if a page that must show figures has none.
+      - name: Check that figures survived the build
+        run: |
+          for page in site/index.html site/examples/index.html site/requests/index.html; do
+            n=$(grep -c "<img" "$page" || true)
+            echo "$page: $n images"
+            [ "$n" -gt 0 ] || { echo "::error::$page has no images"; exit 1; }
+          done
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

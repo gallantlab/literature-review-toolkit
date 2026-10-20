@@ -4,3 +4,6 @@
 #   mkdocs build         # render the static site into ./site
 mkdocs-material>=9.5
 mkdocs-glightbox>=0.4
+# selectolax 1.0 makes mkdocs-glightbox 0.5.2 drop every <img> from the built
+# pages, silently. Lift this pin only after the image check in docs.yml passes.
+selectolax<1

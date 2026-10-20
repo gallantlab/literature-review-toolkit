@@ -5,7 +5,7 @@ fabricating references. The agent decides what to search, how to group the
 papers, and how to write them up. The scripts do the API calls, verification and
 bookkeeping.
 
-Version 2.4.9 · MIT license
+Version 2.4.10 · MIT license
 
 📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**. To run a
 review, start with the [tutorial](https://gallantlab.org/literature-review-toolkit/tutorial/)

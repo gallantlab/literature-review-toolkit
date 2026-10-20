@@ -162,6 +162,11 @@ node tools/checks/verify_bib_filter.mjs <page>.html     # the viewer's filter
 - **Old links.** `manual.md` is a stub, kept out of the navigation, that sends
   readers of the old single-page manual to the new pages. Keep it.
 
+**The build checks that images survived.** A plugin update once removed every
+image from the built pages while the build still passed. `docs.yml` now fails
+when the home, examples or requests page has no images, and
+`docs/requirements.txt` pins `selectolax` below 1.0 for that reason.
+
 **Confirm the deploy after every push.** A local build reads files that git may
 never send: `.gitignore` excludes `*.xlsx`, for example, except under
 `docs/assets/examples/`. Check that the run succeeded, and that the live page
