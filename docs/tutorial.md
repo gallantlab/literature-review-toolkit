@@ -13,17 +13,8 @@ three decisions along the way, and the agent asks you for each one.
 **How long it takes.** Setup takes about 15 minutes, once. A review takes a few
 hours, most of it unattended.
 
-## What you'll get
-
-Here is the complete output of one real review, on the creatine deficiency
-disorders of the brain. Your review will produce the same three things. Open them
-to see what you are aiming for.
-
---8<-- "docs/_includes/what_you_get.md"
-
-The request that produced this review is on
-[Example requests](requests.md#creatine-deficiency), and more timelines are on
-[Example results](examples.md).
+**What you'll end up with.** A spreadsheet, a timeline and, if you ask, a written
+review. [What you get](index.md#what-you-get) on the home page shows each one.
 
 ## Step 1. Install the toolkit
 

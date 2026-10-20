@@ -166,6 +166,7 @@ figure.fig img {
   margin: 1.2rem 0;
 }
 .showcase-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--lr-line);
@@ -175,8 +176,8 @@ figure.fig img {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 .showcase-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(20, 20, 60, 0.10); }
-.md-typeset .showcase-card > p:first-child { margin: 0; }
-.md-typeset .showcase-card > p:first-child img {
+.md-typeset .showcase-card > p:has(img) { margin: 0; }
+.md-typeset .showcase-card > p:has(img) img {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 10;
@@ -188,7 +189,8 @@ figure.fig img {
 .md-typeset .showcase-title { display: block; margin-top: 0.9rem; font-size: 0.88rem; }
 .md-typeset .showcase-title .twemoji svg { fill: var(--lr-accent); }
 .md-typeset .showcase-card > p { margin: 0 1rem 0.8rem; font-size: 0.75rem; }
-.md-typeset .showcase-card > p:last-child { margin-top: auto; padding-bottom: 1rem; }
+.md-typeset .showcase-card > p:last-child { padding-bottom: 0.4rem; }
+.md-typeset .showcase-card > p:has(.md-button) { margin-top: auto; padding-bottom: 1rem; }
 .md-typeset .showcase-card .md-button { font-size: 0.72rem; padding: 0.4em 1.1em; border-radius: 2rem; }
 
 /* Outline buttons need the lighter accent on the dark background */
@@ -198,3 +200,17 @@ figure.fig img {
 }
 .md-typeset .showcase-card .md-button { white-space: nowrap; }
 @media (max-width: 600px) { .showcase { grid-template-columns: 1fr; } }
+.showcase-tag {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 1;
+  padding: 0.15em 0.6em;
+  border-radius: 1rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: rgba(30, 30, 50, 0.72);
+}

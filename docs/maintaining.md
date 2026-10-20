@@ -41,6 +41,10 @@ Keep the parts separate:
 - **Inform; do not sell.** This is documentation for a research tool. No
   promotional stat strips, slogans or marketing claims. State what the toolkit
   does and what it checks, plainly.
+- **Keep one review's numbers with that review.** Describe what the toolkit
+  produces in general terms ("one row per paper"). A count from an example
+  ("587 papers") appears only where the text says which review it describes, so
+  no reader takes it for what every review returns.
 - **Describe current behavior only.** History, dated incidents and old versions
   belong in commit messages. A measured number may stay when it is the reason
   for a rule ("without the duty, about 1 in 4 citations were wrong").
@@ -183,7 +187,7 @@ Every figure is real output from a finished review, copied into `docs/assets/`:
 |---|---|
 | `assets/figures/lineage_*.png` | `families_figure.py` output from each project folder |
 | `assets/figures/lab_*.png` | the `gallant_lab` trajectory and in-context timelines |
-| `assets/examples/creatine/` | the creatine review's real spreadsheet, timeline and written review, copied unchanged from its project folder, plus a preview screenshot of each; shown on the home page and the tutorial through `docs/_includes/what_you_get.md` |
+| `assets/examples/creatine/` | the creatine review's real spreadsheet, timeline and written review, copied unchanged from its project folder, plus a preview screenshot of each. The home page shows the previews, labeled as examples, with general captions and no links; the Example results page links the three files under the creatine timeline |
 | `assets/examples/example_review_*.png` | pages of a written review `.docx`, rendered with LibreOffice, then `pdftoppm`, and trimmed with ImageMagick |
 
 To refresh the written-review pages, render the `.docx` with `review_paper.py`,

@@ -41,6 +41,11 @@ treatment lane is still growing. [Request](requests.md#creatine-deficiency).
 </figcaption>
 </figure>
 
+This review's complete output is available to open:
+[the spreadsheet](assets/examples/creatine/creatine_deficiency_bibliography.xlsx),
+[the interactive timeline](assets/examples/creatine/creatine_deficiency_families.html){ target=_blank }
+and [the written review](assets/examples/creatine/creatine_deficiency_review.html){ target=_blank }.
+
 ### How the brain represents complexity
 
 <figure class="fig" markdown>

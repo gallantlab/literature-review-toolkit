@@ -17,7 +17,7 @@ up. Scripts check every reference against the publishers' databases.
 [Start the tutorial](tutorial.md){ .md-button .md-button--primary }
 [See examples](examples.md){ .md-button }
 
-<p class="hero-meta">Version 2.4.7 · MIT license · <a href="#ai-disclosure">AI disclosure</a></p>
+<p class="hero-meta">Version 2.4.8 · MIT license · <a href="#ai-disclosure">AI disclosure</a></p>
 
 </div>
 
@@ -53,10 +53,39 @@ every script, and every check. Then see the
 ## What you get
 
 Every review produces a spreadsheet and a timeline, and a written review if you
-ask for one. These come from a real review of the creatine deficiency disorders
-of the brain; click any of them to open it.
+ask for one. The pictures below are examples from one review, on the creatine
+deficiency disorders of the brain. Yours will show your own topic and papers.
 
---8<-- "docs/_includes/what_you_get.md"
+<div class="showcase" markdown>
+
+<div class="showcase-card" markdown>
+<span class="showcase-tag">Example</span>
+![The first rows of a review's spreadsheet](assets/examples/creatine/spreadsheet_preview.png)
+
+**:material-table-large: The spreadsheet**{ .showcase-title }
+One row per paper: its full reference, a link to it, a one-sentence summary, its
+family and its citation counts.
+</div>
+
+<div class="showcase-card" markdown>
+<span class="showcase-tag">Example</span>
+![A review's interactive timeline](assets/examples/creatine/timeline_preview.png)
+
+**:material-chart-timeline-variant: The timeline**{ .showcase-title }
+An interactive page that lays the papers out by family and year. Click any paper
+to read its summary.
+</div>
+
+<div class="showcase-card" markdown>
+<span class="showcase-tag">Example</span>
+![The opening page of a written review](assets/examples/creatine/review_preview.png)
+
+**:material-file-document-edit-outline: The written review**{ .showcase-title }
+Optional. A narrative review drafted by the agent, citing only the checked
+papers.
+</div>
+
+</div>
 
 ## What you decide
 
