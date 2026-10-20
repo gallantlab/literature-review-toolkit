@@ -6,8 +6,6 @@ project folder and reach the scripts as `../tools/`
 ([Where files live](pipeline.md#where-files-live)). For what the user sees, see
 [Step 7 of the tutorial](tutorial.md#step-7-read-the-results).
 
----
-
 ## Families and the timeline (Phase 6b)
 
 The timeline is usually the most useful thing a review produces, so the agent

@@ -1,26 +1,39 @@
-# literature-review-toolkit
-
-**Ask an AI agent for a literature review, and get one with no invented
-references.**
-
-Version 2.4.3 · MIT license · [AI disclosure](#ai-disclosure)
-
-You describe the review you want in plain English. An AI agent searches the
-literature, groups the papers, and can write the review up. Scripts check every
-reference against the publishers' databases, because an agent working from
-memory gets about 1 in 4 citations wrong.
+---
+hide:
+  - navigation
+  - toc
+---
 
 <div class="hero" markdown>
 
-<figure class="fig" markdown>
-![A timeline of 190 papers on how the brain represents complexity, in six family lanes from 1948 to 2026](assets/figures/lineage_complexity.png){ loading=lazy }
+<div class="hero-text" markdown>
+
+# Literature reviews with no invented references
+
+You describe the review you want in plain English. An AI agent searches the
+literature, groups the papers into families of ideas, and can write the review
+up. Scripts check every reference against the publishers' databases.
+
+[Start the tutorial](tutorial.md){ .md-button .md-button--primary }
+[See examples](examples.md){ .md-button }
+
+<p class="hero-meta">Version 2.4.4 · MIT license · <a href="#ai-disclosure">AI disclosure</a></p>
+
+</div>
+
+<figure class="fig hero-fig" markdown>
+![A timeline of 190 papers on how the brain represents complexity, in six family lanes from 1948 to 2026](assets/figures/lineage_complexity.png)
 <figcaption markdown>
-**A finished timeline.** 190 checked papers on how the brain represents
-complexity, in six families of ideas from 1948 to 2026. Larger dots are more
-cited papers. Every dot is a row in the review's spreadsheet.
+**A finished timeline:** 190 checked papers in six families of ideas, 1948–2026.
 </figcaption>
 </figure>
 
+</div>
+
+<div class="stats" markdown>
+<div><span class="stat">1 in 4</span><span class="stat-label">citations an agent gets wrong from memory</span></div>
+<div><span class="stat">0</span><span class="stat-label">references typed by the agent: each is rebuilt from its DOI</span></div>
+<div><span class="stat">3</span><span class="stat-label">decisions left to you: scope, families, write-up</span></div>
 </div>
 
 ## Where to start
@@ -28,14 +41,14 @@ cited papers. Every dot is a row in the review's spreadsheet.
 <div class="cards" markdown>
 
 <div class="card" markdown>
-### I want a literature review
+### :material-school-outline:{ .card-icon } I want a literature review
 Start with the **[Tutorial](tutorial.md)**: install, describe your review, and
 read the results. Then see **[Example requests](requests.md)** and
 **[Example results](examples.md)**.
 </div>
 
 <div class="card" markdown>
-### I want to change or extend the toolkit
+### :material-code-braces:{ .card-icon } I want to change the toolkit
 Start with **[How it works](pipeline.md)**: the procedure the agent follows,
 every script, and every check. Then see the
 **[Tools reference](tools.md)** and **[Maintaining the docs](maintaining.md)**.
@@ -48,20 +61,20 @@ every script, and every check. Then see the
 <div class="cards" markdown>
 
 <div class="card" markdown>
-### A spreadsheet
+### :material-table-large:{ .card-icon } A spreadsheet
 One row per paper: the full reference, a link, a one-sentence summary, the
 paper's family and its citation counts.
 </div>
 
 <div class="card" markdown>
-### A timeline
+### :material-chart-timeline-variant:{ .card-icon } A timeline
 An interactive page that lays the papers out by family and year. Click any paper
 to read its summary.
 </div>
 
 <div class="card" markdown>
-### A written review *(optional)*
-A narrative review drafted by the agent, citing only the checked papers.
+### :material-file-document-edit-outline:{ .card-icon } A written review
+Optional. A narrative review drafted by the agent, citing only the checked papers.
 </div>
 
 </div>

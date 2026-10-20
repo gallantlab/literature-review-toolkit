@@ -87,8 +87,14 @@ Use one word for each thing, everywhere.
   text describes the image.
 - **Links** name their target by its title, never by a section number:
   "[Verify every citation](checks.md#verify-every-citation-phase-3)".
-- **No icon shortcodes** such as `:material-table:`. The site does not enable
-  the emoji extension, so they print as raw text.
+- **Icons** use Material shortcodes such as `:material-table-large:`, which the
+  `pymdownx.emoji` extension in `mkdocs.yml` turns into SVG icons. Use them only
+  on the home page's cards, as the heading's first item.
+- **No `---` rules between sections.** Every `##` heading already draws a
+  divider above it (`docs/stylesheets/extra.css`), so a rule doubles it.
+- **Check the look, not only the build.** After a change to the home page or the
+  stylesheet, screenshot the built site in light mode, dark mode and at phone
+  width.
 - **Numbers** are numerals. Ranges take an en dash (1970–2026). Write "about",
   not "~".
 

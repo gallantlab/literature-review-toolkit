@@ -9,8 +9,6 @@ Every review produces a spreadsheet and, unless you skip it, a timeline. A
 written review is optional. The [tutorial](tutorial.md#the-spreadsheet) shows
 rows from a real spreadsheet.
 
----
-
 ## Timelines
 
 Each timeline below comes from a different review. Each lane is a family of
@@ -128,8 +126,6 @@ papers.
 </figcaption>
 </figure>
 
----
-
 ## A lab review
 
 A lab review starts from one lab's publications instead of a question. It groups
@@ -156,8 +152,6 @@ the lab's papers sit inside a literature that began decades earlier; in language
 most of the field's papers came after the lab's 2016 landmark.
 </figcaption>
 </figure>
-
----
 
 ## A written review
 

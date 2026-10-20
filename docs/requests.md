@@ -15,8 +15,6 @@ Each example has the same parts:
 For what to put in your own request, see
 [Step 3 of the tutorial](tutorial.md#step-3-describe-the-review).
 
----
-
 ## Requests that name what matters
 
 ### Differences across cortical layers
@@ -115,8 +113,6 @@ are there any?"*
 citing 244 of them. The [timeline](examples.md#creatine-deficiency) is on the
 Example results page.
 
----
-
 ## Requests built on papers you know
 
 ### Networks trained end-to-end on neural data
@@ -179,8 +175,6 @@ papers: the first is by Srinath et al., with Connor as senior author, and the
 second appeared at NeurIPS in 2023, not 2024. Details from memory are fine in a
 request.
 
----
-
 ## Requests that describe the output
 
 ### How accurate is diagnosis?
@@ -239,8 +233,6 @@ thousand times stronger could then be set aside.
 
 **Result.** 668 papers in eight families, and a written review that gives the
 case for, the case against and a verdict, citing 199 papers.
-
----
 
 ## Short requests
 

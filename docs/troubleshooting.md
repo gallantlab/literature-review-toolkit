@@ -4,8 +4,6 @@ This page lists failures and their fixes, for developers running the steps. For
 the problems a user is likely to meet, see
 [If something goes wrong](tutorial.md#if-something-goes-wrong) in the tutorial.
 
----
-
 ## Network failures that look alike
 
 Four different failures all look like "the fetch broke". Backing off fixes only

@@ -9,7 +9,7 @@ repo_url: https://github.com/gallantlab/literature-review-toolkit
 repo_name: gallantlab/literature-review-toolkit
 edit_uri: edit/main/docs/
 copyright: >-
-  Version 2.4.3 · MIT license · Gallant Lab, UC Berkeley ·
+  Version 2.4.4 · MIT license · Gallant Lab, UC Berkeley ·
   Code and documentation written largely by Claude (Anthropic);
   <a href="https://gallantlab.org/literature-review-toolkit/#ai-disclosure">AI disclosure</a>
 
@@ -18,7 +18,11 @@ theme:
   icon:
     repo: fontawesome/brands/github
     logo: material/book-search-outline
+  font:
+    text: Inter
+    code: JetBrains Mono
   features:
+    - navigation.tabs
     - navigation.instant
     - navigation.tracking
     - navigation.sections
@@ -68,6 +72,9 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.keys
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - attr_list
   - md_in_html
   - def_list

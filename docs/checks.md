@@ -6,8 +6,6 @@ run these steps. Commands run in the project folder and reach the scripts as
 which steps run at the same time, see
 [The order the agent runs](pipeline.md#the-order-the-agent-runs).
 
----
-
 ## Verify every citation (Phase 3)
 
 Verification checks every row against the registries before anything else

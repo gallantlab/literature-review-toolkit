@@ -16,8 +16,6 @@ without touching the internals, use the [Tutorial](tutorial.md) instead.
 | [Troubleshooting](troubleshooting.md) | failures and their fixes |
 | [Tools reference](tools.md) | every script and flag |
 
----
-
 ## The design
 
 A literature review mixes two kinds of work. A few steps need judgment: what to

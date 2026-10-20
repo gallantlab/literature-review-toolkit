@@ -5,8 +5,6 @@ outputs, and bringing an old review up to the current gates. Commands run in the
 project folder and reach the scripts as `../tools/`
 ([Where files live](pipeline.md#where-files-live)).
 
----
-
 ## Add papers
 
 Write the new papers as a lane file and append it:

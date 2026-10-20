@@ -15,8 +15,6 @@ Commands run in the project folder and reach the scripts as `../tools/`
 | Front-end phases | 1 scope, 2 search, 2b antecedents, 2c merge | L1 ingest, L2 prune, L3 themes, L4c contextualize |
 | Answers | "What is known about X?" | "What has this lab done, and where does it sit?" |
 
----
-
 ## Run the preflight (Phase 0)
 
 A review runs for hours, and two of its services ration keyless use. The

@@ -13,8 +13,6 @@ three decisions along the way, and the agent asks you for each one.
 **How long it takes.** Setup takes about 15 minutes, once. A review takes a few
 hours, most of it unattended.
 
----
-
 ## Step 1. Install the toolkit
 
 Make a folder to hold your reviews, then install the toolkit inside it. Run these
