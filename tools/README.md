@@ -1178,6 +1178,9 @@ When the cap drops labels, the run says how many; raise --max-labels or
 --motif-min if that number is large. A "labels" map in --spec replaces the
 automatic selection (manual curation wins); --no-auto-landmarks turns labeling
 off.
+Every other paper is drawn faded, so a solid dot means "landmark", not a high
+score; a key under the year axis says so and names the rules that chose this
+render's landmarks.
 
 DOT SIZE encodes citation count by default (--size-by-citations sqrt), with a
 size legend; landmark status rides on the ring, leader and label. A paper with no

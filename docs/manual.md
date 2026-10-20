@@ -1372,6 +1372,7 @@ families are mature and which are new, before any paper is read.
 | **Dot size** | citation count |
 | **A hollow dot** | no citation count available; not a count of zero |
 | **A labeled dot** | an automatically selected landmark |
+| **A solid dot, not a faded one** | a landmark: solid is a yes/no flag, not a score, so a small solid dot is a lightly cited paper that qualified another way; the key under the year axis names the rules this render used |
 | **A ring and a ★** | a home-lab paper (only when opted in) |
 | **A square or triangle instead of a circle** | the paper's `--shape-by` field holds a `--square-if` (or `--triangle-if`) value; the key under the subtitle says what each shape means (only when opted in) |
 

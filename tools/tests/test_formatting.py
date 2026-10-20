@@ -790,6 +790,15 @@ check("genus survives an all-caps title",
       common.norm_title("THE GENETICS OF CAENORHABDITIS ELEGANS"),
       "The genetics of Caenorhabditis elegans")
 
+# --- families_figure: the faded/solid key (added 2026-10-19) -----------------
+_key = families_figure.landmark_legend(["top 4 most-cited in its family"], 1500, 1100)
+check("landmark key names faded and solid dots",
+      ("faded = other papers" in _key, "solid = landmark" in _key), (True, True))
+check("landmark key lists the criteria used",
+      "top 4 most-cited in its family" in _key, True)
+check("landmark key mentions an emphasized source",
+      "or a lab paper" in families_figure.landmark_legend([], 1500, 1100, emph="lab"), True)
+
 # --- families_figure: the timeline walk-through (added 2026-08-29) -----------
 # The figure has hundreds of small dots; clicking each one to read it is
 # impractical, so the panel carries Prev/Next plus arrow-key bindings that step

@@ -43,6 +43,9 @@ When the cap drops labels, the run says how many; raise --max-labels or
 --motif-min if that number is large. A "labels" map in --spec replaces the
 automatic selection (manual curation wins); --no-auto-landmarks turns labeling
 off.
+Every other paper is drawn faded, so a solid dot means "landmark", not a high
+score; a key under the year axis says so and names the rules that chose this
+render's landmarks.
 
 DOT SIZE encodes citation count by default (--size-by-citations sqrt), with a
 size legend; landmark status rides on the ring, leader and label. A paper with no
@@ -382,6 +385,35 @@ def size_legend(rad, cites, x_right, y_base, r_max, n_unknown=0):
     return "".join(out)
 
 
+def landmark_legend(criteria, x_right, y, emph=None):
+    """One line keying faded vs solid dots, right-aligned at (x_right, y).
+
+    Every paper that is not a landmark is drawn at 38% opacity, so the solid
+    dots read as "more important" — but that is a yes/no landmark flag, not a
+    score, and a small solid dot (a low-cited paper that is foundational within
+    the review, or the top of a young family) looks like a contradiction of the
+    size key unless the figure says what solid means. `criteria` is the list of
+    rules that actually chose this render's landmarks; `emph` names a source
+    drawn solid by --emphasize-source.
+    """
+    why = "; ".join(criteria) if criteria else "none"
+    solid = f"solid = landmark, labeled ({why})"
+    if emph:
+        solid += f", or a {emph} paper"
+    faded = "faded = other papers"
+    # Laid out left to right from one start point, so a wrong width estimate only
+    # shifts the whole key and never pulls a dot away from its text. ~4.6 px per
+    # char at 9.5px Helvetica; the key may then end a little short of x_right.
+    x0 = x_right - 4.6 * (len(faded) + len(solid)) - 8 - 26 - 8
+    x1 = x0 + 8 + 4.6 * len(faded) + 26
+    out = [f'<circle cx="{x0:.0f}" cy="{y - 3:.0f}" r="4" fill="#777" opacity="0.38"/>',
+           f'<text x="{x0 + 8:.0f}" y="{y:.0f}" font-size="9.5" fill="#777">{esc(faded)}</text>',
+           f'<circle cx="{x1:.0f}" cy="{y - 3:.0f}" r="4" fill="#777" stroke="#fff" '
+           f'stroke-width="1.2"/>',
+           f'<text x="{x1 + 8:.0f}" y="{y:.0f}" font-size="9.5" fill="#777">{esc(solid)}</text>']
+    return "".join(out)
+
+
 def _box_hits_dot(box, dx, dy, margin=11):
     """True if a dot at (dx, dy) falls within `margin` of the label box."""
     return box[0] - margin <= dx <= box[1] + margin and box[2] - margin <= dy <= box[3] + margin
@@ -630,13 +662,22 @@ def main():
     lab = {ref for ref, p in papers.items() if _is_lab(p)}
 
     # which papers get labels: spec.labels (manual, overrides) > legacy ★-in-ref > auto-landmarks
+    # criteria: the rules that chose this render's landmarks, for the faded/solid key
     if spec.get("labels"):
         labeled = {ref: lab for ref, lab in spec["labels"].items() if ref in papers}
+        criteria = ["chosen by hand"]
     elif any("★" in ref for ref in papers):
         labeled = {ref: lead(p["apa"]) for ref, p in papers.items() if "★" in ref}
+        criteria = ["chosen by hand"]
     elif args.no_auto_landmarks:
         labeled = {}
+        criteria = []
     else:
+        criteria = [f"top {args.per_family} most-cited in its family"]
+        if internal:
+            criteria.append(f"cited by {args.motif_min}+ papers in this review")
+        if lab:
+            criteria.append("home-lab paper")
         def _fam_by_cites(name):
             return sorted((ref for ref, p in papers.items() if p["family"] == name),
                           key=lambda r: -_cites(papers[r]))
@@ -656,6 +697,7 @@ def main():
                           key=lambda r: (internal.get(r, 0), _cites(papers[r])), reverse=True)
             qualified = len(chosen)
             chosen = keep | set(pool[:max(0, args.max_labels - len(keep))])
+            criteria.append(f"{len(chosen)} of the {qualified} that qualify")
             # Never truncate silently: a capped figure otherwise reads as "these are
             # all the landmarks" when it is really "these are the first N of many".
             print(f"  landmarks: {qualified} papers qualified, {len(chosen)} labeled "
@@ -831,6 +873,11 @@ def main():
 
     if shape_svg:
         s.append(f'<g id="shapelegend">{shape_svg}</g>')
+    # Below the year axis, right-aligned: labels never go below H - PADB, and the
+    # "N pre-YEAR" note sits at the left end of the axis.
+    if big:
+        s.append('<g id="landmarklegend">'
+                 + landmark_legend(criteria, W - PADR, H - 12, emph) + '</g>')
 
     for name in order:
         y, top, c = yf(name), yf(name) - laneH / 2, COLOR[name]
