@@ -17,6 +17,8 @@ venv/
 # Project outputs (these are produced by users, not part of the toolkit)
 papers/
 *.xlsx
+# ...except the real example outputs the docs link to
+!docs/assets/examples/**/*.xlsx
 xref_*.json
 *_verify*.json
 *_manifest.json

@@ -158,6 +158,15 @@ node tools/checks/verify_bib_filter.mjs <page>.html     # the viewer's filter
 - **Old links.** `manual.md` is a stub, kept out of the navigation, that sends
   readers of the old single-page manual to the new pages. Keep it.
 
+**Confirm the deploy after every push.** A local build reads files that git may
+never send: `.gitignore` excludes `*.xlsx`, for example, except under
+`docs/assets/examples/`. Check that the run succeeded, and that the live page
+shows the change:
+
+```bash
+gh run list --workflow docs.yml --limit 3
+```
+
 Preview locally:
 
 ```bash
