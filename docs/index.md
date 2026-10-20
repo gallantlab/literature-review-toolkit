@@ -3,7 +3,7 @@
 **Ask an AI agent for a literature review, and get one with no invented
 references.**
 
-Version 2.4.2 · MIT license · [AI disclosure](#ai-disclosure)
+Version 2.4.3 · MIT license · [AI disclosure](#ai-disclosure)
 
 You describe the review you want in plain English. An AI agent searches the
 literature, groups the papers, and can write the review up. Scripts check every
@@ -28,14 +28,14 @@ cited papers. Every dot is a row in the review's spreadsheet.
 <div class="cards" markdown>
 
 <div class="card" markdown>
-### :material-school: I want a literature review
+### I want a literature review
 Start with the **[Tutorial](tutorial.md)**: install, describe your review, and
 read the results. Then see **[Example requests](requests.md)** and
 **[Example results](examples.md)**.
 </div>
 
 <div class="card" markdown>
-### :material-code-braces: I want to change or extend the toolkit
+### I want to change or extend the toolkit
 Start with **[How it works](pipeline.md)**: the procedure the agent follows,
 every script, and every check. Then see the
 **[Tools reference](tools.md)** and **[Maintaining the docs](maintaining.md)**.
@@ -48,19 +48,19 @@ every script, and every check. Then see the
 <div class="cards" markdown>
 
 <div class="card" markdown>
-### :material-table: A spreadsheet
+### A spreadsheet
 One row per paper: the full reference, a link, a one-sentence summary, the
 paper's family and its citation counts.
 </div>
 
 <div class="card" markdown>
-### :material-chart-timeline-variant: A timeline
+### A timeline
 An interactive page that lays the papers out by family and year. Click any paper
 to read its summary.
 </div>
 
 <div class="card" markdown>
-### :material-file-document-edit: A written review *(optional)*
+### A written review *(optional)*
 A narrative review drafted by the agent, citing only the checked papers.
 </div>
 

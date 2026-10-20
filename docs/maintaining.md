@@ -87,6 +87,8 @@ Use one word for each thing, everywhere.
   text describes the image.
 - **Links** name their target by its title, never by a section number:
   "[Verify every citation](checks.md#verify-every-citation-phase-3)".
+- **No icon shortcodes** such as `:material-table:`. The site does not enable
+  the emoji extension, so they print as raw text.
 - **Numbers** are numerals. Ranges take an en dash (1970–2026). Write "about",
   not "~".
 
