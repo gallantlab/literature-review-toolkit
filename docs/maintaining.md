@@ -89,7 +89,8 @@ Use one word for each thing, everywhere.
   "[Verify every citation](checks.md#verify-every-citation-phase-3)".
 - **Icons** use Material shortcodes such as `:material-table-large:`, which the
   `pymdownx.emoji` extension in `mkdocs.yml` turns into SVG icons. Use them only
-  on the home page's cards, as the heading's first item.
+  in card headings (the home page and the tutorial's "What you'll get"), as
+  the heading's first item.
 - **No `---` rules between sections.** Every `##` heading already draws a
   divider above it (`docs/stylesheets/extra.css`), so a rule doubles it.
 - **Check the look, not only the build.** After a change to the home page or the
@@ -170,6 +171,7 @@ Every figure is real output from a finished review, copied into `docs/assets/`:
 |---|---|
 | `assets/figures/lineage_*.png` | `families_figure.py` output from each project folder |
 | `assets/figures/lab_*.png` | the `gallant_lab` trajectory and in-context timelines |
+| `assets/examples/creatine/` | the creatine review's real spreadsheet, timeline and written review, copied unchanged from its project folder, plus a preview screenshot of each; shown on the home page and the tutorial through `docs/_includes/what_you_get.md` |
 | `assets/examples/example_review_*.png` | pages of a written review `.docx`, rendered with LibreOffice, then `pdftoppm`, and trimmed with ImageMagick |
 
 To refresh the written-review pages, render the `.docx` with `review_paper.py`,

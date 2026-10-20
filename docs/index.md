@@ -17,7 +17,7 @@ up. Scripts check every reference against the publishers' databases.
 [Start the tutorial](tutorial.md){ .md-button .md-button--primary }
 [See examples](examples.md){ .md-button }
 
-<p class="hero-meta">Version 2.4.4 · MIT license · <a href="#ai-disclosure">AI disclosure</a></p>
+<p class="hero-meta">Version 2.4.5 · MIT license · <a href="#ai-disclosure">AI disclosure</a></p>
 
 </div>
 
@@ -58,26 +58,11 @@ every script, and every check. Then see the
 
 ## What you get
 
-<div class="cards" markdown>
+Every review produces a spreadsheet and a timeline, and a written review if you
+ask for one. These come from a real review of the creatine deficiency disorders
+of the brain; click any of them to open it.
 
-<div class="card" markdown>
-### :material-table-large:{ .card-icon } A spreadsheet
-One row per paper: the full reference, a link, a one-sentence summary, the
-paper's family and its citation counts.
-</div>
-
-<div class="card" markdown>
-### :material-chart-timeline-variant:{ .card-icon } A timeline
-An interactive page that lays the papers out by family and year. Click any paper
-to read its summary.
-</div>
-
-<div class="card" markdown>
-### :material-file-document-edit-outline:{ .card-icon } A written review
-Optional. A narrative review drafted by the agent, citing only the checked papers.
-</div>
-
-</div>
+--8<-- "docs/_includes/what_you_get.md"
 
 ## What you decide
 

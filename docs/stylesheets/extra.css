@@ -172,3 +172,44 @@ figure.fig img {
 
 /* The indigo accent is too dark to read on the slate background */
 [data-md-color-scheme="slate"] { --lr-accent: #9fa8ff; }
+
+/* ==== Tutorial: "What you'll get" showcase ==== */
+.showcase {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1rem;
+  margin: 1.2rem 0;
+}
+.showcase-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--lr-line);
+  border-radius: 0.9rem;
+  overflow: hidden;
+  background: var(--lr-surface);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.showcase-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(20, 20, 60, 0.10); }
+.md-typeset .showcase-card > p:first-child { margin: 0; }
+.md-typeset .showcase-card > p:first-child img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  object-position: left top;
+  border-bottom: 1px solid var(--lr-line);
+  background: #fff;
+}
+.md-typeset .showcase-title { display: block; margin-top: 0.9rem; font-size: 0.88rem; }
+.md-typeset .showcase-title .twemoji svg { fill: var(--lr-accent); }
+.md-typeset .showcase-card > p { margin: 0 1rem 0.8rem; font-size: 0.75rem; }
+.md-typeset .showcase-card > p:last-child { margin-top: auto; padding-bottom: 1rem; }
+.md-typeset .showcase-card .md-button { font-size: 0.72rem; padding: 0.4em 1.1em; border-radius: 2rem; }
+
+/* Outline buttons need the lighter accent on the dark background */
+[data-md-color-scheme="slate"] .md-typeset .md-button:not(.md-button--primary) {
+  color: var(--lr-accent);
+  border-color: var(--lr-accent);
+}
+.md-typeset .showcase-card .md-button { white-space: nowrap; }
+@media (max-width: 600px) { .showcase { grid-template-columns: 1fr; } }
