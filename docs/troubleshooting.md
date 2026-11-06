@@ -26,7 +26,7 @@ Do not relax the gate.
 
 | Defect | Fix |
 |---|---|
-| a formatting defect: `empty venue`, `no-year`, `no-authors`, `et-al`, `malformed-initial`, `mangled-punct`, `missing-space`, `html-entity`, `markup-tag`, `uppercase-title run` (a `?` inside a URL is not `mangled-punct`) | fix the `apa` by hand, or run `--repair` for markup, hyphen and `?.` damage |
+| a formatting defect: `empty venue`, `no-year`, `no-authors`, `et-al`, `malformed-initial`, `mangled-punct`, `missing-space`, `html-entity`, `markup-tag`, `uppercase-title run` (`mangled-punct` is a `?` glued to a letter; a `?` inside a URL is not one, and a `?` with a space on both sides raises the `spaced-question-mark` warning instead) | fix the `apa` by hand, or run `--repair` for markup, hyphen and `?.` damage |
 | `unverified (...)` | `verify.py --rows rows.json --only <refs>`, then re-canon those rows |
 | `hand-check-missing` | `handcheck.py --prepare`, the hand-check agent, then `--ingest` ([Hand-check references with no DOI](checks.md#hand-check-references-with-no-doi-phase-3e)) |
 | `summary-unchecked`, `summary-flagged` | `summary_audit.py`; fix a flagged summary and check it again ([Check every summary](checks.md#check-every-summary-phase-5c)) |

@@ -17,7 +17,7 @@ up. Scripts check every reference against the publishers' databases.
 [Start the tutorial](tutorial.md){ .md-button .md-button--primary }
 [See examples](examples.md){ .md-button }
 
-<p class="hero-meta">Version 2.6.0 · MIT license · <a href="#ai-disclosure">AI disclosure</a></p>
+<p class="hero-meta">Version 2.6.1 · MIT license · <a href="#ai-disclosure">AI disclosure</a></p>
 
 </div>
 

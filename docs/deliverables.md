@@ -129,7 +129,9 @@ not only its length.
     After the final `spreadsheet.py` run, re-render the figure with the arguments
     in `figure_render_args.txt`. `spreadsheet.py` compares the two and names any
     page whose embedded copy differs, ignoring the build timestamp so an
-    unchanged rebuild stays quiet.
+    unchanged rebuild stays quiet. It compares every workbook a page embeds, not
+    only the first, and runs the comparison on the real deliverable only: a
+    `--draft` carries a banner row, so its copy can never match a figure's.
 
 ## Build the spreadsheet (Phase 5)
 
@@ -157,10 +159,22 @@ checked against` names the abstract's source, or says "no abstract".
 `Family`, such as the field a timeline's `--shape-by` reads. A list value is
 joined with `; `, and a field that already has its own column is refused.
 
-**Row colors** record where each paper came from: white for a paper cited in a
-source document, cream for the search, purple for the antecedent search, green
-for the missed-paper step, and blue for the lab's own papers. An unknown source
-renders white, with a warning.
+**Row colors** record where each paper came from. An unknown source renders white,
+with a warning, and a `<source>-nosrc` tag keeps its pass's fill.
+
+<!-- BEGIN GENERATED ROW COLORS (python3 tools/gen_docs.py — do not edit by hand) -->
+| `source` | Fill | What the row is |
+| --- | --- | --- |
+| `source-doc` | white (none) | a reference from the source document the user supplied |
+| `search` | `#FFF7E0` | found by a forward search lane (Phase 2) |
+| `search-nosrc` | `#FFF7E0` | a search lane's DOI-less item: a book, a report, an essay |
+| `xref` | `#E2F0D9` | a backward cross-citation candidate (Phase 6) |
+| `forward` | `#E2F0D9` | a forward-citation candidate (Phase 6) |
+| `survey` | `#E2F0D9` | taken from a survey or review's reference list (Phase 6) |
+| `lab` | `#DDEBF7` | the home lab's own paper (lab mode) |
+| `anteced` | `#F3E6F5` | an antecedent from the foundations pass (Phase 2b) |
+| `anteced-nosrc` | `#F3E6F5` | a DOI-less antecedent classic, hand-cited (Phase 2b) |
+<!-- END GENERATED ROW COLORS -->
 
 **The "Considered and excluded" sheet** lists every paper that was looked at and
 set aside, with its DOI, title, year, first author, who found it and the reason.
@@ -260,6 +274,21 @@ The viewer can also be embedded in a page (`bib_viewer.render()`, with
 `bib_viewer.CSS` and `bib_viewer.JS`). Pass `provenance=False` where the masthead
 already carries the disclosure. Without `--author`, the page carries no note, and
 the tool warns.
+
+**Look at the page before you call it done.** A build that exits 0 says nothing
+about raw shortcodes, unreadable dark-mode colors or a layout that breaks at phone
+width. `screenshot.py` renders a page at light, dark and phone widths and writes
+the three images beside it:
+
+```bash
+python3 ../tools/screenshot.py --page <page>.html --root <workspace>
+```
+
+It drives a headless browser, so it refuses any page, output directory or root
+outside the workspace that holds the toolkit, and it finds the browser from a
+fixed list rather than an argument. Each capture is the top of the page at that
+width, not the whole page, so check further down another way before claiming the
+whole page was reviewed.
 
 !!! tip "Test interactive pages by running them"
     `node ../tools/checks/verify_bib_filter.mjs <page>.html` runs the viewer's

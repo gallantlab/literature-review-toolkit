@@ -112,13 +112,34 @@ Use one word for each thing, everywhere.
 - **Numbers** are numerals. Ranges take an en dash (1970–2026). Write "about",
   not "~".
 
-## The generated tool index and version
+## The generated blocks and the version
 
-`python3 tools/gen_docs.py` generates the tool index in `docs/tools.md`,
-`tools/README.md` and `PLAYBOOK.md` from the modules: each one's docstring,
-`PHASE` constant and `--help` flags. Only the text around the index is written
-by hand. The same run writes the current version number into the files that state
-it: `README.md`, `docs/index.md`, `mkdocs.yml`, the skill and the two plugin
+`python3 tools/gen_docs.py` generates several tables from the code that owns them.
+Each sits between two marker comments, and only the text around it is written by
+hand. Editing inside a block is pointless: the next run overwrites it, and
+`--check` fails until then.
+
+| Block | Generated from | Appears in |
+|---|---|---|
+| Tool index | each module's docstring, `PHASE` and `--help` flags | `docs/tools.md`, `tools/README.md`, `PLAYBOOK.md` |
+| Tool details | each module's whole docstring | `tools/README.md` |
+| Search scales | `common.SEARCH_SCALES` | `PLAYBOOK.md`, `search.md` |
+| Row colors | `spreadsheet.SOURCES` | `PLAYBOOK.md` |
+| Audit defects | `references.DEFECTS` | `PLAYBOOK.md` |
+| Audit warnings | `references.WARNINGS` | `PLAYBOOK.md`, `checks.md` |
+
+**Add a defect or a warning to its registry in the same change.** The registries
+are the one definition of the audit's vocabulary, and the regression suite reads
+the ids `references.py` actually raises out of its own source: a defect it can
+raise with no `DEFECTS` entry fails the suite, and so does an entry naming an id
+the module cannot raise. Generating a table keeps the prose current; the suite is
+what keeps the registry current.
+
+**Add a row `source` to `spreadsheet.SOURCES`, never to `COLORS`.** `COLORS` is
+derived from it, so the fill and the description cannot disagree.
+
+The same run writes the current version number into the files that state it:
+`README.md`, `docs/index.md`, `mkdocs.yml`, the skill and the two plugin
 manifests. Run it last, after every other edit, with everything you intend to
 commit.
 
@@ -137,7 +158,7 @@ pull request. Run them locally before pushing (`pip install ruff` first):
 ```bash
 ruff check .                              # config in pyproject.toml
 python3 tools/tests/test_formatting.py    # each case is a defect that once shipped
-python3 tools/gen_docs.py --check         # fails if the tool index or a version stamp is stale
+python3 tools/gen_docs.py --check         # fails if a generated block or a version stamp is stale
 ```
 
 CI does not test the interactive pages. After a change to the timeline

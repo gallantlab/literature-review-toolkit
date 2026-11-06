@@ -184,7 +184,7 @@ def render_warnings():
 # (block name, renderer, the files that carry its markers)
 BLOCKS = [
     ("SEARCH SCALES", render_scales, ["PLAYBOOK.md", "docs/search.md"]),
-    ("ROW COLORS", render_sources, ["PLAYBOOK.md"]),
+    ("ROW COLORS", render_sources, ["PLAYBOOK.md", "docs/deliverables.md"]),
     ("AUDIT DEFECTS", render_defects, ["PLAYBOOK.md"]),
     ("AUDIT WARNINGS", render_warnings, ["PLAYBOOK.md", "docs/checks.md"]),
 ]
