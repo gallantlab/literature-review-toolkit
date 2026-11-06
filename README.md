@@ -5,7 +5,7 @@ fabricating references. The agent decides what to search, how to group the
 papers, and how to write them up. The scripts do the API calls, verification and
 bookkeeping.
 
-Version 2.5.0 · MIT license
+Version 2.5.1 · MIT license
 
 📖 **Documentation: <https://gallantlab.org/literature-review-toolkit/>**. To run a
 review, start with the [tutorial](https://gallantlab.org/literature-review-toolkit/tutorial/)
@@ -130,7 +130,8 @@ Every phase is one script in [`tools/`](./tools).
 
 | Path | Contents |
 |---|---|
-| [`PLAYBOOK.md`](./PLAYBOOK.md) | the procedure the agent follows, with its accumulated lessons |
+| [`PLAYBOOK.md`](./PLAYBOOK.md) | the procedure the agent follows |
+| [`LESSONS.md`](./LESSONS.md) | the incidents behind the playbook's rules, for whoever changes a tool |
 | [`tools/`](./tools) | one script per phase, the shared `common.py`, the search-lane and family prompt templates, and Node.js checkers for the figure and the review page (`tools/checks/`) |
 | [`templates/`](./templates) | a starter script for building `rows.json` |
 | [`skills/`](./skills) | the Claude skill that points an agent at the playbook |

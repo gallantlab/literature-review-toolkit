@@ -9,6 +9,12 @@ how the site is built.
     guardrail, update the affected page in the same commit. The pages under
     **How it works** drift fastest, because they hold every command and gate.
 
+!!! note "Where the incidents live"
+    These pages describe current behavior only. The dated incidents behind the
+    rules, which a reader of this site does not need, are kept in
+    [`LESSONS.md`](https://github.com/gallantlab/literature-review-toolkit/blob/main/LESSONS.md)
+    in the repository root. Add a new one there, not to a page here.
+
 ## Two audiences, two parts
 
 The site serves two groups of readers, and each page belongs to one of them.

@@ -2,7 +2,7 @@
 name: literature-review
 license: MIT
 metadata:
-  version: 2.5.0
+  version: 2.5.1
   author: Jack L. Gallant
 description: Structured academic literature review — search a topic and its antecedents, verify every citation against PMC/PubMed/CrossRef/arXiv, rebuild references into canonical APA form, count citations, cross-reference the set, and assemble an annotated xlsx bibliography, then offer an interactive lineage timeline of its theoretical families on every review. Use whenever the user asks for a lit review or literature review, wants to build or audit a bibliography, survey the literature on a topic, verify or canonicalize a list of citations, check which references cite which, gather citation counts, trace the intellectual lineage of a field, or review a lab's own corpus in the context of its field. PDF acquisition is opt-in and never runs by default.
 ---
@@ -55,6 +55,7 @@ plugin. Nothing in it requires Claude.
 | Path | What it is |
 |---|---|
 | `PLAYBOOK.md` | The procedure. Start here. |
+| `LESSONS.md` | Why each rule exists. Read it before changing a tool, not to run a review. |
 | `tools/` | The scripts, each standalone (JSON in, JSON or files out), plus the lane and family prompt templates (`search_prompt_template.md`, `family_prompt_template.md`). |
 | `tools/README.md` | The tool index: purpose, phase and flags for every script. |
 | `tools/checks/` | Node.js checkers that execute a rendered figure or viewer page. |
