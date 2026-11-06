@@ -265,13 +265,15 @@ for is the one sizing decision, and it is theirs. Read it from how they describe
 review, before the preflight; if they said nothing about size, use `standard`; if
 the words are ambiguous, ask once.
 
+<!-- BEGIN GENERATED SEARCH SCALES (python3 tools/gen_docs.py — do not edit by hand) -->
 | Scale | The user says | Per lane | Capped | Lanes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `scan` | "a quick look", "the key papers", "get me oriented" | 15 | yes | 2-4 |
 | `focused` | "the core literature", "a manageable list" | 30 | yes | 3-8 |
 | `standard` | nothing about size (the default) | 40, a floor | no | 4-12 |
 | `exhaustive` | "everything", "comprehensive", "leave nothing out" | 60, a floor | no | 6-20 |
 | a number | "about 300 papers" | the total spread over the lanes | yes | 1-50 |
+<!-- END GENERATED SEARCH SCALES -->
 
 Pass it to the preflight (`--scale`) and put it in the lane spec (`"scale"`). The
 code carries the rest (`common.SEARCH_SCALES`): `lane_briefs.py` sets each lane's
@@ -587,14 +589,36 @@ fails, or when any row was not rebuilt:
 | `the source returned no usable record` (a warning) | an author-less editorial, an id missing from the feed; the old `apa` is kept | confirm it by hand; acknowledge `kept-existing-apa:<hash>` if the audit raises it |
 
 **The audit's defects** each fail `--audit` and the spreadsheet, and each prints
-its fix. Formatting: `no-year`, `no-authors`, `et-al`, `html-entity`, `markup-tag`,
-`double-terminal-punctuation`, `missing-space`, `mangled-punct`, `unicode-hyphen`,
-`malformed-initial`, `replacement-char`, a truncated or empty venue, an
-`uppercase-title run`, and `hand-fix-lost` (below). On a gated table the reference
-gates add `unverified`, `link-doi-mismatch`, `hand-check-missing` (Phase 3e),
-`summary-unchecked` / `summary-flagged` / `abstract-wrong` / `no-summary`
-(Phase 5c), and the candidate-ledger defects (Phase 6). A DOI-less item is not a
-defect; it is listed as a manual ref and needs its hand check.
+its fix. The last seven are the reference gates, raised on a gated table only.
+A DOI-less item is not a defect: it is listed as a manual ref and needs its hand
+check (Phase 3e).
+
+<!-- BEGIN GENERATED AUDIT DEFECTS (python3 tools/gen_docs.py — do not edit by hand) -->
+| Defect | What it means |
+| --- | --- |
+| `no-year` | no parsable year |
+| `no-authors` | no author list |
+| `et-al` | an abbreviated author list; APA-7 wants every author |
+| `html-entity` | an unescaped HTML entity (&amp;, &lt;, &#x…) |
+| `markup-tag` | JATS or HTML markup left in the reference |
+| `double-terminal-punctuation` | a title ending in ? or ! that also took a period |
+| `missing-space` | punctuation or a genus glued to the next word, from stripped markup |
+| `mangled-punct` | a '?' glued to a letter: a quote or dash the source could not encode |
+| `unicode-hyphen` | U+2010 or U+2011 in a name; normalize to ASCII '-' |
+| `malformed-initial` | a bracket, or a hyphenated given name missing its second part |
+| `replacement-char` | U+FFFD mojibake, unrecoverable at the source |
+| `uppercase-title run` | consecutive all-caps words: shouting, not an acronym |
+| `single-letter venue` | a venue truncated to one character |
+| `empty venue` | no venue at all |
+| `hand-fix-lost` | a recorded hand fix is no longer in the apa; a re-canon undid it |
+| `unverified` | no OK verify stamp for the row's current DOI or arXiv id |
+| `link-doi-mismatch` | the link resolves to a different DOI than the row's |
+| `hand-check-missing` | a DOI-less row with no recorded hand check, or one whose apa changed |
+| `summary-unchecked` | the summary was never checked, or checked for other ids |
+| `summary-flagged` | a checking agent found the abstract does not support the summary |
+| `abstract-wrong` | the abstract on file is not this paper's |
+| `no-summary` | an empty summary on a gated table |
+<!-- END GENERATED AUDIT DEFECTS -->
 
 **Acknowledge warnings.** Some findings need a human verdict, not a fix. On a gated
 table an unacknowledged warning fails the audit like a defect; on a legacy table it
@@ -605,21 +629,31 @@ REF:WARNING_ID --reason "why this is fine"` (repeatable), which writes
 unacknowledged, never on a defect, so `--audit` stays the gate. A stale
 acknowledgment (its warning no longer fires) is reported, not failed: delete it.
 
+<!-- BEGIN GENERATED AUDIT WARNINGS (python3 tools/gen_docs.py — do not edit by hand) -->
 | Warning id | What it flags | Verdict needed |
-|---|---|---|
-| `possible-duplicate:<ref>` | near-identical titles (often a preprint and its journal version) | two distinct papers, or keep the version of record and drop the other |
-| `multi-word-surname:<name>` | `Lambon Ralph` (real) and `Thomas Yeo` (CrossRef folding given names into the family) look alike | fix the split (`hand_fixes.json`), or acknowledge a real compound surname |
-| `single-letter-surname:<name>` | `S, D. J.`: almost always an initial split off as the surname | fix it (`hand_fixes.json`), or acknowledge a real one (`O`) |
-| `deposit-year:<doi-year>/<apa-year>` | the DOI encodes another year (publisher back-file digitization re-dates old papers) | which year is right |
-| `cached-year:<cached>/<apa>` | a cached `year` field disagrees with the `apa` | fix whichever is wrong, or delete the stale cache |
-| `glued-footnote:<word>` | a footnote digit stuck to the last title word (`psychological science1`) | check the source |
-| `datacite-unsplit-author:<name>` | a DataCite creator with no given name that could not be split safely (`The pandas development team`, `Hao CHEN`) | a group (acknowledge), or a person (fix the `apa`) |
-| `datacite-deposit` | a DataCite record that is not software or a data set (or whose publisher is "Unpublished"): a repository copy of a paper | cite the version of record's DOI if one exists |
-| `published-version` | a preprint whose server records its published version (CrossRef `is-preprint-of`) | `references.py --adopt-published` moves it (keeping `preprint_doi`), then verify and canon it with `--only` |
-| `kept-existing-apa:<hash>` | verified, but canon could not rebuild it; keyed to the `apa`, so an edit lapses it | confirm the `apa` by hand |
-| `identity-not-reestablished` | a canonical row verified only against its own `apa` (Phase 3d) | confirm the DOI is the intended paper |
+| --- | --- | --- |
+| `possible-duplicate` | near-identical titles, often a preprint and its journal version | two distinct papers, or keep the version of record and drop the other |
+| `multi-word-surname` | `Lambon Ralph` (real) and `Thomas Yeo` (CrossRef folding a given name into the family) look alike | fix the split in hand_fixes.json, or acknowledge a real compound surname |
+| `single-letter-surname` | `S, D. J.`: almost always an initial split off as the surname | fix it in hand_fixes.json, or acknowledge a real one (`O`) |
+| `deposit-year` | the DOI encodes another year; publisher back-file digitization re-dates old papers | which year is right |
+| `cached-year` | a cached `year` field disagrees with the `apa` | fix whichever is wrong, or delete the stale cache |
+| `glued-footnote` | a footnote digit stuck to the last title word (`psychological science1`) | check the source |
+| `spaced-question-mark` | a ' ? ' that is either French typography or a mojibaked quote or dash; no rule on the string can tell them apart | read the published title and record which it is |
+| `datacite-unsplit-author` | a DataCite creator with no given name that could not be split safely (`The pandas development team`, `Hao CHEN`) | a group (acknowledge), or a person (fix the apa) |
+| `datacite-deposit` | a DataCite record that is not software or a data set: a repository copy of a paper | cite the version of record's DOI if one exists |
+| `published-version` | a preprint whose server records its published version (CrossRef `is-preprint-of`) | `references.py --adopt-published` moves it, then verify and canon it with `--only` |
+| `kept-existing-apa` | verified, but canon could not rebuild it; keyed to the apa, so an edit lapses it | confirm the apa by hand |
+| `identity-not-reestablished` | a canonical row verified only against its own apa (Phase 3d) | confirm the DOI is the intended paper |
+| `canon-warning` | canon flagged the row when it rebuilt it | read what canon said and fix or acknowledge it |
 | `no-abstract` | a summary with no abstract to check it against (Phase 5c) | acknowledge, or add a landing-page abstract |
-| `*`: `no-candidate-ledger`, `no-xref-run` / `no-forward-run`, `incomplete-xref-run` / `incomplete-forward-run`, `partial-xref-run` / `partial-forward-run` | Phase 6 was not run, did not finish, or read fewer papers than the table now has | run the pass (Phase 6), or acknowledge why this review goes without it |
+| `no-candidate-ledger` | a gated table with no candidates.json at all (Phase 6) | run the passes, or acknowledge that this review never ran them |
+| `no-xref-run` | the ledger records no backward cross-citation run | run xref.py and `candidates.py --add`, or acknowledge why there is none |
+| `no-forward-run` | the ledger records no forward-citation run | run forward.py and `candidates.py --add`, or acknowledge why there is none |
+| `incomplete-xref-run` | the last xref run did not finish; some fetches failed | re-run it, or acknowledge why the review proceeds without full coverage |
+| `incomplete-forward-run` | the last forward run did not finish; some pulls failed | re-run it, or acknowledge why the review proceeds without full coverage |
+| `partial-xref-run` | the last xref run read fewer papers than the table now holds | re-run it and `--add` again, or acknowledge why the new rows need no pass |
+| `partial-forward-run` | the last forward run read fewer papers than the table now holds | re-run it and `--add` again, or acknowledge why the new rows need no pass |
+<!-- END GENERATED AUDIT WARNINGS -->
 
 **Record every hand fix in `hand_fixes.json`**, never by editing `apa` alone:
 `{"<ref>": [{"old": "<damaged text canon produces>", "new": "<final text, in sentence
@@ -719,11 +753,22 @@ What each row field should hold:
 - `pdf`: a relative path if downloaded, else empty. `xref`: shown in the `Xref`
   column, but no tool fills it.
 
-**Row colors** come from `source` (rules in `spreadsheet.py`'s `COLORS`; an
-unknown value renders white with a warning): white `source-doc` (refs from the
-source document); cream `#FFF7E0` `search`; green `#E2F0D9` `xref`, `forward`,
-`survey` (Phase 6); blue `#DDEBF7` `lab`; lilac `#F3E6F5` `anteced` and
-`anteced-nosrc` (Phase 2b).
+**Row colors** come from `source`. An unknown value renders white, with a
+warning; a `<source>-nosrc` tag keeps its pass's fill.
+
+<!-- BEGIN GENERATED ROW COLORS (python3 tools/gen_docs.py — do not edit by hand) -->
+| `source` | Fill | What the row is |
+| --- | --- | --- |
+| `source-doc` | white (none) | a reference from the source document the user supplied |
+| `search` | `#FFF7E0` | found by a forward search lane (Phase 2) |
+| `search-nosrc` | `#FFF7E0` | a search lane's DOI-less item: a book, a report, an essay |
+| `xref` | `#E2F0D9` | a backward cross-citation candidate (Phase 6) |
+| `forward` | `#E2F0D9` | a forward-citation candidate (Phase 6) |
+| `survey` | `#E2F0D9` | taken from a survey or review's reference list (Phase 6) |
+| `lab` | `#DDEBF7` | the home lab's own paper (lab mode) |
+| `anteced` | `#F3E6F5` | an antecedent from the foundations pass (Phase 2b) |
+| `anteced-nosrc` | `#F3E6F5` | a DOI-less antecedent classic, hand-cited (Phase 2b) |
+<!-- END GENERATED ROW COLORS -->
 
 ### Phase 5b — Citation counts (standard; do this on every review)
 

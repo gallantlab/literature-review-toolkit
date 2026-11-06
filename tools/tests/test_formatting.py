@@ -6305,6 +6305,100 @@ check_true("a legitimate question mark is still clean", not any(
 check_true("a spaced-'?' warning carries a short stable id for --ack",
            references.warning_id("spaced-question-mark: a long explanation") == "spaced-question-mark")
 
+# ---- the generated tables and the registries behind them -------------------
+# Four tables in PLAYBOOK.md restated values that live in the code, and two had
+# drifted: the row colors listed eight sources where spreadsheet.py had nine, and
+# the warning table was missing an id added the same morning. The tables are now
+# generated, which stops them going stale. These checks stop the REGISTRIES going
+# stale, which is the failure the generator cannot see.
+import gen_docs as _gdm  # noqa: E402
+
+_TOOLS = os.path.dirname(os.path.abspath(common.__file__))
+_REPO = os.path.dirname(_TOOLS)
+_refsrc = open(os.path.join(_TOOLS, "references.py"), encoding="utf-8").read()
+
+
+def _defect_ids(src):
+    """Every defect id the module can raise, read off its own `append` literals.
+    An id is the text before the first " (" or ": " that carries the detail."""
+    lits = re.findall(r'\b(?:defects|d)\.append\(\s*\n?\s*f?"([^"]+)"', src)
+    return {re.split(r" \(|: ", lit, maxsplit=1)[0].strip() for lit in lits}
+
+
+check("every defect the audit raises is in references.DEFECTS, and none is listed that it cannot",
+      sorted(_defect_ids(_refsrc) ^ set(references.DEFECTS)), [])
+check_true("every defect carries a one-line meaning",
+           all(isinstance(v, str) and v.strip() for v in references.DEFECTS.values()))
+
+# A warning id is usually computed (warning_id, or an f-string keyed to the row),
+# so it cannot be read off the source the way a defect can. Two cheaper checks
+# bracket it instead: no entry may name a warning the module cannot raise, and no
+# literal id may be raised without an entry.
+check("no WARNINGS entry names an id that is nowhere in references.py",
+      sorted(k for k in references.WARNINGS if k not in _refsrc), [])
+_wlits = {w.split(":")[0] for w in re.findall(r"\bwarn\(\s*[^,]+,\s*f?\"([^\"]+)\"", _refsrc)}
+_wids = {w for w in _wlits if re.fullmatch(r"[a-z][a-z-]*(\{src\}[a-z-]*)?", w)}
+_expanded = {w.replace("{src}", s2) for w in _wids for s2 in ("xref", "forward")}
+check("every literal warning id raised by warn() has a WARNINGS entry",
+      sorted(_expanded - set(references.WARNINGS)), [])
+check_true("every warning says what it flags and what verdict it needs",
+           all(len(v) == 2 and all(str(x).strip() for x in v)
+               for v in references.WARNINGS.values()))
+check_true("the two ids that drifted are both registered now",
+           "spaced-question-mark" in references.WARNINGS
+           and "search-nosrc" in spreadsheet.SOURCES)
+
+# spreadsheet: COLORS is derived, so the two can no longer disagree.
+check("COLORS is exactly the SOURCES fills",
+      spreadsheet.COLORS, {k: v[0] for k, v in spreadsheet.SOURCES.items()})
+check_true("every source says what the row is",
+           all(str(why).strip() for _fill, why in spreadsheet.SOURCES.values()))
+
+# the scale table is generated, so every scale needs the vocabulary it is read from
+check_true("every search scale carries the words the user says and what it is",
+           all(p.get("says", "").strip() and p.get("about", "").strip()
+               for p in common.SEARCH_SCALES.values()))
+
+# each renderer must emit one row per registry entry, plus a header and a rule
+for _name, _render, _targets in _gdm.BLOCKS:
+    _rows = len(_render().strip().split("\n"))
+    check_true(f"generated block {_name!r} renders a non-empty table", _rows > 2)
+check("the scale table renders every scale plus the numeric case",
+      len(_gdm.render_scales().strip().split("\n")), len(common.SEARCH_SCALES) + 3)
+check("the row-color table renders every source",
+      len(_gdm.render_sources().strip().split("\n")), len(spreadsheet.SOURCES) + 2)
+check("the defect table renders every defect",
+      len(_gdm.render_defects().strip().split("\n")), len(references.DEFECTS) + 2)
+check("the warning table renders every warning",
+      len(_gdm.render_warnings().strip().split("\n")), len(references.WARNINGS) + 2)
+check("gen_docs END markers are bare, like the tool index's",
+      _gdm.marker("X", "END"), "<!-- END GENERATED X -->")
+
+# The fifth table, "Output artifacts", is NOT generated, on purpose. Four of its
+# thirteen rows are written by the agent or by you, not by a tool, so a registry
+# to generate it from would be as hand-maintained as the table itself. What can
+# drift is the part that is already in the code: the tool names and their phases.
+# This checks those, so a renamed tool or a renumbered phase fails here.
+_pb = open(os.path.join(_REPO, "PLAYBOOK.md"), encoding="utf-8").read()
+_art = re.search(r"^\| File \| Written by \| Phase \|\n.*?(?=\n\n)", _pb, re.S | re.M).group(0)
+_phase_of = {e["name"]: e["phase"] for e in _gdm.tool_entries()}
+_bad_name, _bad_phase = [], []
+for _line in _art.split("\n")[2:]:
+    _cells = [c.strip() for c in _line.strip().strip("|").split("|")]
+    if len(_cells) != 3:
+        continue
+    _written, _phases = _cells[1], _cells[2]
+    for _tool in re.findall(r"`([a-z_]+\.py)", _written):
+        if _tool not in _phase_of:
+            _bad_name.append(_tool)
+        elif _phase_of[_tool] not in _phases and _phase_of[_tool] != "—":
+            _bad_phase.append((_tool, _phase_of[_tool], _phases))
+check("the output-artifacts table names only tools that exist", sorted(set(_bad_name)), [])
+check("every tool in the output-artifacts table is listed under its own PHASE",
+      sorted(set(_bad_phase)), [])
+check_true("the output-artifacts table still has every row",
+           len([ln for ln in _art.split("\n")[2:] if ln.startswith("|")]) == 13)
+
 # ---- report ---------------------------------------------------------------
 # The count is reported on both paths. These checks run as the module loads, so an
 # exception part way through stops the rest, and a run that reports only failures

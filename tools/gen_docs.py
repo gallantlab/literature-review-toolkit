@@ -121,6 +121,75 @@ def render_details(entries):
     return "\n\n".join(out)
 
 
+# ---------------------------------------------------------------------------
+# Tables generated from the registries that own them. Four tables in PLAYBOOK.md
+# restated values that live in the code, and two had already drifted: the row
+# colors listed eight sources where spreadsheet.py had nine, and the warning table
+# was missing an id added the same morning. Each renderer below reads its module,
+# so the prose cannot say something the code does not.
+
+
+def marker(name, kind):
+    """The block markers, in the same shape as the tool index's: the BEGIN marker
+    carries the command that regenerates it, the END marker is bare."""
+    note = " (python3 tools/gen_docs.py — do not edit by hand)" if kind == "BEGIN" else ""
+    return f"<!-- {kind} GENERATED {name}{note} -->"
+
+
+def _row(*cells):
+    return "| " + " | ".join(str(c) for c in cells) + " |"
+
+
+def render_scales():
+    """Phase 1d's scale table, from common.SEARCH_SCALES."""
+    import common
+    out = [_row("Scale", "The user says", "Per lane", "Capped", "Lanes"),
+           _row("---", "---", "---", "---", "---")]
+    for name, p in common.SEARCH_SCALES.items():
+        target = f"{p['lane_target']}" + ("" if p["capped"] else ", a floor")
+        out.append(_row(f"`{name}`", p["says"], target,
+                        "yes" if p["capped"] else "no", "%d-%d" % p["lanes"]))
+    out.append(_row("a number", '"about 300 papers"', "the total spread over the lanes",
+                    "yes", "1-50"))
+    return "\n".join(out)
+
+
+def render_sources():
+    """Phase 5's row colors, from spreadsheet.SOURCES."""
+    import spreadsheet
+    out = [_row("`source`", "Fill", "What the row is"), _row("---", "---", "---")]
+    for name, (fill, why) in spreadsheet.SOURCES.items():
+        out.append(_row(f"`{name}`", f"`{fill}`" if fill else "white (none)", why))
+    return "\n".join(out)
+
+
+def render_defects():
+    """Phase 3f's defect list, from references.DEFECTS. Each one fails the audit."""
+    import references
+    out = [_row("Defect", "What it means"), _row("---", "---")]
+    for name, why in references.DEFECTS.items():
+        out.append(_row(f"`{name}`", why))
+    return "\n".join(out)
+
+
+def render_warnings():
+    """Phase 3f's warning table, from references.WARNINGS."""
+    import references
+    out = [_row("Warning id", "What it flags", "Verdict needed"), _row("---", "---", "---")]
+    for name, (flags, verdict) in references.WARNINGS.items():
+        out.append(_row(f"`{name}`", flags, verdict))
+    return "\n".join(out)
+
+
+# (block name, renderer, the files that carry its markers)
+BLOCKS = [
+    ("SEARCH SCALES", render_scales, ["PLAYBOOK.md", "docs/search.md"]),
+    ("ROW COLORS", render_sources, ["PLAYBOOK.md"]),
+    ("AUDIT DEFECTS", render_defects, ["PLAYBOOK.md"]),
+    ("AUDIT WARNINGS", render_warnings, ["PLAYBOOK.md", "docs/checks.md"]),
+]
+
+
 def splice(text, inner, begin=BEGIN, end=END):
     """Replace what lies between the markers with `inner`; the markers and
     everything outside them are kept. Raises if a target has no markers."""
@@ -186,6 +255,19 @@ def main():
             if not args.check:
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(new)
+    for name, render, targets in BLOCKS:
+        inner = render()
+        for rel in targets:
+            path = os.path.join(ROOT, rel)
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            new = splice(text, inner, marker(name, "BEGIN"), marker(name, "END"))
+            if new != text:
+                if rel not in stale:
+                    stale.append(rel)
+                if not args.check:
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(new)
     vstale = [rel for rel, was in version_status(write=not args.check) if was]
     if args.check:
         if stale:

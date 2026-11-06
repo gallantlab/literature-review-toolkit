@@ -552,6 +552,107 @@ def duplicate_scan(rows, keyf, threshold=0.88):
     return pairs
 
 
+# ---------------------------------------------------------------------------
+# The audit's vocabulary, in one place.
+#
+# PLAYBOOK.md and docs/checks.md generate their tables from these two dicts, so a
+# defect or warning cannot ship undocumented. tools/tests/test_formatting.py reads
+# the ids this module actually emits out of its own source and fails when either
+# dict disagrees, which is what makes this a registry rather than a second copy of
+# the prose. A defect fails the audit; a warning needs a human verdict recorded
+# with --ack.
+DEFECTS = {
+    # formatting: anything here means the reference string itself is wrong
+    "no-year": "no parsable year",
+    "no-authors": "no author list",
+    "et-al": "an abbreviated author list; APA-7 wants every author",
+    "html-entity": "an unescaped HTML entity (&amp;, &lt;, &#x…)",
+    "markup-tag": "JATS or HTML markup left in the reference",
+    "double-terminal-punctuation": "a title ending in ? or ! that also took a period",
+    "missing-space": "punctuation or a genus glued to the next word, from stripped markup",
+    "mangled-punct": "a '?' glued to a letter: a quote or dash the source could not encode",
+    "unicode-hyphen": "U+2010 or U+2011 in a name; normalize to ASCII '-'",
+    "malformed-initial": "a bracket, or a hyphenated given name missing its second part",
+    "replacement-char": "U+FFFD mojibake, unrecoverable at the source",
+    "uppercase-title run": "consecutive all-caps words: shouting, not an acronym",
+    "single-letter venue": "a venue truncated to one character",
+    "empty venue": "no venue at all",
+    "hand-fix-lost": "a recorded hand fix is no longer in the apa; a re-canon undid it",
+    # the reference gates, on a gated table only
+    "unverified": "no OK verify stamp for the row's current DOI or arXiv id",
+    "link-doi-mismatch": "the link resolves to a different DOI than the row's",
+    "hand-check-missing": "a DOI-less row with no recorded hand check, or one whose apa changed",
+    "summary-unchecked": "the summary was never checked, or checked for other ids",
+    "summary-flagged": "a checking agent found the abstract does not support the summary",
+    "abstract-wrong": "the abstract on file is not this paper's",
+    "no-summary": "an empty summary on a gated table",
+}
+
+# id -> (what it flags, what verdict the human has to reach)
+WARNINGS = {
+    "possible-duplicate": (
+        "near-identical titles, often a preprint and its journal version",
+        "two distinct papers, or keep the version of record and drop the other"),
+    "multi-word-surname": (
+        "`Lambon Ralph` (real) and `Thomas Yeo` (CrossRef folding a given name into the family) "
+        "look alike",
+        "fix the split in hand_fixes.json, or acknowledge a real compound surname"),
+    "single-letter-surname": (
+        "`S, D. J.`: almost always an initial split off as the surname",
+        "fix it in hand_fixes.json, or acknowledge a real one (`O`)"),
+    "deposit-year": (
+        "the DOI encodes another year; publisher back-file digitization re-dates old papers",
+        "which year is right"),
+    "cached-year": (
+        "a cached `year` field disagrees with the `apa`",
+        "fix whichever is wrong, or delete the stale cache"),
+    "glued-footnote": (
+        "a footnote digit stuck to the last title word (`psychological science1`)",
+        "check the source"),
+    "spaced-question-mark": (
+        "a ' ? ' that is either French typography or a mojibaked quote or dash; no rule on the "
+        "string can tell them apart",
+        "read the published title and record which it is"),
+    "datacite-unsplit-author": (
+        "a DataCite creator with no given name that could not be split safely "
+        "(`The pandas development team`, `Hao CHEN`)",
+        "a group (acknowledge), or a person (fix the apa)"),
+    "datacite-deposit": (
+        "a DataCite record that is not software or a data set: a repository copy of a paper",
+        "cite the version of record's DOI if one exists"),
+    "published-version": (
+        "a preprint whose server records its published version (CrossRef `is-preprint-of`)",
+        "`references.py --adopt-published` moves it, then verify and canon it with `--only`"),
+    "kept-existing-apa": (
+        "verified, but canon could not rebuild it; keyed to the apa, so an edit lapses it",
+        "confirm the apa by hand"),
+    "identity-not-reestablished": (
+        "a canonical row verified only against its own apa (Phase 3d)",
+        "confirm the DOI is the intended paper"),
+    "canon-warning": (
+        "canon flagged the row when it rebuilt it",
+        "read what canon said and fix or acknowledge it"),
+    "no-abstract": (
+        "a summary with no abstract to check it against (Phase 5c)",
+        "acknowledge, or add a landing-page abstract"),
+    "no-candidate-ledger": (
+        "a gated table with no candidates.json at all (Phase 6)",
+        "run the passes, or acknowledge that this review never ran them"),
+    "no-xref-run": ("the ledger records no backward cross-citation run",
+                    "run xref.py and `candidates.py --add`, or acknowledge why there is none"),
+    "no-forward-run": ("the ledger records no forward-citation run",
+                       "run forward.py and `candidates.py --add`, or acknowledge why there is none"),
+    "incomplete-xref-run": ("the last xref run did not finish; some fetches failed",
+                            "re-run it, or acknowledge why the review proceeds without full coverage"),
+    "incomplete-forward-run": ("the last forward run did not finish; some pulls failed",
+                               "re-run it, or acknowledge why the review proceeds without full coverage"),
+    "partial-xref-run": ("the last xref run read fewer papers than the table now holds",
+                         "re-run it and `--add` again, or acknowledge why the new rows need no pass"),
+    "partial-forward-run": ("the last forward run read fewer papers than the table now holds",
+                            "re-run it and `--add` again, or acknowledge why the new rows need no pass"),
+}
+
+
 def warning_id(note):
     """Stable id for an audit warning, so an acknowledgment survives reruns.
 

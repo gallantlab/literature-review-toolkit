@@ -99,13 +99,15 @@ the request leaves open.
 **Size.** The user says it in their own words. The agent maps it to a scale,
 passes the scale to the preflight, and writes it into the lane spec:
 
-| Scale | The user says | Papers per lane | Capped | Lanes |
-|---|---|---|---|---|
-| `scan` | "a quick look", "the key papers" | 15 | yes | 2–4 |
-| `focused` | "the core literature" | 30 | yes | 3–8 |
-| `standard` | nothing about size (the default) | 40, as a floor | no | 4–12 |
-| `exhaustive` | "everything", "comprehensive" | 60, as a floor | no | 6–20 |
-| a number | "about 300 papers" | the total, spread over the lanes | yes | up to 50 |
+<!-- BEGIN GENERATED SEARCH SCALES (python3 tools/gen_docs.py — do not edit by hand) -->
+| Scale | The user says | Per lane | Capped | Lanes |
+| --- | --- | --- | --- | --- |
+| `scan` | "a quick look", "the key papers", "get me oriented" | 15 | yes | 2-4 |
+| `focused` | "the core literature", "a manageable list" | 30 | yes | 3-8 |
+| `standard` | nothing about size (the default) | 40, a floor | no | 4-12 |
+| `exhaustive` | "everything", "comprehensive", "leave nothing out" | 60, a floor | no | 6-20 |
+| a number | "about 300 papers" | the total spread over the lanes | yes | 1-50 |
+<!-- END GENERATED SEARCH SCALES -->
 
 A lane may set its own target. A smaller scale means fewer papers, never fewer
 checks: every gate runs at every scale, and every scale needs an antecedent lane.

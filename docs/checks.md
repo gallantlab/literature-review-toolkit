@@ -481,18 +481,32 @@ exits nonzero while a warning is unacknowledged, never on a defect, since
 `--audit` is the gate. A stale acknowledgment, whose warning no longer applies,
 is reported but does not fail; delete it.
 
-| Warning id | Raised when |
-|---|---|
-| `possible-duplicate:<ref>` | two rows share a DOI or have near-identical titles, often a preprint and its published version |
-| `multi-word-surname:<name>` | a surname of several words may be given names folded into the family name |
-| `single-letter-surname:<name>` | a one-letter surname, almost always an initial split off ("S, D. J.") |
-| `deposit-year:<a>/<b>`, `cached-year:<a>/<b>` | the DOI, or the row's cached year, gives a different year from the reference |
-| `glued-footnote:<word>` | a footnote digit may be stuck to the title's last word |
-| `no-abstract` | the summary has no abstract to be checked against |
-| `kept-existing-apa:<hash>` | a verified row that canon could not rebuild; keyed to its `apa`, so editing the `apa` lapses the acknowledgment |
-| `identity-not-reestablished` | a canonical row verified only against its own `apa` ([Upgrade an old corpus](reruns.md#upgrade-an-old-corpus)) |
-| `datacite-unsplit-author:<name>`, `datacite-deposit`, `published-version` | canon's flags on a registry record ([Rebuild every reference](#rebuild-every-reference-phase-3f)) |
-| `no-candidate-ledger` (under `*`) | there is no `candidates.json` |
-| `no-xref-run`, `no-forward-run` (under `*`) | the ledger records no run of that direction |
-| `incomplete-xref-run`, `incomplete-forward-run` (under `*`) | the last recorded run of that direction did not finish |
-| `partial-xref-run`, `partial-forward-run` (under `*`) | the last run read fewer papers than the table now has with a DOI or arXiv id, not counting the candidates the passes added |
+An id ending in `:<value>` is keyed to the row it describes, so a new instance
+needs its own acknowledgment. An id marked for the whole table is acknowledged
+under `*`.
+
+<!-- BEGIN GENERATED AUDIT WARNINGS (python3 tools/gen_docs.py — do not edit by hand) -->
+| Warning id | What it flags | Verdict needed |
+| --- | --- | --- |
+| `possible-duplicate` | near-identical titles, often a preprint and its journal version | two distinct papers, or keep the version of record and drop the other |
+| `multi-word-surname` | `Lambon Ralph` (real) and `Thomas Yeo` (CrossRef folding a given name into the family) look alike | fix the split in hand_fixes.json, or acknowledge a real compound surname |
+| `single-letter-surname` | `S, D. J.`: almost always an initial split off as the surname | fix it in hand_fixes.json, or acknowledge a real one (`O`) |
+| `deposit-year` | the DOI encodes another year; publisher back-file digitization re-dates old papers | which year is right |
+| `cached-year` | a cached `year` field disagrees with the `apa` | fix whichever is wrong, or delete the stale cache |
+| `glued-footnote` | a footnote digit stuck to the last title word (`psychological science1`) | check the source |
+| `spaced-question-mark` | a ' ? ' that is either French typography or a mojibaked quote or dash; no rule on the string can tell them apart | read the published title and record which it is |
+| `datacite-unsplit-author` | a DataCite creator with no given name that could not be split safely (`The pandas development team`, `Hao CHEN`) | a group (acknowledge), or a person (fix the apa) |
+| `datacite-deposit` | a DataCite record that is not software or a data set: a repository copy of a paper | cite the version of record's DOI if one exists |
+| `published-version` | a preprint whose server records its published version (CrossRef `is-preprint-of`) | `references.py --adopt-published` moves it, then verify and canon it with `--only` |
+| `kept-existing-apa` | verified, but canon could not rebuild it; keyed to the apa, so an edit lapses it | confirm the apa by hand |
+| `identity-not-reestablished` | a canonical row verified only against its own apa (Phase 3d) | confirm the DOI is the intended paper |
+| `canon-warning` | canon flagged the row when it rebuilt it | read what canon said and fix or acknowledge it |
+| `no-abstract` | a summary with no abstract to check it against (Phase 5c) | acknowledge, or add a landing-page abstract |
+| `no-candidate-ledger` | a gated table with no candidates.json at all (Phase 6) | run the passes, or acknowledge that this review never ran them |
+| `no-xref-run` | the ledger records no backward cross-citation run | run xref.py and `candidates.py --add`, or acknowledge why there is none |
+| `no-forward-run` | the ledger records no forward-citation run | run forward.py and `candidates.py --add`, or acknowledge why there is none |
+| `incomplete-xref-run` | the last xref run did not finish; some fetches failed | re-run it, or acknowledge why the review proceeds without full coverage |
+| `incomplete-forward-run` | the last forward run did not finish; some pulls failed | re-run it, or acknowledge why the review proceeds without full coverage |
+| `partial-xref-run` | the last xref run read fewer papers than the table now holds | re-run it and `--add` again, or acknowledge why the new rows need no pass |
+| `partial-forward-run` | the last forward run read fewer papers than the table now holds | re-run it and `--add` again, or acknowledge why the new rows need no pass |
+<!-- END GENERATED AUDIT WARNINGS -->

@@ -486,14 +486,21 @@ def load_optional_json(path, default):
 # code carries the consequences: per-lane targets, whether lanes are capped, the
 # lane-count range lane_briefs.py enforces, the preflight's budget estimate, and a
 # merge that fails a capped lane over its cap.
+# `says` is the vocabulary the agent reads the scale from, and it is here rather
+# than in the playbook so the table in the playbook can be generated from this one
+# definition; it is the only judgment in the dict.
 SEARCH_SCALES = {
     "scan": {"lane_target": 15, "capped": True, "lanes": (2, 4),
+             "says": '"a quick look", "the key papers", "get me oriented"',
              "about": "a quick orientation: the landmark papers and the main recent work"},
     "focused": {"lane_target": 30, "capped": True, "lanes": (3, 8),
+                "says": '"the core literature", "a manageable list"',
                 "about": "the core literature, each lane capped at its target"},
     "standard": {"lane_target": 40, "capped": False, "lanes": (4, 12),
+                 "says": "nothing about size (the default)",
                  "about": "the default: every on-topic paper the lanes find (the target is a floor)"},
     "exhaustive": {"lane_target": 60, "capped": False, "lanes": (6, 20),
+                   "says": '"everything", "comprehensive", "leave nothing out"',
                    "about": "as complete as the search can make it"},
 }
 # Uncapped lanes treat the target as a floor; on the 2026-09 builds they returned

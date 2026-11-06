@@ -69,14 +69,24 @@ import references
 
 PHASE = "5"   # pipeline phase, read by tools/gen_docs.py for the tool index
 
-COLORS = {"source-doc": None, "search": "#FFF7E0", "xref": "#E2F0D9", "lab": "#DDEBF7",
-          # Phase 6 candidates found by forward citation or a survey share xref's green
-          "forward": "#E2F0D9", "survey": "#E2F0D9",
-          # Phase 2b antecedents (foundations pass): a distinct band. DOI'd classics
-          # get the fill; no-DOI hand-cited classics ("anteced-nosrc") share it.
-          "anteced": "#F3E6F5", "anteced-nosrc": "#F3E6F5",
-          # a forward lane's DOI-less item (a book, a report) keeps the search fill
-          "search-nosrc": "#FFF7E0"}
+# Every row `source`: its fill and what it means. This is the one definition —
+# PLAYBOOK.md and docs/deliverables.md generate their tables from it, so a source
+# added here cannot go undocumented. Phase 6 candidates found by forward citation
+# or in a survey share xref's green; a DOI-less item keeps its pass's fill, so a
+# hand-cited classic sits in the same band as the antecedents it belongs with.
+SOURCES = {
+    "source-doc":    (None,      "a reference from the source document the user supplied"),
+    "search":        ("#FFF7E0", "found by a forward search lane (Phase 2)"),
+    "search-nosrc":  ("#FFF7E0", "a search lane's DOI-less item: a book, a report, an essay"),
+    "xref":          ("#E2F0D9", "a backward cross-citation candidate (Phase 6)"),
+    "forward":       ("#E2F0D9", "a forward-citation candidate (Phase 6)"),
+    "survey":        ("#E2F0D9", "taken from a survey or review's reference list (Phase 6)"),
+    "lab":           ("#DDEBF7", "the home lab's own paper (lab mode)"),
+    "anteced":       ("#F3E6F5", "an antecedent from the foundations pass (Phase 2b)"),
+    "anteced-nosrc": ("#F3E6F5", "a DOI-less antecedent classic, hand-cited (Phase 2b)"),
+}
+
+COLORS = {name: fill for name, (fill, _why) in SOURCES.items()}
 
 
 def cite_val(row, key):
