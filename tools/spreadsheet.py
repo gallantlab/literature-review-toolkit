@@ -50,9 +50,16 @@ Input format (JSON list):
   python3 tools/spreadsheet.py --rows rows.json --out bibliography.xlsx --draft   # a marked draft
 """
 import argparse
+import base64
+import binascii
+import glob
+import hashlib
+import io
 import json
 import os
+import re
 import sys
+import zipfile
 
 import xlsxwriter
 
@@ -86,6 +93,80 @@ def color_key(src):
         return src
     base = src[:-len("-nosrc")] if src.endswith("-nosrc") else ""
     return base if base in COLORS else None
+
+
+XLSX_DATA_URI = re.compile(
+    r"spreadsheetml\.sheet;base64,([A-Za-z0-9+/=]+)")
+
+# An .xlsx is a zip, and xlsxwriter stamps the build time into docProps/core.xml.
+# So two spreadsheets built from identical rows differ in bytes. Comparing bytes
+# would warn on every rebuild, and a check that cries wolf is one that gets
+# ignored, which is how the stale copy shipped in the first place.
+XLSX_VOLATILE = {"docProps/core.xml"}
+
+
+def xlsx_content_digest(blob):
+    """A digest of a spreadsheet's content, ignoring its build timestamp.
+
+    Falls back to hashing the whole blob when it is not a readable zip, so a
+    truncated or hand-edited file still compares unequal rather than crashing."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(blob)) as z:
+            h = hashlib.sha256()
+            for name in sorted(z.namelist()):
+                if name in XLSX_VOLATILE:
+                    continue
+                h.update(name.encode())
+                h.update(z.read(name))
+            return h.hexdigest()
+    except (zipfile.BadZipFile, OSError, KeyError):
+        return hashlib.sha256(blob).hexdigest()
+
+
+def stale_figure_embeds(xlsx_path):
+    """Warn about every figure beside `xlsx_path` whose embedded copy of the
+    spreadsheet no longer matches the spreadsheet just written.
+
+    `families_figure.py --xlsx` embeds a base64 snapshot behind the figure's
+    download button, and the playbook renders that figure (step 12) BEFORE it
+    builds the spreadsheet (step 14). So the ordinary run leaves the button
+    handing out a stale table, and nothing said so: a reviewer who downloads it
+    from the distributed figure gets references the final canon pass corrected.
+    Returns the warning lines, so the caller decides where they go."""
+    try:
+        with open(xlsx_path, "rb") as f:
+            current = xlsx_content_digest(f.read())
+    except OSError:
+        return []
+    out = []
+    folder = os.path.dirname(os.path.abspath(xlsx_path))
+    for page in sorted(glob.glob(os.path.join(folder, "*.html"))):
+        try:
+            with open(page, encoding="utf-8", errors="replace") as f:
+                html = f.read()
+        except OSError:
+            continue
+        # A page can inline more than one workbook (a figure plus its own
+        # download button). Checking only the first left a stale second embed
+        # reported as clean, so every match is compared and any mismatch warns.
+        digests = []
+        for m in XLSX_DATA_URI.finditer(html):
+            try:
+                digests.append(xlsx_content_digest(base64.b64decode(m.group(1))))
+            except (ValueError, binascii.Error):
+                continue
+        if not digests or all(d == current for d in digests):
+            continue
+        name = os.path.basename(page)
+        out.append(f"  ⚠ {name} embeds an out-of-date copy of {os.path.basename(xlsx_path)}; "
+                   "its download button would hand out the older table")
+        args_file = os.path.join(folder, "figure_render_args.txt")
+        if os.path.exists(args_file):
+            out.append(f"    re-render it with the arguments in {os.path.basename(args_file)}")
+        else:
+            out.append("    re-render it with families_figure.py --xlsx "
+                       f"{os.path.basename(xlsx_path)}")
+    return out
 
 
 def unknown_sources(rows):
@@ -333,6 +414,13 @@ def main():
     n_pdf = sum(1 for r in rows if r.get("pdf"))
     cite_note = " + citation columns" if has_cite else ""
     print(f"Wrote {n} rows ({n_pdf} with PDFs){cite_note} to {out}")
+    # Only on the real deliverable. A --draft carries a banner row, so its
+    # digest can never match a figure's embed; running the check there warned
+    # about a figure that was perfectly in sync and told the user to embed the
+    # draft. That is the crying wolf this check was written to end.
+    if not args.draft:
+        for line in stale_figure_embeds(out):
+            print(line, file=sys.stderr)
 
 
 if __name__ == "__main__":

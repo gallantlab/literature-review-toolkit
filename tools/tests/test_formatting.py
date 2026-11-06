@@ -30,14 +30,19 @@ import version  # noqa: E402
 import xref  # noqa: E402
 
 FAILURES = []
+RAN = 0
 
 
 def check(name, got, want):
+    global RAN
+    RAN += 1
     if got != want:
         FAILURES.append(f"{name}\n     got:  {got!r}\n     want: {want!r}")
 
 
 def check_true(name, cond, detail=""):
+    global RAN
+    RAN += 1
     if not cond:
         FAILURES.append(f"{name}{(' — ' + detail) if detail else ''}")
 
@@ -6110,10 +6115,203 @@ check("extract --check reports an abstract that changed since --prepare",
 check("candidates: flood limit is half the table, at least 150",
       (candidates.flood_limit(100), candidates.flood_limit(541), candidates.flood_limit(1000)), (150, 270, 500))
 
+# ---- a figure's embedded spreadsheet goes stale silently -------------------
+# The playbook renders the timeline (step 12) before it builds the spreadsheet
+# (step 14), so the copy behind the figure's download button is routinely older
+# than the delivered table. On the GNE myopathy review the distributed figure
+# would have handed out references that a later canon pass had corrected.
+import base64 as _b64  # noqa: E402
+
+_sd = os.path.join(os.path.dirname(_tmp), "stale")
+os.makedirs(_sd, exist_ok=True)
+_xlsx = os.path.join(_sd, "topic_bibliography.xlsx")
+with open(_xlsx, "wb") as _f:
+    _f.write(b"CURRENT-TABLE")
+
+
+def _page(path, payload):
+    """Write a page carrying `payload` behind a figure-style download button."""
+    uri = ("data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,"
+           + _b64.b64encode(payload).decode())
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f'<a class="dl" href="{uri}">x</a>')
+
+
+_page(os.path.join(_sd, "topic_families.html"), b"OLD-TABLE")
+_warn = spreadsheet.stale_figure_embeds(_xlsx)
+check_true("spreadsheet flags a figure embedding an out-of-date table",
+           any("topic_families.html" in w for w in _warn), repr(_warn))
+_page(os.path.join(_sd, "topic_families.html"), b"CURRENT-TABLE")
+check("spreadsheet stays quiet when the embedded table is current",
+      spreadsheet.stale_figure_embeds(_xlsx), [])
+_page(os.path.join(_sd, "topic_review.html"), b"OLD-TABLE")
+check_true("the check covers every html beside the spreadsheet, not just the figure",
+           any("topic_review.html" in w for w in spreadsheet.stale_figure_embeds(_xlsx)))
+with open(os.path.join(_sd, "plain.html"), "w", encoding="utf-8") as _f:
+    _f.write("<p>a page that embeds no table</p>")
+check_true("a page with no embedded table is not flagged",
+           not any("plain.html" in w for w in spreadsheet.stale_figure_embeds(_xlsx)))
+check("a missing spreadsheet yields no warnings",
+      spreadsheet.stale_figure_embeds(os.path.join(_sd, "absent.xlsx")), [])
+
+
+def _page2(path, first, second):
+    """A page carrying TWO embedded workbooks, as a review page with its own
+    download button beside an embedded figure does."""
+    def uri(p):
+        return ("data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,"
+                + _b64.b64encode(p).decode())
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f'<a class="dl" href="{uri(first)}">x</a><a class="dl" href="{uri(second)}">y</a>')
+
+
+# The detector read only the FIRST data URI on a page, so a page whose first
+# embed was current and whose second was stale was reported clean.
+_page2(os.path.join(_sd, "two.html"), b"CURRENT-TABLE", b"OLD-TABLE")
+check_true("a stale SECOND embed on a page is still caught",
+           any("two.html" in w for w in spreadsheet.stale_figure_embeds(_xlsx)))
+_page2(os.path.join(_sd, "two.html"), b"CURRENT-TABLE", b"CURRENT-TABLE")
+check_true("a page whose embeds are all current stays quiet",
+           not any("two.html" in w for w in spreadsheet.stale_figure_embeds(_xlsx)))
+os.remove(os.path.join(_sd, "two.html"))
+
+# The call site must skip --draft: a draft carries a banner row, so its digest
+# can never match a figure's embed and the warning fired on every draft run.
+with open(os.path.join(os.path.dirname(spreadsheet.__file__), "spreadsheet.py"),
+          encoding="utf-8") as _fh:
+    _sp_src = _fh.read()
+check_true("the stale-embed check runs only on the real deliverable, never a --draft",
+           re.search(r"if not args\.draft:\s*\n\s*for line in stale_figure_embeds", _sp_src) is not None)
+
+# An .xlsx is a zip carrying a build timestamp, so two spreadsheets built from
+# identical rows differ in bytes. Comparing bytes would warn on every rebuild,
+# and a check that cries wolf is one that gets ignored.
+import io as _io  # noqa: E402
+import zipfile as _zf  # noqa: E402
+
+
+def _xlsx_bytes(rows_payload, built_at):
+    buf = _io.BytesIO()
+    with _zf.ZipFile(buf, "w") as z:
+        z.writestr("xl/worksheets/sheet1.xml", rows_payload)
+        z.writestr("docProps/core.xml", f"<created>{built_at}</created>")
+    return buf.getvalue()
+
+
+check("the same table built at two times has one content digest",
+      spreadsheet.xlsx_content_digest(_xlsx_bytes("ROWS", "2026-01-01")),
+      spreadsheet.xlsx_content_digest(_xlsx_bytes("ROWS", "2026-11-05")))
+check_true("a changed table changes the content digest",
+           spreadsheet.xlsx_content_digest(_xlsx_bytes("ROWS", "2026-01-01"))
+           != spreadsheet.xlsx_content_digest(_xlsx_bytes("OTHER ROWS", "2026-01-01")))
+_sd2 = os.path.join(os.path.dirname(_tmp), "stale2")
+os.makedirs(_sd2, exist_ok=True)
+_x2 = os.path.join(_sd2, "t_bibliography.xlsx")
+with open(_x2, "wb") as _f:
+    _f.write(_xlsx_bytes("ROWS", "2026-11-05"))
+_page(os.path.join(_sd2, "t_families.html"), _xlsx_bytes("ROWS", "2026-01-01"))
+check("a rebuild that changed no data raises no warning",
+      spreadsheet.stale_figure_embeds(_x2), [])
+_page(os.path.join(_sd2, "t_families.html"), _xlsx_bytes("OLD ROWS", "2026-01-01"))
+check_true("a rebuild that changed the data does raise one",
+           any("t_families.html" in w for w in spreadsheet.stale_figure_embeds(_x2)))
+check_true("a non-zip payload still compares unequal rather than crashing",
+           spreadsheet.xlsx_content_digest(b"not a zip")
+           != spreadsheet.xlsx_content_digest(b"also not a zip"))
+
+# ---- the screenshot helper's path guard ------------------------------------
+# It runs outside the sandbox, so what it may photograph has to be bounded by the
+# script rather than by whoever calls it.
+import screenshot  # noqa: E402
+
+_root = os.path.join(os.path.dirname(_tmp), "shotroot")
+os.makedirs(os.path.join(_root, "sub"), exist_ok=True)
+check_true("a page inside the root is allowed",
+           screenshot.inside(os.path.join(_root, "sub", "p.html"), _root))
+check_true("the root itself is allowed", screenshot.inside(_root, _root))
+check_true("a path outside the root is refused",
+           not screenshot.inside("/etc/passwd", _root))
+check_true("a sibling whose name merely starts with the root is refused",
+           not screenshot.inside(_root + "-other/p.html", _root))
+_outside = os.path.join(os.path.dirname(_tmp), "elsewhere")
+os.makedirs(_outside, exist_ok=True)
+_link = os.path.join(_root, "sneak")
+if not os.path.islink(_link):
+    os.symlink(_outside, _link)
+check_true("a symlink inside the root pointing out of it is refused",
+           not screenshot.inside(os.path.join(_link, "p.html"), _root))
+check("every mode names a width, height and flag list",
+      sorted(screenshot.MODES), ["dark", "light", "phone"])
+check_true("the dark mode actually asks chrome for a dark scheme",
+           any("preferredColorScheme=0" in f for f in screenshot.MODES["dark"][2]))
+
+# --root is an ordinary argument and the sandbox exemption pattern ends in `*`,
+# so without a ceiling a caller could pass `--root /` and photograph the whole
+# disk with the sandbox off. The bound has to be in the script, not the caller.
+check_true("the workspace ceiling is the directory holding the toolkit",
+           screenshot.WORKSPACE == os.path.dirname(
+               os.path.dirname(os.path.dirname(os.path.abspath(screenshot.__file__)))))
+check_true("a root inside the workspace is allowed",
+           screenshot.inside(os.path.join(screenshot.WORKSPACE, "proj"), screenshot.WORKSPACE))
+check_true("the filesystem root is refused as a --root",
+           not screenshot.inside("/", screenshot.WORKSPACE))
+check_true("a sibling of the workspace is refused as a --root",
+           not screenshot.inside(os.path.dirname(screenshot.WORKSPACE), screenshot.WORKSPACE))
+check_true("find_chrome takes no caller-supplied path, so the exemption cannot run "
+           "an arbitrary binary",
+           screenshot.find_chrome.__code__.co_argcount == 0)
+
+# ---- the two audit exceptions added on 2026-11-05, which each broke the check
+# they were loosening. Both were written to clear ONE real reference in the GNE
+# myopathy corpus and both silently disarmed the defect for every other row.
+
+# (a) "interior capital" was written `[A-Za-z]*`, which matches empty, so a
+# LEADING capital qualified and every Title Case title lost the missing-space
+# check. The suppression is for strain and area notation only.
+check_true("Title Case genus glued to a comma is still a defect",
+           any(d.startswith("missing-space") for d in defects(
+               "Carew, T. J. (1971). Habituation in the Marine Mollusc,Tritonia Diomedea. Science, 1, 1-2.")))
+check_true("a Title Case species list glued to a comma is still a defect",
+           any(d.startswith("missing-space") for d in defects(
+               "Carew, T. J. (1971). Learning in Aplysia,Tritonia and Hermissenda. Science, 1, 1-2.")))
+check_true("a mouse strain background FVB;B6 is not a missing space",
+           not any(d.startswith("missing-space") for d in defects(
+               "Valles-Ayoub, Y. (2012). Mixed inbred FVB;B6 background strain attenuates kidney "
+               "disease. Molecular Biology, 1, 1-9.")))
+check_true("cortical areas V1,V2 are not a missing space",
+           not any(d.startswith("missing-space") for d in defects(
+               "Smith, J. (2020). Responses in V1,V2 and V4. Neuron, 1, 1-2.")))
+
+# (b) the French-typography exception excused a ' ? ' before a capitalized
+# clause, which is the exact shape of the Wehner 1987 mojibake the check exists
+# for. No rule on the APA string separates the two: both parse with "?" as the
+# terminal and a trailing space on the title. So a GLUED '?' stays a defect and
+# a SPACED one is a warning a human acknowledges.
+check_true("a '?' glued to a letter is still a defect", any(
+    "mangled-punct" in d for d in defects(
+        "Wehner, R. (1987). ?Matched filters? ?neural models of the world. JCP A, 161(4), 511-531.")))
+check_true("a spaced '?' is not a silent pass", any(
+    n.startswith("spaced-question-mark") for n in notes(
+        "Wehner, R. (1987). Matched filters ? Neural models of the world. JCP A, 161(4), 511-531.")))
+check_true("a spaced '?' is not an unfixable defect", not any(
+    "mangled-punct" in d for d in defects(
+        "Marion, S. (2017). Myopathie GNE : L'echec et apres ? Medecine/Sciences, 33, 55-56.")))
+check_true("a French title's spaced '?' raises the same acknowledgeable warning", any(
+    n.startswith("spaced-question-mark") for n in notes(
+        "Marion, S. (2017). Myopathie GNE : L'echec et apres ? Medecine/Sciences, 33, 55-56.")))
+check_true("a legitimate question mark is still clean", not any(
+    "mangled-punct" in d for d in defects(
+        "Dewsbury, D. (1978). What is (was?) the fixed action pattern? Animal Behaviour, 26, 310-311.")))
+check_true("a spaced-'?' warning carries a short stable id for --ack",
+           references.warning_id("spaced-question-mark: a long explanation") == "spaced-question-mark")
+
 # ---- report ---------------------------------------------------------------
+# The count is reported on both paths. These checks run as the module loads, so an
+# exception part way through stops the rest, and a run that reports only failures
+# cannot distinguish "everything passed" from "most of it never ran".
 if FAILURES:
-    print(f"FAILED {len(FAILURES)} check(s):\n")
+    print(f"FAILED {len(FAILURES)} of {RAN} check(s):\n")
     for f in FAILURES:
         print("  ✗ " + f)
     sys.exit(1)
-print("✓ all formatting/audit/citation regression checks pass")
+print(f"✓ all {RAN} formatting/audit/citation regression checks pass")

@@ -54,6 +54,7 @@ and CI fails if any copy is stale.
 | `cite_check.py` | 7 | Gate: every in-text citation in a review must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
 | `prose_audit.py` | 7 | Measure a review's prose, and check that a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |
 | `review_paper.py` | 7 | Build a review article (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
+| `screenshot.py` | 7 | Screenshot a built page in light, dark and phone widths, so a human can look at it. | `--modes` `--out` `--page` `--quiet` `--root` |
 | `lab_corpus.py` | L1 | Lab mode: fetch a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `lab_lane.py` | L2 | Lab mode, Phase L2: check the lab's record by content, then turn it into lane L. | `--abstracts` `--batch` `--build` `--dir` `--lane` `--out` `--papers` `--pi` `--prepare` `--themes` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
@@ -1377,6 +1378,47 @@ A relative figure path is read from the folder of --out.
 
   python3 tools/review_paper.py --rows rows.json --content content.json \
           --out <Topic>_review.docx [--figure <topic>_families.png]
+```
+
+### Phase 7: `screenshot.py`
+
+```text
+Screenshot a built page in light, dark and phone widths, so a human can look at it.
+
+A page that builds is not a page that reads: a passing build says nothing about raw
+shortcodes, unreadable dark-mode colors or a layout that breaks at phone width. The
+only way to know is to look, so this renders the page and writes the images.
+
+    python3 tools/screenshot.py --page <topic>_review.html
+
+It drives a headless browser, and no headless browser runs inside Claude Code's
+sandbox. The sandbox denies the mach bootstrap every modern browser needs to spawn
+its child processes, so Chrome and Firefox both abort at startup with the identical
+`bootstrap_check_in ... Error:1100`, whatever flags they are given. Firefox was
+tested on 2026-11-05 specifically to see whether it escaped the problem; it does not,
+and neither would Playwright or Puppeteer, which drive those same browsers. Rendering
+therefore needs a sandbox exemption, which is why this is one narrow script with one
+stable command line rather than an ad-hoc browser invocation each time:
+
+    "sandbox": {"excludedCommands": ["Bash(python3 /abs/path/to/tools/screenshot.py *)"]}
+
+**It refuses any page or output directory outside --root (the working directory by
+default), and refuses a --root outside the workspace that holds this toolkit.** Both
+bounds matter. --root alone is an ordinary argument, and the exemption pattern ends
+in `*`, so a caller could once pass `--root /` and photograph anything on the disk
+with the sandbox off; the ceiling is what makes the bound real rather than advisory.
+Chrome is likewise located from a fixed list, not from an argument, so the exemption
+cannot be turned into "run this binary outside the sandbox". Symbolic links are
+resolved before both checks, so a link inside the tree pointing out of it is refused.
+
+Each capture is the top of the page at the mode's window size, not the whole page:
+Chrome's --screenshot photographs the viewport. The run says how tall each capture
+was, because a reviewer who is told "wrote 3 images" and sees only the first screenful
+believes a long page was checked when it was not.
+
+Exits 1 when Chrome is missing, when a path escapes the root or the root escapes the
+workspace, or when a mode produces no image, so a silent failure cannot pass for a
+clean render.
 ```
 
 ### Lab mode L1: `lab_corpus.py`

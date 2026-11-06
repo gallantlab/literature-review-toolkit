@@ -1006,14 +1006,24 @@ def main():
     s.append('</svg>')
     svg = "".join(s)
 
-    # optional embedded xlsx download button (base64 data URI -> works offline)
+    # optional embedded xlsx download button (base64 data URI -> works offline).
+    # The embed is a SNAPSHOT taken now. The playbook builds the spreadsheet after
+    # this figure (step 14 vs step 12), so a later spreadsheet.py run leaves the
+    # copy behind this button stale; spreadsheet.py checks for that and says so.
     xlsx_btn = ""
-    if args.xlsx and os.path.exists(args.xlsx):
-        with open(args.xlsx, "rb") as xf:
-            b64 = base64.b64encode(xf.read()).decode()
-        xlsx_btn = (f'<a class="dl" download="{esc(os.path.basename(args.xlsx))}" '
-                    f'href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;'
-                    f'base64,{b64}">⬇ Download table (.xlsx)</a>')
+    if args.xlsx:
+        if os.path.exists(args.xlsx):
+            with open(args.xlsx, "rb") as xf:
+                b64 = base64.b64encode(xf.read()).decode()
+            xlsx_btn = (f'<a class="dl" download="{esc(os.path.basename(args.xlsx))}" '
+                        f'href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;'
+                        f'base64,{b64}">⬇ Download table (.xlsx)</a>')
+        else:
+            # Silently dropping the button hid a missing spreadsheet on a first run,
+            # where the playbook renders this figure before the spreadsheet exists.
+            print(f"  ⚠ --xlsx {args.xlsx} does not exist; the figure has no download "
+                  "button. Build the spreadsheet, then re-render this figure.",
+                  file=sys.stderr)
 
     # Everything the hover panel needs about a family, including the lineage that
     # families.json has always carried and the figure never showed.

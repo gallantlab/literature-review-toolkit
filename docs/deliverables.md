@@ -113,12 +113,23 @@ not only its length.
 | `--lab-color '#c1121f'` | sets the ring color; quote it, or the shell reads `#` as a comment |
 | `--spec figure_spec.json` | editorial overlay: manual labels, arrows, notes, lane order |
 | `--shape-by`, `--square-if`, `--triangle-if`, `--shape-legend` | draws papers in up to three shapes by a field's value |
-| `--xlsx <file>` | embeds the spreadsheet, with a download button |
+| `--xlsx <file>` | embeds the spreadsheet, with a download button (a snapshot: see the warning below) |
 
 !!! warning "Raising a threshold can remove a label already shown"
     A higher `--motif-min` shrinks the pool of qualifying papers, not only the
     cap. Compare the label sets before and after, and choose the highest
     threshold that removes nothing.
+
+!!! danger "`--xlsx` embeds a snapshot, so re-render the figure last"
+    The download button carries a copy of the spreadsheet as it was when the
+    figure was rendered. This page's own order renders the figure (step 12)
+    before it builds the spreadsheet (step 14), so the copy behind that button
+    is routinely older than the delivered table, and a reader who downloads it
+    from a distributed figure gets references that a later canon pass corrected.
+    After the final `spreadsheet.py` run, re-render the figure with the arguments
+    in `figure_render_args.txt`. `spreadsheet.py` compares the two and names any
+    page whose embedded copy differs, ignoring the build timestamp so an
+    unchanged rebuild stays quiet.
 
 ## Build the spreadsheet (Phase 5)
 

@@ -391,8 +391,13 @@ def audit(apa, has_source):
     if parts:
         t = parts["title"]
         # a comma inside a spaceless parenthesized/bracketed term is notation, not
-        # stripped markup ("Factor(U,T)", "[0,1]", "f(x,y)")
-        if re.search(r"[,;](?=[A-Za-z])", re.sub(r"[(\[][^\s()\[\]]*[)\]]", "", t)):
+        # stripped markup ("Factor(U,T)", "[0,1]", "f(x,y)"). So is a separator
+        # inside a spaceless token that carries an interior capital or digit: mouse
+        # strain nomenclature writes a mixed background as "FVB;B6", and stripped
+        # markup never produces that shape, because the word it glued is prose.
+        bare = re.sub(r"[(\[][^\s()\[\]]*[)\]]", "", t)
+        bare = re.sub(r"\b[A-Za-z]+[A-Z0-9][A-Za-z0-9]*[,;][A-Za-z0-9]+[A-Z0-9][A-Za-z0-9]*\b", "", bare)
+        if re.search(r"[,;](?=[A-Za-z])", bare):
             # a comma or semicolon with no space after it: CrossRef's JATS markup
             # was stripped without a separator ("marine mollusc,Tritonia")
             defects.append("missing-space (punctuation glued to the next word)")
@@ -400,14 +405,26 @@ def audit(apa, has_source):
             # same bug where the tag wrapped a genus ("cockroachPeriplaneta")
             defects.append("missing-space (a genus is glued to the preceding word)")
     no_url = re.sub(r"https?://\S+", "", apa)
-    if re.search(r"\?[A-Za-z]", no_url) or re.search(r"\s\?\s", no_url):
-        # A '?' glued to a letter, or floating alone, is a smart quote / dash the
-        # source could not encode (Wehner 1987 came back as "?Matched filters? ?
-        # neural models"). A real question mark is followed by a space or a
-        # closing bracket, so "What is (was?) the fixed action pattern?" is fine.
-        # A URL's query string is not prose: a hand-checked ICLR reference ending
-        # "openreview.net/forum?id=HkEI22jeg" failed here (2026-10-07).
-        defects.append("mangled-punct (a '?' where a quote or dash belongs — fix by hand)")
+    # A '?' GLUED to a letter is unambiguously a smart quote or dash the source
+    # could not encode (Wehner 1987 came back as "?Matched filters? ?neural
+    # models"). Nothing correctly typeset looks like that, so it stays a defect.
+    # A URL's query string is not prose: a hand-checked ICLR reference ending
+    # "openreview.net/forum?id=HkEI22jeg" failed here (2026-10-07).
+    if re.search(r"\?[A-Za-z]", no_url):
+        defects.append("mangled-punct (a '?' glued to a letter — a quote or dash the source lost)")
+    elif re.search(r"\s\?\s", no_url):
+        # A '?' with a space on BOTH sides is genuinely ambiguous, and no rule on
+        # the APA string can resolve it: French typography spaces the mark before
+        # a question ("... et apres ? Medecine/Sciences") and a mojibaked em dash
+        # between two clauses ("Matched filters ? Neural models") parse the same
+        # way, terminal and all. A 2026-11-05 exception tried to tell them apart
+        # by shape and silently excused the mojibake it was meant to catch. So
+        # this is a warning instead: a human reads the published title and records
+        # the answer with --ack, which a re-canon cannot undo. A real question mark
+        # is followed by a space or a bracket, so "What is (was?) the pattern?" is
+        # fine and never reaches here.
+        notes.append("spaced-question-mark: a ' ? ' is either French typography (correct) "
+                     "or a mojibaked quote/dash (wrong) — check the published title")
     if "‐" in apa or "‑" in apa:
         defects.append("unicode-hyphen (U+2010/U+2011 in a name — normalize to ASCII '-')")
     if re.search(r"\(\.|\[\.", apa):
@@ -560,6 +577,10 @@ def warning_id(note):
         return f"cached-year:{m.group(1)}/{m.group(2)}"
     if note.startswith("glued-footnote"):
         return "glued-footnote"
+    if note.startswith("spaced-question-mark"):
+        # the note carries a long explanation; the id is the bare category, so
+        # audit_acks.json stays readable and the ack survives a reworded note
+        return "spaced-question-mark"
     return note
 
 

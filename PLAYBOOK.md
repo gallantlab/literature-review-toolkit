@@ -1209,6 +1209,16 @@ embedded via `bib_viewer.render()` with `provenance=False` under a masthead that
 already carries the disclosure). After a change to the viewer's filter code, run
 `node tools/checks/verify_bib_filter.mjs <page>.html` on a page that carries it.
 
+**Look at the page before you call it done.** A build that exits 0 says nothing about
+raw shortcodes, unreadable dark-mode colors or a layout that breaks at phone width.
+Run `python3 tools/screenshot.py --page <page>.html --root <workspace>` and read the
+three images it writes. It needs a sandbox exemption, because no headless browser runs
+inside the sandbox: Chrome and Firefox are both refused the mach bootstrap they use to
+spawn child processes. The script is the only thing that should hold that exemption,
+and it refuses any page, output directory or root outside the workspace. Each capture
+is the TOP of the page at that width, not the whole page, so check further down another
+way before claiming the whole page was reviewed.
+
 **A toolkit fix reaches a delivered review only when you re-render it.**
 `reference_list` once sorted each author's works by title instead of year (67
 inversions across 7 delivered reviews, fixed 2026-09-23). Before overwriting a
@@ -1606,6 +1616,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `cite_check.py` | 7 | Gate: every in-text citation in a review must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
 | `prose_audit.py` | 7 | Measure a review's prose, and check that a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |
 | `review_paper.py` | 7 | Build a review article (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
+| `screenshot.py` | 7 | Screenshot a built page in light, dark and phone widths, so a human can look at it. | `--modes` `--out` `--page` `--quiet` `--root` |
 | `lab_corpus.py` | L1 | Lab mode: fetch a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `lab_lane.py` | L2 | Lab mode, Phase L2: check the lab's record by content, then turn it into lane L. | `--abstracts` `--batch` `--build` `--dir` `--lane` `--out` `--papers` `--pi` `--prepare` `--themes` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
