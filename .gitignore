@@ -8,6 +8,12 @@ __pycache__/
 .venv/
 venv/
 
+# Local review documents: pages built for a human to read once, kept beside the
+# code but not part of it. Tracking them would also inflate the computed version,
+# since version.py counts uncommitted work as the next commit.
+/code_review_*.html
+/playbook_to_code_*.html
+
 # Editor / OS
 .DS_Store
 .idea/
