@@ -194,7 +194,8 @@ never overwrites a PDF already filed.
 
 ```bash
 # write the prose into content.json, after the priority audit
-python3 ../tools/cite_check.py --rows rows.json --content content.json   # the gate
+python3 ../tools/cite_check.py --rows rows.json --content content.json      # gate
+python3 ../tools/priority_check.py --rows rows.json --content content.json  # gate
 python3 ../tools/review_paper.py --rows rows.json --content content.json \
         --figure <topic>_families.png --out <topic>_review.docx
 ```
@@ -202,10 +203,15 @@ python3 ../tools/review_paper.py --rows rows.json --content content.json \
 The agent writes the prose; it is the user's decision whether to have one. Three
 safeguards apply:
 
-- **The priority audit.** Before rendering, an independent pass checks that every
-  claim of origin cites the earliest paper that earned it, not whichever reference
-  fits the sentence. On one 396-paper review it found five such inversions and
-  four factual errors.
+- **The priority gate.** `priority_check.py` finds every sentence that claims an
+  origin and exits 1 when one of its citation groups runs newest-before-oldest.
+  Years come from the canonical references, so the corpus decides, not the prose.
+  It also lists, for each such claim, the corpus papers published earlier whose
+  titles overlap the sentence — candidates for a reader to judge, not findings.
+- **The priority audit.** The gate sees order and shared words. An independent pass
+  still checks that every claim of origin cites the earliest paper that earned it:
+  a later review credited for an earlier primary finding shares no vocabulary with
+  it. On one 396-paper review it found five such inversions and four factual errors.
 - **The citation gate.** `cite_check.py` exits 1 if any in-text citation does not
   match a row in `rows.json`. If one author and year match two rows, name more
   authors (APA-7 §8.19).

@@ -114,7 +114,7 @@ is the order, with the steps that can run at the same time.
 | 12 | Assign the families and render the timeline | 6b | `families.py`, `families_figure.py` | [Deliverables](deliverables.md#families-and-the-timeline-phase-6b) |
 | 13 | Acknowledge each remaining warning | — | `references.py --list-acks` | [Checking](checks.md#acknowledge-warnings) |
 | 14 | Build the spreadsheet | 5 | `spreadsheet.py` | [Deliverables](deliverables.md#build-the-spreadsheet-phase-5) |
-| 15 | Write the review, if asked | 7 | `cite_check.py`, `review_paper.py` | [Deliverables](deliverables.md#write-the-review-phase-7) |
+| 15 | Write the review, if asked | 7 | `cite_check.py`, `priority_check.py`, `review_paper.py` | [Deliverables](deliverables.md#write-the-review-phase-7) |
 | 16 | Hand off | 8 | — | [Deliverables](deliverables.md#hand-off-phase-8) |
 
 Step 7's tools share one Semantic Scholar key, and a shared pacer keeps them from

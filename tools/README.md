@@ -52,6 +52,7 @@ and CI fails if any copy is stale.
 | `families_figure.py` | 6b | Render the interactive lineage timeline of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--shape-by` `--shape-legend` `--size-by-citations` `--size-range` `--spec` `--square-if` `--time-warp` `--title` `--triangle-if` `--xlsx` |
 | `bib_viewer.py` | 7 | Render a searchable bibliography of the whole corpus, for a page that has no timeline. | `--author` `--author-note` `--families` `--out` `--rows` `--subtitle` `--title` |
 | `cite_check.py` | 7 | Gate: every in-text citation in a review must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
+| `priority_check.py` | 7 | Gate: an origin claim cites its sources oldest-first (contract rule 5). | `--content` `--key` `--no-worklist` `--page` `--quiet` `--relevance` `--rows` `--top` |
 | `prose_audit.py` | 7 | Measure a review's prose, and check that a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |
 | `review_paper.py` | 7 | Build a review article (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `screenshot.py` | 7 | Screenshot a built page in light, dark and phone widths, so a human can look at it. | `--modes` `--out` `--page` `--quiet` `--root` |
@@ -1298,6 +1299,45 @@ which this tool cannot write for you.
 APA-7's other disambiguator is a year suffix (2025a, 2025b). references.py and
 this tool both accept one. Adding it means editing the canonical `apa` strings in
 rows.json, so the extra-author form is usually the cheaper fix.
+```
+
+### Phase 7: `priority_check.py`
+
+```text
+Gate: an origin claim cites its sources oldest-first (contract rule 5).
+
+The most common failure of a model-written review is crediting whichever paper
+fits the sentence rather than the one that established the idea. The rule has
+two halves, and only one of them is mechanical.
+
+  python3 tools/priority_check.py --rows rows.json --content content.json
+  python3 tools/priority_check.py --rows rows.json --page build_review_page.py
+
+**The gate (mechanical).** A sentence that makes an origin claim — it says a
+finding *emerged*, was *first* shown, *established*, *identified*, *introduced*,
+*discovered* — and cites several papers in one group must cite them oldest
+first. A group is one parenthesis, `(Desimone et al., 1984; Tanaka, 1996)`, or
+one `[[REF|REF]]` marker on the page route. Years come from each row's canonical
+`apa`, so a reordering that the prose claims and the corpus denies cannot pass.
+Exit 1 on any inversion.
+
+Only within-group order is gated. Two separate citations in one sentence often
+belong to two different claims ("X showed A (Smith, 2000) while Y showed B
+(Jones, 1990)"), and gating those would fail correct prose.
+
+**The worklist (judgment).** Order is the symptom; the real failure is citing a
+1996 review for a 1984 primary finding when both are in the corpus. For every
+origin claim the tool lists corpus rows published BEFORE the earliest paper the
+sentence cites whose titles overlap the sentence, scored by `common.title_score`
+at `--relevance` or better. That is a worklist for a reader, not a verdict: a
+listed row may be off-topic, and an absent one may still deserve priority. Work
+it before delivering, and keep the independent priority audit (PLAYBOOK Phase 7)
+for what no word overlap can see — a later model credited for an earlier
+empirical result, a narrower paper preferred over a more general one of the
+same year, the lab's own foundational work relegated in lab mode.
+
+Run it beside `cite_check.py`, before the review renders. It reads the review
+only; it never writes.
 ```
 
 ### Phase 7: `prose_audit.py`

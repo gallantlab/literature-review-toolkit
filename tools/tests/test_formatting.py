@@ -20,6 +20,7 @@ import families  # noqa: E402
 import families_figure  # noqa: E402
 import forward  # noqa: E402
 import gen_docs  # noqa: E402
+import priority_check  # noqa: E402
 import prose_audit  # noqa: E402
 import references  # noqa: E402
 import review_paper  # noqa: E402
@@ -6398,6 +6399,83 @@ check("every tool in the output-artifacts table is listed under its own PHASE",
       sorted(set(_bad_phase)), [])
 check_true("the output-artifacts table still has every row",
            len([ln for ln in _art.split("\n")[2:] if ln.startswith("|")]) == 13)
+
+# ---- priority_check: origin claims cite oldest-first (contract rule 5) ----
+# The gate half of the rule. Every case is one of the inversions PLAYBOOK Phase 7
+# records from real drafts, or a false positive that would make the gate unusable.
+
+check_true("an origin claim is recognized by its verb",
+           all(priority_check.TRIGGER_RE.search(s) for s in [
+               "Selectivity was first described in the macaque.",
+               "The idea emerged from single-unit recordings.",
+               "Hubel and Wiesel established the columnar organization.",
+               "This foundational work predates the imaging era.",
+               "Early work used anesthetized preparations."]))
+check_true("an ordinary finding sentence is not an origin claim",
+           not any(priority_check.TRIGGER_RE.search(s) for s in [
+               "Responses were stronger for faces than for houses.",
+               "A later study replicated the effect in humans.",
+               "The model explains 72% of the variance."]))
+
+# Tanaka 1996 (a review) credited before Desimone et al. 1984 (the primary
+# finding) is the canonical inversion. Order is checked inside one group only.
+_grp = [("Tanaka, 1996", 1996), ("Desimone et al., 1984", 1984)]
+check("a newer citation before an older one is an inversion",
+      priority_check.inversions(_grp),
+      [("Tanaka, 1996", 1996, "Desimone et al., 1984", 1984)])
+check("oldest-first passes", priority_check.inversions(list(reversed(_grp))), [])
+check("same year is not an inversion",
+      priority_check.inversions([("A, 2008", 2008), ("B, 2008", 2008)]), [])
+# An unresolved citation has no year. Comparing against None once raised on a
+# real corpus; it must be skipped, not guessed.
+check("an unknown year is skipped, not compared",
+      priority_check.inversions([("A, 1996", 1996), ("B, ?", None)]), [])
+
+_rows_pc = [
+    {"ref": "R-1", "apa": "Desimone, R., Albright, T. D., Gross, C. G., & Bruce, C. (1984). "
+                          "Stimulus-selective properties of inferior temporal neurons in the "
+                          "macaque. Journal of Neuroscience, 4(8), 2051-2062."},
+    {"ref": "R-2", "apa": "Tanaka, K. (1996). Inferotemporal cortex and object vision. "
+                          "Annual Review of Neuroscience, 19, 109-139."},
+]
+_bykey, _byref = priority_check.year_index(_rows_pc, "ref")
+check("the page route reads a marker group in written order",
+      priority_check.groups_in("It was first shown [[R-2|R-1]].", False, _bykey, _byref),
+      [[("R-2", 1996), ("R-1", 1984)]])
+check("the content route reads a parenthetical group in written order",
+      priority_check.groups_in("It was first shown (Tanaka, 1996; Desimone et al., 1984).",
+                               True, _bykey, _byref),
+      [[("Tanaka, 1996", 1996), ("Desimone et al., 1984", 1984)]])
+# A narrative citation is a group of one: it cannot be out of order, but its
+# year is the floor the worklist searches below.
+check("a narrative citation sets a floor",
+      priority_check.groups_in("Tanaka (1996) established the account.",
+                               True, _bykey, _byref),
+      [[("Tanaka, 1996", 1996)]])
+
+# A canonical row has no `title` field at all — the title is inside its `apa`.
+# Reading r["title"] first found nothing on a 544-row corpus and silently
+# emptied the whole worklist.
+check("a row's title comes out of its canonical apa",
+      priority_check.corpus_titles(_rows_pc, "ref")[1],
+      ("R-2", 1996, "Inferotemporal cortex and object vision"))
+
+# A two-word title matches every sentence in a review about its subject: "The
+# sialic acids" headed the worklist of every claim on the GNE corpus.
+check("a title too short to mean anything is not scored",
+      priority_check.overlap({"sialic", "acids", "epimerase"}, "The sialic acids"), None)
+check("overlap is the share of the title's content words the sentence uses",
+      priority_check.overlap({"distal", "myopathy", "rimmed", "vacuoles", "japanese"},
+                             "Distal myopathy with rimmed vacuoles"), 1.0)
+check_true("an unrelated title scores low",
+           priority_check.overlap({"distal", "myopathy", "rimmed", "vacuoles"},
+                                  "Enzymatic synthesis of sialic acid phosphates") < 0.3)
+
+# priority_check.detag keeps the markers prose_audit.detag drops: on the page
+# route they ARE the citations.
+check("markers survive detag here", priority_check.detag("<p>It was first shown[[R-1]].</p>"),
+      "It was first shown[[R-1]].")
+
 
 # ---- report ---------------------------------------------------------------
 # The count is reported on both paths. These checks run as the module loads, so an

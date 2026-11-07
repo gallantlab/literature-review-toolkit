@@ -48,6 +48,8 @@ eleventh rule.
 5. **Audit the temporal order of ideas before delivering any written review**
    (Phase 7). An origin claim cites the EARLIEST deserving paper, and multiple
    citations go oldest-first, not whichever ref fits the sentence.
+   `priority_check.py` gates the order and lists the earlier corpus rows each
+   claim overlooks; the independent audit still runs on what it cannot see.
 6. **`rows.json` is the live table from the first successful merge (Phase 2c).**
    From then on, add rows only with `merge_lanes.py --append`, and change them
    only by tool writes or recorded hand fixes (Phase 3f). Never regenerate it: a
@@ -1141,21 +1143,29 @@ the next render and leaves the output disagreeing with its script.
 **Priority: cite the earliest deserving paper (contract rule 5).** The most common
 failure of a model-written review is crediting whichever paper fits the sentence
 rather than the one that established the idea. A sentence making an **origin claim**
-(*emerges, first, established, identified, introduced, was mapped, showed that, had
-been, early work, foundational, began, demonstrated, discovery*) cites the earliest
-paper that deserves priority, with multiple citations oldest-first. Four inversions
-seen in real drafts (2026-06-13):
+cites the earliest paper that deserves priority, with multiple citations
+oldest-first. The four inversion shapes seen in real drafts are in `LESSONS.md`
+("Priority and the order of ideas"); a later review credited for an earlier primary
+finding is the common one.
 
-- a later **review** credited for an earlier **primary** finding (Tanaka 1996 vs.
-  Desimone et al. 1984 for object/face selectivity in IT);
-- a later **model** credited for an earlier **empirical** result (Reynolds & Heeger
-  2009 vs. McAdams & Maunsell 1999 for attention changing gain/tuning);
-- a later, narrower paper preferred over an earlier, **more general** one of the same
-  year (Dumoulin & Wandell 2008 pRF vs. Kay et al. 2008's per-voxel model);
-- in **lab mode**, the lab's own foundational paper relegated while another group's
-  follow-up takes the priority slot (Hegdé & Van Essen 2000 vs. Gallant et al. 1993
-  for complex-form selectivity in V4). The lab's antecedents (Phase 2b / L4c) exist so
-  priority can be assigned correctly.
+**`priority_check.py` is a gate.**
+
+```bash
+python3 tools/priority_check.py --rows rows.json --page build_review_page.py
+python3 tools/priority_check.py --rows rows.json --content content.json
+```
+
+It finds every origin-claim sentence by its verb — the trigger vocabulary is
+`priority_check.TRIGGERS`, and this file deliberately keeps no second copy — and
+exits 1 when one citation group in such a sentence runs newest-before-oldest. Years
+come from each row's canonical `apa`, so the corpus, not the prose, decides. Only
+order within a single group (one parenthesis, or one `[[REF|REF]]` marker) is gated:
+two separate citations in one sentence usually belong to two claims.
+
+It then prints a **worklist**: for each origin claim, the corpus rows published
+before the earliest paper it cites whose titles overlap the sentence (`--relevance`,
+default 0.45; `--top`, default 5). Those are candidates, not verdicts. Work the list,
+then run the audit below for what word overlap cannot see.
 
 **Priority audit (required before delivering).** After drafting, dispatch one
 independent agent with the draft prose and `rows.json` (every paper with its year).
@@ -1163,8 +1173,9 @@ It scans every origin-claim sentence, checks whether an earlier paper in `rows.j
 (or an undisputed classic) deserves priority, and reports each inversion as
 `claim → currently cites (year) → earlier source (year) → fix`. Apply the confirmed
 fixes: reorder oldest-first, add the originating paper, demote the later work to
-"later", and reword as history. Self-review misses these because the drafting model is
-biased toward its own story.
+"later", and reword as history. The gate sees order and the worklist sees shared
+words; neither sees a later model credited for an earlier empirical result. Self-review
+misses these too, because the drafting model is biased toward its own story.
 
 **Concision pass (required; `tools/prose_audit.py`).** A model-written draft is
 accurate and unreadable, and the defect is compression, not vocabulary: four or five
@@ -1204,7 +1215,8 @@ the module docstring.
 
 ```bash
 python3 write_review.py            # project file: authors prose -> content.json
-python3 tools/cite_check.py --rows rows.json --content content.json   # GATE: exits 1
+python3 tools/cite_check.py --rows rows.json --content content.json      # GATE: exits 1
+python3 tools/priority_check.py --rows rows.json --content content.json  # GATE: exits 1
 python3 tools/review_paper.py --rows rows.json --content content.json \
         --figure <topic>_families.png --out <Topic>_review.docx
 ```
@@ -1387,7 +1399,7 @@ priority audit credit the lab's earlier work over later follow-ups (contract rul
 The incidents behind the rules in this file are in [`LESSONS.md`](LESSONS.md): lane
 briefs and search agents, casing and foreign-language titles, what CrossRef gets
 wrong, versions and duplicates, the three network failures that look alike, citation
-counts, and the spreadsheet. Read it when you change a tool. A review does not need
+counts, priority and the order of ideas, and the spreadsheet. Read it when you change a tool. A review does not need
 it, because every rule it explains is already a gate that refuses, a regression check
 or a line in a lane brief.
 
@@ -1456,6 +1468,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `families_figure.py` | 6b | Render the interactive lineage timeline of the theoretical families. | `--emphasize-source` `--families` `--internal` `--lab-author` `--lab-color` `--max-labels` `--min-year` `--motif-min` `--no-auto-landmarks` `--no-raster` `--out-prefix` `--per-family` `--rows` `--shape-by` `--shape-legend` `--size-by-citations` `--size-range` `--spec` `--square-if` `--time-warp` `--title` `--triangle-if` `--xlsx` |
 | `bib_viewer.py` | 7 | Render a searchable bibliography of the whole corpus, for a page that has no timeline. | `--author` `--author-note` `--families` `--out` `--rows` `--subtitle` `--title` |
 | `cite_check.py` | 7 | Gate: every in-text citation in a review must name a paper in rows.json. | `--content` `--key` `--quiet` `--rows` |
+| `priority_check.py` | 7 | Gate: an origin claim cites its sources oldest-first (contract rule 5). | `--content` `--key` `--no-worklist` `--page` `--quiet` `--relevance` `--rows` `--top` |
 | `prose_audit.py` | 7 | Measure a review's prose, and check that a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |
 | `review_paper.py` | 7 | Build a review article (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `screenshot.py` | 7 | Screenshot a built page in light, dark and phone widths, so a human can look at it. | `--modes` `--out` `--page` `--quiet` `--root` |

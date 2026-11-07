@@ -182,6 +182,33 @@ succeeds where the tool failed, it is not the server, and `--sleep` will not hel
 - The two columns will not match each other, and GS-style totals run higher than
   both.
 
+## Priority and the order of ideas (Phase 7)
+
+Contract rule 5. `tools/priority_check.py` gates the mechanical half: within one
+citation group in an origin-claim sentence, years must run oldest-first. The four
+shapes below are what it cannot see, and what the independent priority audit is for.
+All four come from real drafts (2026-06-13):
+
+- a later **review** credited for an earlier **primary** finding (Tanaka 1996 vs.
+  Desimone et al. 1984 for object/face selectivity in IT);
+- a later **model** credited for an earlier **empirical** result (Reynolds & Heeger
+  2009 vs. McAdams & Maunsell 1999 for attention changing gain/tuning);
+- a later, narrower paper preferred over an earlier, **more general** one of the same
+  year (Dumoulin & Wandell 2008 pRF vs. Kay et al. 2008's per-voxel model);
+- in **lab mode**, the lab's own foundational paper relegated while another group's
+  follow-up takes the priority slot (Hegdé & Van Essen 2000 vs. Gallant et al. 1993
+  for complex-form selectivity in V4). The lab's antecedents (Phase 2b / L4c) exist so
+  priority can be assigned correctly.
+
+Two things learned building the gate (2026-11-06), both of which emptied it silently:
+
+- *A canonical row has no `title` field.* The title lives inside the `apa` string;
+  `common.parse_apa` is what reads it. Reading `row["title"]` first returned nothing
+  on all 544 rows of the GNE corpus and produced an empty worklist that looked clean.
+- *A title of one or two content words matches everything.* "The sialic acids" headed
+  the worklist of every claim in a review about sialic acid. The floor is
+  `common.MIN_MAIN_TITLE_WORDS`, the same one `title_agrees` uses.
+
 ## On the spreadsheet
 
 - **Ref ids must be unique across merges, and counts must not be keyed by a reused
