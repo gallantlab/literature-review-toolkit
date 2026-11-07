@@ -6593,6 +6593,34 @@ check_true("a cleared preflight proposes nothing",
            status.s_preflight(_stp) and status.s_preflight(_stp)[2] is None
            if _stp.json("preflight.json") else True)
 
+# Rewinding a real 544-row build through its phases (2026-11-06) found two
+# defects that synthetic fixtures had not: a permanently-outstanding step
+# swallows the next command for everything behind it, and the timeline is
+# offered on every review rather than being optional.
+_st3 = _tf.mkdtemp()
+common.dump_json([{"ref": "A-1", "doi": "10.1/a", "canonical_at": "2026-11-06",
+                   "apa": "Smith, J. (2020). A. J, 1, 1."}],
+                 os.path.join(_st3, "rows.json"))
+_p3 = status.Project(_st3, "rows.json")
+check("with no workbook, the audit is outstanding", status.s_audit(_p3)[0], "todo")
+check("a missing families file proposes the digest, because the offer is required",
+      status.s_families(_p3)[0], "todo")
+check_true("the digest is the command it proposes",
+           "families.py" in status.s_families(_p3)[2])
+
+# spreadsheet.py refuses to write a non-draft workbook unless the audit passed
+# (contract rule 9), so the workbook is the evidence -- until the table moves.
+_book = os.path.join(_st3, "corpus.xlsx")
+open(_book, "w").close()
+os.utime(_book, (time.time() + 10, time.time() + 10))
+check("a workbook written after the table proves the audit passed",
+      status.s_audit(status.Project(_st3, "rows.json"))[0], "done")
+check("the proof is not a command to run again",
+      status.s_audit(status.Project(_st3, "rows.json"))[2], None)
+os.utime(_book, (time.time() - 600, time.time() - 600))
+check("a workbook older than the table is lapsed evidence, not proof",
+      status.s_audit(status.Project(_st3, "rows.json"))[0], "part")
+
 # The writers of rows.json are derived from what each tool CALLS, not grepped:
 # the same names appear in docstrings across the toolkit.
 _writers = status.table_writers(_TOOLS)

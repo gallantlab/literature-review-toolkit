@@ -252,7 +252,10 @@ def s_candidates(p):
 def s_families(p):
     fam = p.json("families.json")
     if not fam:
-        return ("n/a", "no families.json (offer the timeline: Phase 6b)",
+        # The timeline is OFFERED on every review (Phase 6b). The user may
+        # decline it; the agent may not skip the offer. So this is outstanding
+        # work, not an optional extra, and it proposes the digest.
+        return ("todo", "no families.json — the timeline is offered on every review",
                 f"python3 tools/families.py --rows {p.rows_name} --digest")
     assigned = len(fam.get("assignments") or {})
     names = [f["name"] for f in fam.get("families", [])]
@@ -272,11 +275,34 @@ def s_figure(p):
         "--out <topic>_families.html" % p.rows_name)
 
 
+def _mtime(path):
+    return os.path.getmtime(path) if os.path.exists(path) else 0
+
+
 def s_audit(p):
+    """Whether the audit passed, inferred from the one artifact that proves it.
+
+    This tool runs no gate. But spreadsheet.py REFUSES to write a non-draft
+    workbook unless the full audit passed (contract rule 9), so a workbook is
+    evidence that it did — as of the moment it was written. If the table has
+    changed since, that evidence has lapsed.
+
+    Without this the audit step is permanently outstanding, and a permanently
+    outstanding step swallows the next command for every step behind it: a
+    finished build answered "run the audit" instead of "hand off".
+    """
     acks = p.json("audit_acks.json")
-    return ("todo", "the audit is a gate, and this tool does not run it",
-            f"python3 tools/references.py --rows {p.rows_name} --audit"
-            + ("" if acks else "   (then --list-acks for any warning)"))
+    cmd = (f"python3 tools/references.py --rows {p.rows_name} --audit"
+           + ("" if acks else "   (then --list-acks for any warning)"))
+    books = p.glob("*.xlsx", exclude=("_DRAFT", "~$"))
+    if not books:
+        return ("todo", "not run (no workbook yet to prove it passed)", cmd)
+    book, table = max(_mtime(b) for b in books), _mtime(os.path.join(p.path, p.rows_name))
+    if book >= table:
+        return ("done", f"passed when {os.path.basename(books[0])} was written "
+                        "(spreadsheet.py refuses a failing table)", None)
+    return ("part", f"the table changed after {os.path.basename(books[0])} was written — "
+                    "that evidence has lapsed", cmd)
 
 
 def s_spreadsheet(p):
@@ -298,6 +324,9 @@ def s_review(p):
 
 
 def s_handoff(p):
+    out = os.path.join(p.path, "HANDOFF.md")
+    if _mtime(out) >= _mtime(os.path.join(p.path, p.rows_name)) and _mtime(out):
+        return ("done", "HANDOFF.md, written after the last change to the table", None)
     return ("todo", "the report is assembled from the files",
             "python3 tools/handoff.py --project .")
 

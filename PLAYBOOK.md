@@ -1576,8 +1576,12 @@ It reads the artifacts, not a memory of them: the preflight record, the verify
 stamps, the canon stamps, the counts, the summaries, the candidate ledger and its
 run records, the families file, the workbook. A step marked `part` ran over fewer
 rows than the table now holds, which is what a pass from before the candidates
-were appended looks like. It runs no gate, so it can tell you the audit has not
-been run but never that it passes.
+were appended looks like.
+
+It runs no gate. It reports the reference audit from the one artifact that proves
+it: `spreadsheet.py` refuses to write a non-draft workbook unless the audit passed,
+so a workbook written after the last change to `rows.json` is that proof, and a
+workbook written before it is evidence that has lapsed.
 
 Read this playbook, then any existing `rows.json` (after Phase 3f it is the live
 table; the `.xlsx` is only a rendering). Confirm topic and criteria with the user. Do
