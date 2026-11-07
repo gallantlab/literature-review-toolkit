@@ -157,11 +157,28 @@ def s_merge(p):
 
 
 def s_verify(p):
+    """Verified, over the rows verify.py can actually reach.
+
+    verify.py works from a DOI or an arXiv id. A row with neither cannot be
+    verified at any point, ever: it is settled by the hand check, which has
+    its own line (step 3e). Counting those rows in this denominator held a
+    finished build at "54 of 67 rows verified" forever and answered --next
+    with a verify re-run that could never move the number. Found on
+    mri_brain_stimulation (13 DOI-less rows) on 2026-11-07; the same shape as
+    the exceptions s_canon has to allow for.
+    """
     if not p.rows:
         return ("todo", "no table to verify", None)
-    ok = p.count(common.verified_ok)
-    return _part(ok, p.n, "rows verified",
-                 f"python3 tools/verify.py --rows {p.rows_name} --out verify_report.json")
+    can = [r for r in p.rows if any(common.ids_of(r))]
+    if not can:
+        return ("n/a", f"no row of {p.n} has a DOI or arXiv id; all go to the hand check", None)
+    ok = sum(1 for r in can if common.verified_ok(r))
+    state, detail, cmd = _part(ok, len(can), "identified rows verified",
+                               f"python3 tools/verify.py --rows {p.rows_name} "
+                               "--out verify_report.json")
+    if len(can) < p.n:
+        detail += f" ({p.n - len(can)} DOI-less row(s) go to the hand check)"
+    return (state, detail, cmd)
 
 
 def s_handcheck(p):
@@ -233,8 +250,12 @@ def s_candidates(p):
     cands = [(k, v) for k, v in ledger.items() if not k.startswith("_") and isinstance(v, dict)]
     pending = [k for k, v in cands if not v.get("decision")]
     runs = ledger.get("_runs") or {}
-    short = [s for s, r in runs.items()
-             if not r.get("complete", True) or (r.get("n_papers") or 0) < p.n]
+    # A pass that READ fewer papers than the table now holds is the normal
+    # shape once its own candidates have been appended, not a fault — which
+    # is what handoff.py has always said about the same _runs record. Only a
+    # pass that did not finish is outstanding work. (The two tools disagreed
+    # on mri_brain_stimulation, 2026-11-07.)
+    short = [s for s, r in runs.items() if not r.get("complete", True)]
     if pending:
         return ("part", f"{len(pending)} of {len(cands)} candidates undecided",
                 "python3 tools/candidates.py --rows %s --prepare candidate_batches "
@@ -244,9 +265,14 @@ def s_candidates(p):
         return ("part", f"{len(cands)} candidates decided; no {'/'.join(missing)} run recorded",
                 f"python3 tools/{missing[0]}.py --rows {p.rows_name}")
     if short:
-        return ("part", f"{len(cands)} candidates decided; {', '.join(short)} ran short "
-                        "(acknowledge it or re-run)", None)
-    return ("done", f"{len(cands)} candidates, all decided", None)
+        return ("part", f"{len(cands)} candidates decided; {', '.join(short)} did not "
+                        "finish (some fetches failed): acknowledge it or re-run", None)
+    behind = sorted(s for s, r in runs.items() if (r.get("n_papers") or 0) < p.n)
+    note = f"{len(cands)} candidates, all decided"
+    if behind:
+        note += (f"; {', '.join(behind)} read fewer papers than the table now holds "
+                 "(the normal shape after candidates were appended)")
+    return ("done", note, None)
 
 
 def s_families(p):
@@ -393,9 +419,9 @@ def main():
         print(f"  {MARK[state]} {phase:>3}  {name:<21} {detail}")
     print()
     print("next: " + (nxt or "nothing outstanding that this tool can see"))
-    print("\nThis reads the files; it runs no gate. 'part' means a pass ran over "
-          "fewer rows\nthan the table now holds — usually a pass from before "
-          "candidates were appended.")
+    print("\nThis reads the files; it runs no gate. 'part' means a step ran over "
+          "some\nof the rows it covers but not all of them, and names the command "
+          "that\nfinishes it.")
 
 
 if __name__ == "__main__":

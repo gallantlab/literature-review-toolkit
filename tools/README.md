@@ -1330,8 +1330,11 @@ belong to two different claims ("X showed A (Smith, 2000) while Y showed B
 **The worklist (judgment).** Order is the symptom; the real failure is citing a
 1996 review for a 1984 primary finding when both are in the corpus. For every
 origin claim the tool lists corpus rows published BEFORE the earliest paper the
-sentence cites whose titles overlap the sentence, scored by `common.title_score`
-at `--relevance` or better. That is a worklist for a reader, not a verdict: a
+sentence cites whose titles overlap the sentence; a claim that cites NOTHING is
+listed against the whole corpus, since an uncited origin claim is the worst
+case, not an exempt one. `--relevance` is a share of the closest
+title-to-prose match anywhere in this corpus, measured per run, not a fixed
+overlap (see RELEVANCE). That is a worklist for a reader, not a verdict: a
 listed row may be off-topic, and an absent one may still deserve priority. Work
 it before delivering, and keep the independent priority audit (PLAYBOOK Phase 7)
 for what no word overlap can see — a later model credited for an earlier

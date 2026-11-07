@@ -23,8 +23,11 @@ belong to two different claims ("X showed A (Smith, 2000) while Y showed B
 **The worklist (judgment).** Order is the symptom; the real failure is citing a
 1996 review for a 1984 primary finding when both are in the corpus. For every
 origin claim the tool lists corpus rows published BEFORE the earliest paper the
-sentence cites whose titles overlap the sentence, scored by `common.title_score`
-at `--relevance` or better. That is a worklist for a reader, not a verdict: a
+sentence cites whose titles overlap the sentence; a claim that cites NOTHING is
+listed against the whole corpus, since an uncited origin claim is the worst
+case, not an exempt one. `--relevance` is a share of the closest
+title-to-prose match anywhere in this corpus, measured per run, not a fixed
+overlap (see RELEVANCE). That is a worklist for a reader, not a verdict: a
 listed row may be off-topic, and an absent one may still deserve priority. Work
 it before delivering, and keep the independent priority audit (PLAYBOOK Phase 7)
 for what no word overlap can see — a later model credited for an earlier
@@ -91,11 +94,23 @@ TRIGGERS = (
 )
 TRIGGER_RE = re.compile(r"\b(?:" + "|".join(TRIGGERS) + r")\b", re.I)
 
-# Default floor for the worklist. A row's title must reach this share of
-# overlap with the sentence (common.title_score) to be worth a reader's time.
-# It is a reporting knob, never a gate: raising it hides candidates, lowering
-# it buries the real ones in noise.
+# Default floor for the worklist, as a share of the CORPUS high-water mark
+# (see calibrate). An absolute share is not portable, and the two corpora we
+# have measured prove it (2026-11-07): the GNE review names its subject in
+# the prose exactly as the titles name it, so the best (claim, row) pair
+# reaches 1.00 and 99 pairs clear an absolute 0.45; the MRI-stimulation
+# review describes mechanisms while its titles name techniques, so the best
+# pair in the whole corpus is 0.33 and NOTHING could ever clear 0.45 — the
+# one real candidate, Barker 1985 under a claim of first human stimulation,
+# sat at 0.29 and was never shown. The number is not a property of relevance
+# but of how much a corpus's title vocabulary repeats in its prose, so it has
+# to be measured per corpus rather than typed. It is a reporting knob, never
+# a gate; --top is the real limit.
 RELEVANCE = 0.45
+
+# A title must share at least this many content words with the sentence, on
+# top of the calibrated floor: one word in common is a coincidence.
+MIN_HITS = 2
 
 PAREN = re.compile(r"\(([^()]*\d{4}[a-z]?[^()]*)\)")
 MARKER = re.compile(r"\[\[([A-Za-z0-9|_-]+)\]\]")
@@ -207,18 +222,50 @@ def overlap(sentence_words, title):
     return sum(w in sentence_words for w in tw) / len(tw)
 
 
-def earlier_rows(sentence, floor, corpus, cited, relevance, top):
-    """Corpus rows older than `floor` whose titles overlap the sentence."""
-    if floor is None:
-        return []
+def calibrate(found, corpus, relevance):
+    """The overlap floor for this run: `relevance` of the corpus high-water mark.
+
+    Scored over every (claim, row) pair, including the rows a claim already
+    cites and the ones too new to be candidates, because the question is how
+    closely this review's prose echoes this corpus's titles AT ALL. Scaling to
+    each claim's own best pool instead was tried and over-lists: on GNE it
+    promoted the top of 13 weak pools, whose candidates were generic papers on
+    the subject rather than antecedents of the claim (82 lines where the
+    measured-good answer is 14).
+    """
+    best = 0.0
+    for _label, sent, _groups in found:
+        words = set(content_words(sent))
+        for _ref, _yr, title in corpus:
+            score = overlap(words, title)
+            if score is not None:
+                best = max(best, score)
+    return relevance * best
+
+
+def earlier_rows(sentence, floor, corpus, cited, need, top):
+    """Corpus rows older than `floor` whose titles overlap the sentence.
+
+    `floor` of None means the sentence cites nothing at all, so there is no
+    year to be older than and the whole corpus is eligible. That is the most
+    dangerous shape an origin claim can take — "that letter is the origin of
+    transcranial magnetic stimulation", with no citation — and returning
+    nothing for it, as this did until 2026-11-07, left it unseen by BOTH
+    halves of the tool: no group for the gate, no floor for the worklist.
+
+    `need` is the floor `calibrate` measured for this corpus, not a constant.
+    """
     words, scored = set(content_words(sentence)), []
     for ref, yr, title in corpus:
-        if yr >= floor or ref in cited:
+        if ref in cited or (floor is not None and yr >= floor):
             continue
         score = overlap(words, title)
-        if score is not None and score >= relevance:
-            scored.append((score, yr, ref, title))
-    scored.sort(key=lambda s: (-s[0], s[1]))
+        if score is None or score < need:
+            continue
+        if sum(w in words for w in content_words(title)) < MIN_HITS:
+            continue
+        scored.append((score, yr, ref, title))
+    scored.sort(key=lambda c: (-c[0], c[1]))
     return scored[:top]
 
 
@@ -242,7 +289,8 @@ def main():
     src.add_argument("--content", help="content.json for the .docx route (APA author-date)")
     ap.add_argument("--key", default=None, help="row key field (default: ref, else label)")
     ap.add_argument("--relevance", type=float, default=RELEVANCE,
-                    help=f"worklist: title overlap floor, 0-1 (default {RELEVANCE})")
+                    help="worklist: floor, as a share of this corpus's best "
+                         f"title-to-prose overlap, 0-1 (default {RELEVANCE})")
     ap.add_argument("--top", type=int, default=5,
                     help="worklist: earlier rows listed per claim (default 5)")
     ap.add_argument("--no-worklist", action="store_true",
@@ -276,20 +324,24 @@ def main():
     if not args.no_worklist:
         listed = 0
         corpus = corpus_titles(rows, keyf)
+        need = calibrate(found, corpus, args.relevance)
         for label, sent, groups in found:
             years = [y for g in groups for _, y in g if y is not None]
             here = {name for g in groups for name, _ in g}
             cands = earlier_rows(sent, min(years) if years else None,
-                                 corpus, here, args.relevance, args.top)
+                                 corpus, here, need, args.top)
             if not cands:
                 continue
             listed += 1
-            print(f"  ? {label}: {len(cands)} corpus row(s) older than {min(years)}")
+            where = (f"older than {min(years)}" if years
+                     else "anywhere in the corpus — this claim CITES NOTHING")
+            print(f"  ? {label}: {len(cands)} corpus row(s) {where}")
             print(f"       {sent.strip()[:200]}")
             for score, yr, ref, title in cands:
                 print(f"       {yr}  {ref}  {title[:76]}  (overlap {score:.2f})")
         if listed and not args.quiet:
-            print(f"  — {listed} claim(s) have an older candidate: judgment, not a verdict")
+            print(f"  — {listed} claim(s) have an older candidate: judgment, not a verdict "
+                  f"(overlap floor {need:.2f}, measured from this corpus)")
 
     if bad:
         sys.exit(1)

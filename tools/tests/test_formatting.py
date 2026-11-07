@@ -6479,6 +6479,39 @@ check_true("an unrelated title scores low",
            priority_check.overlap({"distal", "myopathy", "rimmed", "vacuoles"},
                                   "Enzymatic synthesis of sialic acid phosphates") < 0.3)
 
+# A corpus whose prose barely echoes its titles: on mri_brain_stimulation the
+# BEST (claim, row) overlap anywhere was 0.33, so an absolute 0.45 floor could
+# never list anything, and the one real candidate — Barker 1985 under a claim
+# of first human stimulation — sat at 0.29, unseen. The floor is measured from
+# the corpus instead (2026-11-07).
+_pc_corpus = [("R-1", 1985, "Non-invasive magnetic stimulation of human motor cortex"),
+              ("R-2", 1990, "Sensory stimulation by time-varying magnetic fields")]
+_pc_found = [("BODY", "Cohen reported the first human stimulation in an MRI device.", [])]
+_pc_need = priority_check.calibrate(_pc_found, _pc_corpus, 0.45)
+check_true("the floor is measured from the corpus, not typed",
+           0 < _pc_need < 0.45)
+check_true("a candidate under an absolute 0.45 still lists at the measured floor",
+           [c[2] for c in priority_check.earlier_rows(
+               _pc_found[0][1], 1990, _pc_corpus, set(), _pc_need, 5)] == ["R-1"])
+# Scaling to each CLAIM's own best was tried instead and over-lists: it
+# promotes the top of a weak pool, where the candidates are generic papers on
+# the subject rather than antecedents of the claim.
+check_true("calibration reads every claim against every row",
+           priority_check.calibrate(
+               [("B", "nothing in common here at all", [])] + _pc_found,
+               _pc_corpus, 1.0) > 0.2)
+
+# An origin claim that cites NOTHING used to escape both halves: no group for
+# the gate, and no year to be older than, so earlier_rows returned []. That is
+# the worst shape a priority claim can take, not an exempt one.
+check_true("an uncited origin claim is listed against the whole corpus",
+           len(priority_check.earlier_rows(
+               "That letter is the origin of magnetic stimulation.",
+               None, _pc_corpus, set(), 0.1, 5)) > 0)
+check("one word in common is a coincidence, not a candidate",
+      priority_check.earlier_rows("Stimulation of the vestibular labyrinth.",
+                                  None, _pc_corpus, set(), 0.0, 5), [])
+
 # priority_check.detag keeps the markers prose_audit.detag drops: on the page
 # route they ARE the citations.
 check("markers survive detag here", priority_check.detag("<p>It was first shown[[R-1]].</p>"),
@@ -6620,6 +6653,45 @@ check("the proof is not a command to run again",
 os.utime(_book, (time.time() - 600, time.time() - 600))
 check("a workbook older than the table is lapsed evidence, not proof",
       status.s_audit(status.Project(_st3, "rows.json"))[0], "part")
+
+# verify.py works from a DOI or an arXiv id, so a DOI-less row can never be
+# verified: it is settled by the hand check. Counting those rows here held
+# mri_brain_stimulation at "54 of 67 verified" on a delivered build and kept
+# proposing a verify re-run that could not move the number (2026-11-07).
+_st4 = _tf.mkdtemp()
+common.dump_json([{"ref": "A-1", "doi": "10.1/a",
+                   "verified": {"verdict": "OK", "doi": "10.1/a", "arxiv": ""}},
+                  {"ref": "A-2", "apa": "A book with no DOI. (1961)."}],
+                 os.path.join(_st4, "rows.json"))
+_p4 = status.Project(_st4, "rows.json")
+check("a DOI-less row is out of verify's reach, not unverified",
+      status.s_verify(_p4)[0], "done")
+check_true("the DOI-less rows are named where they went",
+           "hand check" in status.s_verify(_p4)[1])
+check_true("a finished verify step proposes no command",
+           status.s_verify(_p4)[2] is None)
+
+# A pass that READ fewer papers than the table now holds is the normal shape
+# once its own candidates have been appended. status.py called that
+# outstanding work while handoff.py called it normal, off the same record.
+_st5 = _tf.mkdtemp()
+common.dump_json([{"ref": "A-%d" % i} for i in range(5)],
+                 os.path.join(_st5, "rows.json"))
+common.dump_json({"_runs": {"xref": {"complete": True, "n_papers": 3},
+                            "forward": {"complete": True, "n_papers": 3}},
+                  "10.1/x": {"decision": "exclude"}},
+                 os.path.join(_st5, "candidates.json"))
+_p5 = status.Project(_st5, "rows.json")
+check("a pass that read fewer papers than the table is not outstanding work",
+      status.s_candidates(_p5)[0], "done")
+check_true("but it is still said out loud",
+           "read fewer papers" in status.s_candidates(_p5)[1])
+common.dump_json({"_runs": {"xref": {"complete": False, "n_papers": 5},
+                            "forward": {"complete": True, "n_papers": 5}},
+                  "10.1/x": {"decision": "exclude"}},
+                 os.path.join(_st5, "candidates.json"))
+check("a pass that did not FINISH is outstanding work",
+      status.s_candidates(status.Project(_st5, "rows.json"))[0], "part")
 
 # The writers of rows.json are derived from what each tool CALLS, not grepped:
 # the same names appear in docstrings across the toolkit.

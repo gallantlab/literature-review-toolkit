@@ -209,6 +209,26 @@ Two things learned building the gate (2026-11-06), both of which emptied it sile
   the worklist of every claim in a review about sialic acid. The floor is
   `common.MIN_MAIN_TITLE_WORDS`, the same one `title_agrees` uses.
 
+Two more found by running the gate against a second corpus it had not been tuned
+on — `mri_brain_stimulation`, 67 rows, where it had passed everything (2026-11-07):
+
+- *An overlap threshold is not portable between corpora.* It measures how much a
+  review's prose repeats its own titles' vocabulary, which is a property of the
+  subject, not of relevance. GNE names its subject in the prose exactly as the
+  titles name it: best pair 1.00, 99 pairs over 0.45. The MRI review describes
+  mechanisms while its titles name techniques: best pair in the whole corpus 0.33,
+  so the fixed 0.45 floor could never list anything, and Barker 1985 — the priority
+  paper for human magnetic stimulation, under a sentence claiming the first human
+  stimulation — sat at 0.29 and was never shown. `priority_check.calibrate` now
+  measures the floor per run. Scaling to each *claim's* own best was tried first and
+  over-lists badly: it promotes the top of a weak pool, where the candidates are
+  generic papers on the subject (82 worklist lines on GNE where 14 is right).
+- *An origin claim that cites nothing escaped both halves.* No group for the gate,
+  and no year to be older than, so the worklist returned empty. "That letter is the
+  origin of transcranial magnetic stimulation" shipped in a delivered review with no
+  citation and no complaint from the tool. An uncited priority claim is the worst
+  case, not an exempt one; it is now listed against the whole corpus.
+
 ## On the spreadsheet
 
 - **Ref ids must be unique across merges, and counts must not be keyed by a reused

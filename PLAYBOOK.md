@@ -1165,9 +1165,15 @@ order within a single group (one parenthesis, or one `[[REF|REF]]` marker) is ga
 two separate citations in one sentence usually belong to two claims.
 
 It then prints a **worklist**: for each origin claim, the corpus rows published
-before the earliest paper it cites whose titles overlap the sentence (`--relevance`,
-default 0.45; `--top`, default 5). Those are candidates, not verdicts. Work the list,
-then run the audit below for what word overlap cannot see.
+before the earliest paper it cites whose titles overlap the sentence (`--top`,
+default 5). A claim that cites *nothing* is listed against the whole corpus — an
+uncited origin claim is the worst case, not an exempt one. `--relevance` (default
+0.45) is a share of the closest title-to-prose overlap **in this corpus**, measured
+per run rather than fixed: a review whose titles echo its prose scores near 1.00
+and one that describes mechanisms while its titles name techniques tops out near
+0.33, and a constant floor silently lists nothing on the second kind. Those are
+candidates, not verdicts. Work the list, then run the audit below for what word
+overlap cannot see.
 
 **Priority audit (required before delivering).** After drafting, dispatch one
 independent agent with the draft prose and `rows.json` (every paper with its year).
