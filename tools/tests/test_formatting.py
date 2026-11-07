@@ -6413,6 +6413,12 @@ check_true("an origin claim is recognized by its verb",
                "Hubel and Wiesel established the columnar organization.",
                "This foundational work predates the imaging era.",
                "Early work used anesthetized preparations."]))
+# Priority stated as sequence, not as a verb. Both were found by sampling the
+# sentences the first vocabulary did NOT flag on a real review.
+check_true("priority stated as sequence is an origin claim",
+           all(priority_check.TRIGGER_RE.search(s) for s in [
+               "Assays for the amino sugars came first, followed by the synthesis.",
+               "The pharmacology was in place long before the disease was."]))
 check_true("an ordinary finding sentence is not an origin claim",
            not any(priority_check.TRIGGER_RE.search(s) for s in [
                "Responses were stronger for faces than for houses.",

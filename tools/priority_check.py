@@ -68,6 +68,21 @@ TRIGGERS = (
     r"pioneer(?:ed|ing)",
     r"began\b",
     r"dates? back",
+    # Priority stated as sequence rather than as a verb. Found by sampling the
+    # sentences the list did NOT flag on the GNE corpus (2026-11-06): "Assays
+    # for the amino sugars came first", "the pharmacology was in place long
+    # before the disease was" — both priority claims, neither using an origin
+    # verb. These cost precision: "a founder mutation that predates the Roma
+    # migration" and "weakness precedes the vacuoles" are precedence in the
+    # world, not in the literature. That is the right trade here, because a
+    # false positive costs one worklist line and can never fail the gate —
+    # only the ORDER of a group inside the sentence can do that.
+    r"came first",
+    r"preced(?:e|es|ed)",
+    r"predat(?:e|es|ed)",
+    r"long before",
+    r"in place before",
+    r"(?:first|earliest) of these",
     r"gave rise to",
     r"gives? rise to",
     r"led to the\b",
