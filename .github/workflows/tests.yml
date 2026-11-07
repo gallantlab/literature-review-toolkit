@@ -15,12 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # The oldest version ruff is told to target, the middle of the range, and
-      # the version development actually happens on. Proving only one of them
-      # left the floor and the ceiling unverified: pyproject said py39 and
-      # nothing had ever run on 3.9, while this machine runs 3.14.
+      # The floor, the middle of the range, and the version development
+      # actually happens on. Proving only one of them left both ends
+      # unverified: pyproject claimed py39, nothing had ever run on 3.9, and
+      # development is on 3.14. 3.9 is not the floor any more -- it reached
+      # end of life in October 2025 and setup-python cannot install it on the
+      # current runner image, so the claim was unverifiable as well as stale.
       matrix:
-        python-version: ["3.9", "3.12", "3.14"]
+        python-version: ["3.10", "3.12", "3.14"]
     steps:
       - uses: actions/checkout@v4
         with:

@@ -3,7 +3,9 @@
 # One import per line, sorted; 110-column lines; pyflakes + pycodestyle errors.
 [tool.ruff]
 line-length = 110
-target-version = "py39"
+# The oldest Python CI proves (.github/workflows/tests.yml runs 3.10, 3.12 and
+# 3.14). Raise both together: a target no job runs is a claim, not a fact.
+target-version = "py310"
 src = ["tools"]
 extend-exclude = ["site"]
 
