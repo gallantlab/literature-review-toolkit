@@ -120,6 +120,18 @@ is the order, with the steps that can run at the same time.
 Step 7's tools share one Semantic Scholar key, and a shared pacer keeps them from
 drawing each other's rate limits ([Environment variables](#environment-variables)).
 
+Every step above leaves a trace on disk, so a build can say where it is:
+
+```bash
+python3 tools/status.py --project <dir>          # what is done, what is left
+python3 tools/status.py --project <dir> --next   # just the next command
+python3 tools/status.py --writers                # what may run at the same time
+```
+
+`status.py` reads; it runs no gate, so it reports that the audit has not been run,
+never that it passes. A step marked `part` ran over fewer rows than the table now
+holds — the usual shape of a pass from before the candidates were appended.
+
 ## The decisions that belong to the user
 
 | Decision | Phase | Why it belongs to the user |

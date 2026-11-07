@@ -221,6 +221,8 @@ A build runs for hours, so overlap the waits. Two rules decide what may overlap:
    (`citations.py` without `--attach`, `abstracts.py`, `xref.py`, `forward.py`,
    `handcheck.py --prepare`, `summary_audit.py --prepare`, `spreadsheet.py`) may
    run alongside a writer.
+   `python3 tools/status.py --writers` prints that list, derived from what each
+   tool calls rather than from this paragraph.
 2. **Semantic Scholar is paced in code.** `citations.py`, `abstracts.py` and
    `xref.py` share one `S2_API_KEY`, and every S2 request waits its turn through a
    lock file shared by all processes (`common.s2_wait_turn`), so they may run side
@@ -1481,6 +1483,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `lab_corpus.py` | L1 | Lab mode: fetch a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `lab_lane.py` | L2 | Lab mode, Phase L2: check the lab's record by content, then turn it into lane L. | `--abstracts` `--batch` `--build` `--dir` `--lane` `--out` `--papers` `--pi` `--prepare` `--themes` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
+| `status.py` | — | Read a project directory and print what is done, what is left, and the next command. | `--next` `--project` `--rows` `--writers` |
 <!-- END GENERATED TOOL INDEX -->
 
 Notes the index cannot carry:
@@ -1561,6 +1564,20 @@ reference is a pointer, not a claim); append its file with `merge_lanes.py
 ---
 
 ## Quick start for a fresh Claude
+
+**Picking up a build already in progress? Ask it where it is.**
+
+```bash
+python3 tools/status.py --project <dir>          # what is done, what is left
+python3 tools/status.py --project <dir> --next   # just the next command
+```
+
+It reads the artifacts, not a memory of them: the preflight record, the verify
+stamps, the canon stamps, the counts, the summaries, the candidate ledger and its
+run records, the families file, the workbook. A step marked `part` ran over fewer
+rows than the table now holds, which is what a pass from before the candidates
+were appended looks like. It runs no gate, so it can tell you the audit has not
+been run but never that it passes.
 
 Read this playbook, then any existing `rows.json` (after Phase 3f it is the live
 table; the `.xlsx` is only a rendering). Confirm topic and criteria with the user. Do

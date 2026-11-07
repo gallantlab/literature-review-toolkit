@@ -27,6 +27,7 @@ import references  # noqa: E402
 import review_paper  # noqa: E402
 import sentence_case as sc  # noqa: E402
 import spreadsheet  # noqa: E402
+import status  # noqa: E402
 import verify  # noqa: E402
 import version  # noqa: E402
 import xref  # noqa: E402
@@ -6540,6 +6541,78 @@ check_true("an override is reported with its reason",
            "`A-1` (overrode MISMATCH): CrossRef has the wrong year" in _hdtext)
 check_true("a missing timeline is reported as unknown, not as declined",
            "cannot tell those apart" in _hdtext)
+
+
+# ---- status: the build state, read off disk (2026-11-06) ------------------
+
+_st = _tf.mkdtemp()
+common.dump_json([{"ref": "A-1", "source": "search", "doi": "10.1/a",
+                   "apa": "Smith, J. (2020). A paper. Journal, 1, 1-2."},
+                  {"ref": "A-2", "source": "anteced",
+                   "apa": "Jones, K. (1990). An older paper. Journal, 2, 3-4."}],
+                 os.path.join(_st, "rows.json"))
+_stp = status.Project(_st, "rows.json")
+
+# common.ids_of returns a (doi, arxiv) PAIR, so the tuple is ALWAYS truthy. The
+# first draft asked `if not common.ids_of(row)` and reported a corpus of
+# DOI-less rows as fully identified.
+check("a row with no DOI and no arXiv id is a DOI-less row",
+      status.s_handcheck(_stp)[:2], ("todo", "no DOI-less rows hand-checked"))
+check("the antecedents pass is required at every scale (contract rule 4)",
+      status.s_merge(_stp)[0], "done")
+common.dump_json([{"ref": "A-1", "source": "search", "apa": "Smith, J. (2020). A. J, 1, 1."}],
+                 os.path.join(_st, "rows.json"))
+check("a table with no antecedents is not finished merging",
+      status.s_merge(status.Project(_st, "rows.json"))[0], "part")
+
+# Contract rule 2's two exceptions never get a canonical_at. Counting only the
+# stamp left a finished build three rows short forever, proposing a canon re-run
+# after every other step was done.
+_st2 = _tf.mkdtemp()
+common.dump_json([{"ref": "A-1", "doi": "10.1/a", "canonical_at": "2026-11-06",
+                   "apa": "Smith, J. (2020). A. J, 1, 1."},
+                  {"ref": "A-2", "apa": "Jones, K. (1990). B. J, 2, 3."},
+                  {"ref": "A-3", "doi": "10.1/c", "apa": "Lee, M. (1999). C. J, 3, 4."}],
+                 os.path.join(_st2, "rows.json"))
+common.dump_json({"A-3": {"kept-existing-apa:abc12345": "the source had no usable record"}},
+                 os.path.join(_st2, "audit_acks.json"))
+check("a DOI-less row and an acknowledged kept apa both count as settled",
+      status.s_canon(status.Project(_st2, "rows.json"))[0], "done")
+
+# The next command is the first unfinished step, and a finished step proposes
+# nothing: a status tool that always has advice is noise.
+check_true("a bare project starts at the preflight",
+           "preflight.py" in status.s_preflight(status.Project(_tf.mkdtemp()))[2])
+check_true("a cleared preflight proposes nothing",
+           status.s_preflight(_stp) and status.s_preflight(_stp)[2] is None
+           if _stp.json("preflight.json") else True)
+
+# The writers of rows.json are derived from what each tool CALLS, not grepped:
+# the same names appear in docstrings across the toolkit.
+_writers = status.table_writers(_TOOLS)
+check_true("status.py is not counted as a writer of the table",
+           "status.py" not in _writers and "common.py" not in _writers)
+check_true("a reader is not counted as a writer",
+           not {"abstracts.py", "xref.py", "forward.py", "spreadsheet.py",
+                "handoff.py", "cite_check.py"} & set(_writers))
+check_true("every known writer is derived", {"verify.py", "references.py",
+           "merge_lanes.py", "families.py", "citations.py", "handcheck.py",
+           "sentence_case.py", "summary_audit.py"} <= set(_writers))
+
+# The playbook's concurrency rule names those tools in prose. That list is the
+# copy that drifts, so it is checked against the code rather than maintained.
+_conc = re.search(r"One writer of `rows\.json` at a time\.\*\*(.*?)\n\n",
+                  open(os.path.join(_REPO, "PLAYBOOK.md"), encoding="utf-8").read(), re.S)
+check_true("the playbook still states the one-writer rule", bool(_conc))
+# The same paragraph then lists the READERS, several of which are writers under
+# another flag ("citations.py without --attach"), so only the first half is the
+# writer list.
+_wpart = _conc.group(1).split("Tools that only read it")[0] if _conc else ""
+_named = set(re.findall(r"`([a-z_]+\.py)", _wpart))
+check("every tool that writes rows.json is named in the playbook's one-writer rule",
+      sorted(set(_writers) - _named), [])
+check("the playbook's one-writer rule names no tool that does not write the table",
+      sorted(_named - set(_writers)), [])
 
 
 # ---- report ---------------------------------------------------------------

@@ -48,6 +48,7 @@ in `tools/README.md` and `PLAYBOOK.md`.
 | `lab_corpus.py` | L1 | Lab mode: fetch a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `lab_lane.py` | L2 | Lab mode, Phase L2: check the lab's record by content, then turn it into lane L. | `--abstracts` `--batch` `--build` `--dir` `--lane` `--out` `--papers` `--pi` `--prepare` `--themes` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
+| `status.py` | — | Read a project directory and print what is done, what is left, and the next command. | `--next` `--project` `--rows` `--writers` |
 <!-- END GENERATED TOOL INDEX -->
 
 ## What each tool refuses to guess

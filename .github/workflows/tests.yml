@@ -13,13 +13,21 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # The oldest version ruff is told to target, the middle of the range, and
+      # the version development actually happens on. Proving only one of them
+      # left the floor and the ceiling unverified: pyproject said py39 and
+      # nothing had ever run on 3.9, while this machine runs 3.14.
+      matrix:
+        python-version: ["3.9", "3.12", "3.14"]
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # tools/version.py derives the version from the full commit history
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "${{ matrix.python-version }}"
           cache: pip
       - run: pip install -r requirements.txt ruff
       - name: lint (ruff, config in pyproject.toml)

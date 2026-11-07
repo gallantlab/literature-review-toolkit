@@ -60,6 +60,7 @@ and CI fails if any copy is stale.
 | `lab_corpus.py` | L1 | Lab mode: fetch a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `lab_lane.py` | L2 | Lab mode, Phase L2: check the lab's record by content, then turn it into lane L. | `--abstracts` `--batch` `--build` `--dir` `--lane` `--out` `--papers` `--pi` `--prepare` `--themes` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
+| `status.py` | — | Read a project directory and print what is done, what is left, and the next command. | `--next` `--project` `--rows` `--writers` |
 <!-- END GENERATED TOOL INDEX -->
 
 ## Each tool in detail
@@ -1595,6 +1596,37 @@ plain `import common` resolves.
 The hot-papers repo imports this module too (it has no copy), through HDRS,
 http, http_json, load_json, dump_json, doi_of, arxiv_id_of, ARXIV_NS and ATOM.
 Run its tests before changing any of them.
+```
+
+### Shared helpers: `status.py`
+
+```text
+Read a project directory and print what is done, what is left, and the next command.
+
+Every phase of a build leaves a trace on disk: a preflight record, a lane
+manifest, verify stamps on rows, canonical reference strings, counts, abstracts,
+summary checks, run sidecars, a candidate ledger, a families file, the
+spreadsheet. The state of a build is therefore readable, and until now nothing
+read it. An agent that lost its place had to notice; with this it can ask.
+
+  python3 tools/status.py --project .
+  python3 tools/status.py --project . --next     # just the next command
+  python3 tools/status.py --project . --writers  # what may run at the same time
+
+Each step reports one of:
+
+  done     the artifact is there and covers the table
+  part     it ran, but not over everything now in the table
+  todo     no trace of it
+  n/a      optional, and not started (PDFs, the written review)
+
+`part` is the state that matters. A pass that ran before candidates were
+appended is the normal shape of a real build, and it is invisible in a file
+listing: only the counts show it.
+
+This tool reads. It never writes, never fetches, and never decides anything a
+gate decides — it cannot tell you the audit passes, only that you have not run
+it. The next command it prints is the first step that is not done.
 ```
 <!-- END GENERATED TOOL DETAILS -->
 
