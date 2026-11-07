@@ -56,6 +56,7 @@ and CI fails if any copy is stale.
 | `prose_audit.py` | 7 | Measure a review's prose, and check that a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |
 | `review_paper.py` | 7 | Build a review article (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `screenshot.py` | 7 | Screenshot a built page in light, dark and phone widths, so a human can look at it. | `--modes` `--out` `--page` `--quiet` `--root` |
+| `handoff.py` | 8 | Phase 8: assemble the hand-off report from the files beside the table. | `--out` `--project` `--rows` |
 | `lab_corpus.py` | L1 | Lab mode: fetch a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `lab_lane.py` | L2 | Lab mode, Phase L2: check the lab's record by content, then turn it into lane L. | `--abstracts` `--batch` `--build` `--dir` `--lane` `--out` `--papers` `--pi` `--prepare` `--themes` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
@@ -1459,6 +1460,34 @@ believes a long page was checked when it was not.
 Exits 1 when Chrome is missing, when a path escapes the root or the root escapes the
 workspace, or when a mode produces no image, so a silent failure cannot pass for a
 clean render.
+```
+
+### Phase 8: `handoff.py`
+
+```text
+Phase 8: assemble the hand-off report from the files beside the table.
+
+Every figure Phase 8 asks for is already on disk when the run ends — in
+rows.json, the preflight record, the merge report, the candidate ledger, the
+run sidecars, the acknowledgments and the hand fixes. Asking the agent to
+remember them is asking for the least reliable summary of the run, written at
+the point where it has least left, of the one part the user actually reads.
+
+  python3 tools/handoff.py --project .
+  python3 tools/handoff.py --project . --out HANDOFF.md
+
+It reads; it never writes into the project except the `--out` file you name.
+Each line is a fact from a file, and a file that is missing is reported as
+missing rather than filled in: "no preflight.json" is information about the run.
+
+Exit 1 when the deliverable is not ready to hand off — no spreadsheet, or only
+a `_DRAFT`. That is the one condition under which the report should not be
+read out to the user. Everything else is reported, never gated: a capped pass
+or a declined timeline is a thing to say, not a thing to stop for.
+
+What it cannot know stays with the agent: whether the timeline was offered and
+declined (it can only see that none was built), and the reason behind a
+`--no-preflight` run, which is recorded nowhere.
 ```
 
 ### Lab mode L1: `lab_corpus.py`

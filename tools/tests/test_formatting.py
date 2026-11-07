@@ -20,6 +20,7 @@ import families  # noqa: E402
 import families_figure  # noqa: E402
 import forward  # noqa: E402
 import gen_docs  # noqa: E402
+import handoff  # noqa: E402
 import priority_check  # noqa: E402
 import prose_audit  # noqa: E402
 import references  # noqa: E402
@@ -6475,6 +6476,70 @@ check_true("an unrelated title scores low",
 # route they ARE the citations.
 check("markers survive detag here", priority_check.detag("<p>It was first shown[[R-1]].</p>"),
       "It was first shown[[R-1]].")
+
+
+# ---- handoff: Phase 8 assembled from the files, not from memory -----------
+# The report is read out to the user at the end of a run lasting hours. Every
+# check here is a line that would be wrong rather than missing.
+
+_hd = _tf.mkdtemp()
+common.dump_json([{"ref": "A-1", "source": "search",
+                   "apa": "Smith, J. (2020). A paper. Journal, 1, 1-2.",
+                   "verify_override": {"reason": "CrossRef has the wrong year",
+                                       "overrode": "MISMATCH"}},
+                  {"ref": "A-2", "source": "gift-from-a-colleague",
+                   "apa": "Jones, K. (2021). Another paper. Journal, 2, 3-4."}],
+                 os.path.join(_hd, "rows.json"))
+common.dump_json({"_runs": {"xref": {"complete": True, "n": 9, "n_papers": 2},
+                            "forward": {"complete": False, "n": 3, "n_papers": 1}},
+                  "10.1/a": {"decision": "exclude", "reason": "off topic"},
+                  "10.1/b": {"decision": None}},
+                 os.path.join(_hd, "candidates.json"))
+common.dump_json({"*": {"partial-xref-run": "re-run after the append"}},
+                 os.path.join(_hd, "audit_acks.json"))
+_hdtext, _hdready = handoff.report(_hd, "rows.json")
+
+# A draft workbook is not a deliverable (contract rule 9), so the report must
+# refuse to be read out rather than name the draft as the spreadsheet.
+check_true("a project with no workbook is not ready to hand off", not _hdready)
+open(os.path.join(_hd, "corpus_DRAFT.xlsx"), "w").close()
+check_true("a draft workbook is still not ready", not handoff.report(_hd, "rows.json")[1])
+check_true("the draft is named so it can be rerun",
+           "corpus_DRAFT.xlsx" in handoff.report(_hd, "rows.json")[0])
+open(os.path.join(_hd, "corpus.xlsx"), "w").close()
+_hdtext2, _hdready2 = handoff.report(_hd, "rows.json")
+check_true("a real workbook makes it ready", _hdready2)
+check_true("the real workbook is handed over, not the draft",
+           "- Spreadsheet: `corpus.xlsx`" in _hdtext2)
+
+# Row sources are spreadsheet.SOURCES, the registry that colors the rows. An
+# unknown source is reported as unknown; relabeling it would hide a bad write.
+check_true("a known source carries its meaning from the registry",
+           "**1** search — " + spreadsheet.SOURCES["search"][1] in _hdtext)
+check_true("an unknown source is reported, not relabeled",
+           "gift-from-a-colleague — not a known row source" in _hdtext)
+
+# An undecided candidate fails the audit; the hand-off must say so, not count it
+# silently among the exclusions.
+check_true("undecided candidates are called out", "still undecided" in _hdtext)
+check_true("candidates are counted by decision", "1 exclude" in _hdtext and "1 pending" in _hdtext)
+
+# A pass that did not finish, and one that read fewer papers than the table now
+# holds, are the two shapes Phase 8 has to report.
+check_true("an unfinished pass is reported", "The forward pass did not finish" in _hdtext)
+check_true("a pass that read fewer papers than the table is reported",
+           "The xref pass read 2 of the 2 papers" not in _hdtext)
+check_true("an acknowledged short run is reported with its reason",
+           "Acknowledged `partial-xref-run` (corpus): re-run after the append" in _hdtext)
+check_true("a corpus-wide acknowledgment is not reported as a row called '*'",
+           "(*)" not in _hdtext)
+
+# The overrides are the corrections the user is told about. A reason is never
+# invented: a row without one says so.
+check_true("an override is reported with its reason",
+           "`A-1` (overrode MISMATCH): CrossRef has the wrong year" in _hdtext)
+check_true("a missing timeline is reported as unknown, not as declined",
+           "cannot tell those apart" in _hdtext)
 
 
 # ---- report ---------------------------------------------------------------

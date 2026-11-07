@@ -115,7 +115,7 @@ is the order, with the steps that can run at the same time.
 | 13 | Acknowledge each remaining warning | — | `references.py --list-acks` | [Checking](checks.md#acknowledge-warnings) |
 | 14 | Build the spreadsheet | 5 | `spreadsheet.py` | [Deliverables](deliverables.md#build-the-spreadsheet-phase-5) |
 | 15 | Write the review, if asked | 7 | `cite_check.py`, `priority_check.py`, `review_paper.py` | [Deliverables](deliverables.md#write-the-review-phase-7) |
-| 16 | Hand off | 8 | — | [Deliverables](deliverables.md#hand-off-phase-8) |
+| 16 | Hand off | 8 | `handoff.py` | [Deliverables](deliverables.md#hand-off-phase-8) |
 
 Step 7's tools share one Semantic Scholar key, and a shared pacer keeps them from
 drawing each other's rate limits ([Environment variables](#environment-variables)).

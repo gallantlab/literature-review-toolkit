@@ -1261,20 +1261,25 @@ file holds edits or is an older draft, and re-rendering would destroy them.
 
 ### Phase 8 — Hand off
 
-Tell the user:
-- Total rows, broken down by source (search / antecedents / xref / forward / lab),
-  and how many candidates were considered and excluded.
-- The spreadsheet path (never a `_DRAFT` file) and the timeline
-  (`<topic>_families.html`, open in a browser) with its families, or that the
-  timeline was offered and declined.
-- The scale (Phase 1d), any choice recorded at the preflight (`--accept`) or a
-  `--no-preflight` reason, and any pass that ran capped or incomplete
-  (`--allow-incomplete`, acknowledged `incomplete-*`/`partial-*` warnings), and why.
-- For a redo of an old build: the recall against it ("Upgrading an old corpus").
-- Verification corrections you made (fabricated ids, wrong first authors, DOIs that
-  resolved to another paper).
-- **Only if Phase 4 ran:** PDFs downloaded vs. failed, and the path to the
-  browser-helper page or `_needs_manual.txt`.
+```bash
+python3 tools/handoff.py --project .     # exits 1 if there is no workbook to hand over
+```
+
+Every figure this phase asks for is already on disk — in `rows.json`, the preflight
+record, the merge report, the candidate ledger, the run sidecars, the
+acknowledgments and the hand fixes. `handoff.py` reads them and writes the report:
+the corpus by source, the candidates considered and excluded, the spreadsheet (never
+a `_DRAFT`) and the timeline with its families, the scale and every recorded
+preflight choice, each pass that ran capped or incomplete, every verification
+override with its reason, the hand fixes and hand checks, and the PDFs if Phase 4
+ran. `--out HANDOFF.md` also writes it to a file.
+
+Read it out, and add the three things it cannot read off disk:
+
+- whether a missing timeline was **offered and declined**, or never offered;
+- why a run used `--no-preflight`, which is recorded nowhere;
+- for a redo of an old build, the recall `recall.py` printed ("Upgrading an old
+  corpus"); the tool can only see that a recovery lane exists.
 
 ---
 
@@ -1472,6 +1477,7 @@ in `tools/README.md` and `docs/tools.md`.
 | `prose_audit.py` | 7 | Measure a review's prose, and check that a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |
 | `review_paper.py` | 7 | Build a review article (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `screenshot.py` | 7 | Screenshot a built page in light, dark and phone widths, so a human can look at it. | `--modes` `--out` `--page` `--quiet` `--root` |
+| `handoff.py` | 8 | Phase 8: assemble the hand-off report from the files beside the table. | `--out` `--project` `--rows` |
 | `lab_corpus.py` | L1 | Lab mode: fetch a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `lab_lane.py` | L2 | Lab mode, Phase L2: check the lab's record by content, then turn it into lane L. | `--abstracts` `--batch` `--build` `--dir` `--lane` `--out` `--papers` `--pi` `--prepare` `--themes` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |

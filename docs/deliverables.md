@@ -304,8 +304,20 @@ whole page was reviewed.
 
 ## Hand off (Phase 8)
 
-Deliver the spreadsheet and the timeline (or note that the timeline was skipped),
-plus the written review if there is one. Report the scale, the number of rows from
-each source, the verification corrections made, and any step run with
-`--allow-incomplete`. **Keep the JSON files with the deliverables.** They are the
-audit trail and the input to any later rerun.
+`handoff.py` assembles the report from the files beside the table, so the last
+step of a run lasting hours is read off disk rather than out of memory.
+
+```bash
+python3 ../tools/handoff.py --project .            # to the terminal
+python3 ../tools/handoff.py --project . --out HANDOFF.md
+```
+
+It reports the corpus by source, the candidates considered and excluded, the
+deliverable paths, the scale and every preflight choice, each pass that ran short,
+and every verification override with its reason. It exits 1 when there is no
+workbook to hand over, or only a `_DRAFT` — the one state in which the report
+should not be read out. Two things it cannot know stay with the agent: whether a
+missing timeline was offered and declined, and why a run skipped the preflight.
+
+**Keep the JSON files with the deliverables.** They are the audit trail, the input
+to any later rerun, and what this report is assembled from.

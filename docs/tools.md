@@ -44,6 +44,7 @@ in `tools/README.md` and `PLAYBOOK.md`.
 | `prose_audit.py` | 7 | Measure a review's prose, and check that a revision pass lost no citation. | `--baseline` `--content` `--exclude` `--long` `--overlap` `--page` `--quiet` |
 | `review_paper.py` | 7 | Build a review article (.docx) from a finished review corpus. | `--content` `--figure` `--out` `--rows` |
 | `screenshot.py` | 7 | Screenshot a built page in light, dark and phone widths, so a human can look at it. | `--modes` `--out` `--page` `--quiet` `--root` |
+| `handoff.py` | 8 | Phase 8: assemble the hand-off report from the files beside the table. | `--out` `--project` `--rows` |
 | `lab_corpus.py` | L1 | Lab mode: fetch a lab's full publication corpus from OpenAlex. | `--author` `--email` `--from-year` `--out` `--search` `--to-year` |
 | `lab_lane.py` | L2 | Lab mode, Phase L2: check the lab's record by content, then turn it into lane L. | `--abstracts` `--batch` `--build` `--dir` `--lane` `--out` `--papers` `--pi` `--prepare` `--themes` |
 | `common.py` | — | Shared helpers for the literature-review toolkit. | — |
